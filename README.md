@@ -45,7 +45,7 @@ O projeto será desenvolvido de forma incremental, organizado em quatro sprints.
 
 ## Status
 
-🚧 **Em desenvolvimento**
+**Em desenvolvimento**
 
 O projeto encontra-se em sua etapa inicial de planejamento e estruturação.
 
