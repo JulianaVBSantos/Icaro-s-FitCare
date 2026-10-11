@@ -115,7 +115,9 @@ fun FitCareApp() {
                 AppScreen.PerfilAluno -> {
                     TelaPerfilAluno(
                         nomeAluno = alunoSelecionado,
-                        onVoltar = { tela = AppScreen.Alunos }
+                        onVoltar = { tela = AppScreen.Alunos },
+                        onDashboard = { tela = AppScreen.Dashboard },
+                        onTreinos = { tela = AppScreen.Treinos }
                     )
                 }
                 AppScreen.Treinos -> {
@@ -248,33 +250,43 @@ fun TelaDashboard(
     var pesquisa by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-            // Cabeçalho roxo do dashboard
+            // Cabeçalho roxo compacto - Apenas para a Logo centralizada
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(brush = Brush.verticalGradient(colors = listOf(Color(0xFF241B50), Color(0xFF33205E))))
+                    .padding(vertical = 12.dp)
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 22.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.logo_fitcare),
-                            contentDescription = "Logo Ícaro's FitCare",
-                            modifier = Modifier.width(155.dp).height(78.dp)
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier.size(38.dp).background(Color.White.copy(alpha = 0.12f), CircleShape).clickable { onPerfil() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "○", color = Color.White, fontSize = 25.sp)
-                        }
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_fitcare),
+                        contentDescription = "Logo Ícaro's FitCare",
+                        modifier = Modifier.width(140.dp).height(70.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
+                            .clickable { onPerfil() }
+                            .align(Alignment.CenterEnd),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "○", color = Color.White, fontSize = 22.sp)
                     }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = "Acompanhe seus alunos e seus progressos.", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
-// Área de busca, indicadores e listagem de alunos rápidos
+// Área clara de conteúdo do Dashboard
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
+                Text(
+                    text = "Acompanhe seus alunos e seus progressos.",
+                    color = Texto,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
                 OutlinedTextField(
                     value = pesquisa,
                     onValueChange = { pesquisa = it },
@@ -335,17 +347,40 @@ private fun DashboardIndicador(modifier: Modifier = Modifier, titulo: String, va
         }
     }
 }
-// Botões das ações rápidas
+// Botões das ações rápidas - CORRIGIDO CONTRA CORTES
 @Composable
-private fun DashboardAcao(modifier: Modifier = Modifier, titulo: String, subtitulo: String, corFundo: Color, corTexto: Color, icone: String, onClick: () -> Unit) {
-    Column(modifier = modifier.height(92.dp).background(color = corFundo, shape = RoundedCornerShape(13.dp)).clickable { onClick() }.padding(12.dp)) {
-        Box(modifier = Modifier.size(24.dp).background(Color.White.copy(alpha = 0.35f), CircleShape), contentAlignment = Alignment.Center) {
+private fun DashboardAcao(
+    modifier: Modifier = Modifier,
+    titulo: String,
+    subtitulo: String,
+    corFundo: Color,
+    corTexto: Color,
+    icone: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .height(104.dp) // Aumentamos ligeiramente a altura padrão de 92.dp para 104.dp para dar respiro
+            .background(color = corFundo, shape = RoundedCornerShape(13.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp) // Paddings equilibrados
+    ) {
+        Box(
+            modifier = Modifier.size(24.dp).background(Color.White.copy(alpha = 0.35f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
             Text(text = icone, color = corTexto, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(modifier = Modifier.height(5.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(text = titulo, color = corTexto, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(text = subtitulo, color = corTexto.copy(alpha = 0.85f), fontSize = 10.sp, maxLines = 2)
+        Spacer(modifier = Modifier.height(1.dp))
+        Text(
+            text = subtitulo,
+            color = corTexto.copy(alpha = 0.85f),
+            fontSize = 11.sp, // Ajuste sutil no tamanho para garantir fluidez
+            lineHeight = 14.sp, // Adicionado controle de espaçamento entre linhas
+            maxLines = 2
+        )
     }
 }
 // Elemento individual da listagem rápida de alunos
@@ -386,20 +421,43 @@ fun TelaAlunos(onVoltar: () -> Unit, onSelecionarAluno: (String) -> Unit, onTrei
     }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-            Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.verticalGradient(colors = listOf(Color(0xFF241B50), Color(0xFF33205E))))) {
-                Column(modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 22.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Image(painter = painterResource(id = R.drawable.logo_fitcare), contentDescription = "Logo Ícaro's FitCare", modifier = Modifier.width(155.dp).height(78.dp))
-                        Spacer(modifier = Modifier.weight(1f))
-                        Box(modifier = Modifier.size(38.dp).background(Color.White.copy(alpha = 0.12f), CircleShape).clickable { onVoltar() }, contentAlignment = Alignment.Center) {
-                            Text(text = "○", color = Color.White, fontSize = 25.sp)
-                        }
+// Cabeçalho roxo compacto - Apenas para a Logo centralizada
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(brush = Brush.verticalGradient(colors = listOf(Color(0xFF241B50), Color(0xFF33205E))))
+                    .padding(vertical = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_fitcare),
+                        contentDescription = "Logo Ícaro's FitCare",
+                        modifier = Modifier.width(140.dp).height(70.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
+                            .clickable { onVoltar() }
+                            .align(Alignment.CenterEnd),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "○", color = Color.White, fontSize = 22.sp)
                     }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = "Meus alunos", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
+// Conteúdo claro da tela de listagem
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
+                Text(
+                    text = "Meus alunos",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Texto,
+                    modifier = Modifier.padding(bottom = 14.dp)
+                )
                 OutlinedTextField(
                     value = pesquisa,
                     onValueChange = { pesquisa = it },
@@ -450,11 +508,13 @@ fun TelaAlunos(onVoltar: () -> Unit, onSelecionarAluno: (String) -> Unit, onTrei
         DashboardBottomBar(telaAtual = AppScreen.Alunos, onInicio = onVoltar, onAlunos = {}, onTreinos = onTreinos, onRegistros = {}, onMais = {})
     }
 }
-// Tela de Perfil Individual do Aluno
+// Tela de Perfil Individual do Aluno - ATUALIZADA COM CABEÇALHO E RODAPÉ
 @Composable
 fun TelaPerfilAluno(
     nomeAluno: String,
-    onVoltar: () -> Unit
+    onVoltar: () -> Unit,
+    onDashboard: () -> Unit,
+    onTreinos: () -> Unit
 ) {
     val objetivoAluno = when (nomeAluno) {
         "Lucas Carvalho" -> "Hipertrofia muscular"
@@ -466,255 +526,241 @@ fun TelaPerfilAluno(
     val statusAluno = if (nomeAluno == "Lucas Carvalho" || nomeAluno == "Mariana Costa") "Em atenção" else "Em dia"
     val corStatus = if (statusAluno == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
     val corTextoStatus = if (statusAluno == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF8F6FC))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF241B50), Color(0xFF33205E))
-                    )
-                )
-        ) {
-            Column(
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
+        Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+// Cabeçalho Roxo Compacto Padronizado com os botões de controle integrados
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 20.dp)
+                    .background(brush = Brush.verticalGradient(colors = listOf(Color(0xFF241B50), Color(0xFF33205E))))
+                    .padding(vertical = 12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    contentAlignment = Alignment.Center
                 ) {
+// Botão de retornar na extrema esquerda
                     Row(
-                        modifier = Modifier.clickable { onVoltar() },
+                        modifier = Modifier.clickable { onVoltar() }.align(Alignment.CenterStart),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "←", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text(text = "Ícaro's FitCare", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text(text = "Perfil do aluno", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                        Text(text = "Voltar", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+// Logo perfeitamente centralizada
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_fitcare),
+                        contentDescription = "Logo Ícaro's FitCare",
+                        modifier = Modifier.width(140.dp).height(70.dp)
+                    )
+// Ícone de Editar na extrema direita
+                    Text(
+                        text = "✎",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        modifier = Modifier.clickable { }.align(Alignment.CenterEnd)
+                    )
+                }
+            }
+// Identificação do aluno na área clara da tela
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(56.dp).background(Color(0xFFE9E7EC), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "👤", fontSize = 24.sp)
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
+                    Text(text = nomeAluno, color = Texto, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(text = objetivoAluno, color = Cinza, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.background(color = corStatus, shape = RoundedCornerShape(20.dp)).padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(text = statusAluno, color = corTextoStatus, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+// Cartões de Informações do Aluno
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "👤", color = Lilas, fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Dados cadastrais", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinhaDado(rotulo = "E-mail", valor = "${nomeAluno.lowercase().replace(" ", "")}@email.com")
+                    LinhaDado(rotulo = "Cadastro", valor = "15/09/2026")
+                    LinhaDado(rotulo = "Objetivo", valor = objetivoAluno)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Editar dados ›",
+                        color = Lilas,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { }
+                    )
+                }
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "📋", color = Lilas, fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Anamnese", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Importe o documento de anamnese para manter as informações do aluno disponíveis no perfil.",
+                        color = Cinza,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedButton(
+                        onClick = { },
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Lilas),
+                        border = BorderStroke(1.dp, Lilas)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "📤", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Importar anamnese", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    Text(text = "✎", color = Color.White, fontSize = 18.sp, modifier = Modifier.clickable { })
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Formatos aceitos: PDF ou imagem",
+                        color = Cinza,
+                        fontSize = 10.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
                 }
-                Spacer(modifier = Modifier.height(18.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "❤️", color = Lilas, fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Registro de dor e avaliação", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .background(Color.White.copy(alpha = 0.15f), CircleShape),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFD9DC), RoundedCornerShape(10.dp))
+                            .padding(12.dp)
                     ) {
-                        Text(text = "👤", color = Color.White, fontSize = 22.sp)
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = nomeAluno,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = objetivoAluno,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 13.sp
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(color = corStatus, shape = RoundedCornerShape(20.dp))
-                                .padding(horizontal = 10.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = statusAluno,
-                                color = corTextoStatus,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) {
-            Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "👤", color = Lilas, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Dados cadastrais", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                LinhaDado(rotulo = "E-mail", valor = "${nomeAluno.lowercase().replace(" ", "")}@email.com")
-                LinhaDado(rotulo = "Cadastro", valor = "15/09/2026")
-                LinhaDado(rotulo = "Objetivo", valor = objetivoAluno)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Editar dados \u203A",
-                    color = Lilas,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable { }
-                )
-            }
-            Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "📋", color = Lilas, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Anamnese", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Importe o documento de anamnese para manter as informações do aluno disponíveis no perfil.",
-                    color = Cinza,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                OutlinedButton(
-                    onClick = { },
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Lilas),
-                    border = BorderStroke(1.dp, Lilas)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "📤", fontSize = 13.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Importar anamnese", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Formatos aceitos: PDF ou imagem",
-                    color = Cinza,
-                    fontSize = 10.sp,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-            }
-            Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "❤️", color = Lilas, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Registro de dor e avaliação", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFFFD9DC), RoundedCornerShape(10.dp))
-                        .padding(12.dp)
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "Última avaliação • 08/10/2026", color = Color(0xFF9C4350), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text(text = "4/10", color = Color(0xFF9C4350), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Intensidade da dor", color = Color(0xFF9C4350), fontSize = 12.sp)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp)
-                                .height(6.dp)
-                                .background(Color.White.copy(alpha = 0.5f), CircleShape)
-                        ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "Última avaliação • 08/10/2026", color = Color(0xFF9C4350), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(text = "4/10", color = Color(0xFF9C4350), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = "Intensidade da dor", color = Color(0xFF9C4350), fontSize = 12.sp)
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(0.4f)
-                                    .fillMaxHeight()
-                                    .background(Color(0xFFE34B63), CircleShape)
-                            )
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                                    .height(6.dp)
+                                    .background(Color.White.copy(alpha = 0.5f), CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.4f)
+                                        .fillMaxHeight()
+                                        .background(Color(0xFFE34B63), CircleShape)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = "Região: lombar", color = Texto, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text(text = "Observação: desconforto relatado pelo aluno.", color = Cinza, fontSize = 11.sp, lineHeight = 15.sp)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Região: lombar", color = Texto, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text(text = "Observação: desconforto relatado pelo aluno.", color = Cinza, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = { },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Lilas)
+                    ) {
+                        Text(text = "+ Nova avaliação", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
-                Button(
-                    onClick = { },
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Lilas)
-                ) {
-                    Text(text = "+ Nova avaliação", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Cartao {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "📊", color = Lilas, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Histórico do aluno", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Evolução da intensidade da dor", color = Cinza, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                ) {
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        Column(
-                            modifier = Modifier.fillMaxHeight().width(24.dp),
-                            verticalArrangement = Arrangement.SpaceBetween,
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            Text("10", fontSize = 10.sp, color = Cinza)
-                            Text("7,5", fontSize = 10.sp, color = Cinza)
-                            Text("5", fontSize = 10.sp, color = Cinza)
-                            Text("2.5", fontSize = 10.sp, color = Cinza)
-                            Text("0", fontSize = 10.sp, color = Cinza)
-                        }
+                Cartao {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "📊", color = Lilas, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            GraficoHistoricoCustomizado()
+                        Text(text = "Histórico do aluno", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "Evolução da intensidade da dor", color = Cinza, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                    ) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            Column(
+                                modifier = Modifier.fillMaxHeight().width(24.dp),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                Text("10", fontSize = 10.sp, color = Cinza)
+                                Text("7,5", fontSize = 10.sp, color = Cinza)
+                                Text("5", fontSize = 10.sp, color = Cinza)
+                                Text("2.5", fontSize = 10.sp, color = Cinza)
+                                Text("0", fontSize = 10.sp, color = Cinza)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                GraficoHistoricoCustomizado()
+                            }
                         }
                     }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 32.dp, top = 8.dp, end = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("15/09", color = Cinza, fontSize = 10.sp)
+                        Text("22/09", color = Cinza, fontSize = 10.sp)
+                        Text("01/10", color = Cinza, fontSize = 10.sp)
+                        Text("08/10", color = Cinza, fontSize = 10.sp)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(text = "Dados ilustrativos • Escala de 0 a 10", color = Cinza, fontSize = 10.sp)
+                    Spacer(modifier = Modifier.height(18.dp))
+                    HorizontalDivider(color = Color(0xFFE9E7EC), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(text = "Avaliações anteriores", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Texto)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ItemAvaliacaoHistorica(data = "08/10/2026", regiao = "Região lombar", nota = "4/10", colorNota = Color(0xFFE34B63))
+                    ItemAvaliacaoHistorica(data = "01/10/2026", regiao = "Região lombar", nota = "6/10", colorNota = Color(0xFFE34B63))
+                    ItemAvaliacaoHistorica(data = "22/09/2026", regiao = "Região lombar", nota = "5/10", colorNota = Color(0xFFE34B63))
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 32.dp, top = 8.dp, end = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("15/09", color = Cinza, fontSize = 10.sp)
-                    Text("22/09", color = Cinza, fontSize = 10.sp)
-                    Text("01/10", color = Cinza, fontSize = 10.sp)
-                    Text("08/10", color = Cinza, fontSize = 10.sp)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "Dados ilustrativos • Escala de 0 a 10", color = Cinza, fontSize = 10.sp)
-                Spacer(modifier = Modifier.height(18.dp))
-                HorizontalDivider(color = Color(0xFFE9E7EC), thickness = 1.dp)
                 Spacer(modifier = Modifier.height(14.dp))
-                Text(text = "Avaliações anteriores", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Texto)
-                Spacer(modifier = Modifier.height(10.dp))
-                ItemAvaliacaoHistorica(data = "08/10/2026", regiao = "Região lombar", nota = "4/10", corNota = Color(0xFFE34B63))
-                ItemAvaliacaoHistorica(data = "01/10/2026", regiao = "Região lombar", nota = "6/10", corNota = Color(0xFFE34B63))
-                ItemAvaliacaoHistorica(data = "22/09/2026", regiao = "Região lombar", nota = "5/10", corNota = Color(0xFFE34B63))
             }
-            Spacer(modifier = Modifier.height(14.dp))
         }
+// Barra inferior adicionada à TelaPerfilAluno
+        DashboardBottomBar(
+            telaAtual = AppScreen.PerfilAluno,
+            onInicio = onDashboard,
+            onAlunos = onVoltar,
+            onTreinos = onTreinos,
+            onRegistros = {},
+            onMais = {}
+        )
     }
 }
 @Composable
@@ -722,7 +768,7 @@ private fun ItemAvaliacaoHistorica(
     data: String,
     regiao: String,
     nota: String,
-    corNota: Color
+    colorNota: Color
 ) {
     Box(
         modifier = Modifier
@@ -748,7 +794,7 @@ private fun ItemAvaliacaoHistorica(
                 Text(text = data, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Texto)
                 Text(text = regiao, fontSize = 11.sp, color = Cinza)
             }
-            Text(text = nota, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = corNota)
+            Text(text = nota, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = colorNota)
         }
     }
 }
@@ -796,8 +842,7 @@ private fun GraficoHistoricoCustomizado() {
         }
     }
 }
-
-// Tela de Gestão de Treinos e Planejamentos (Nova Tela)
+// Tela de Gestão de Treinos e Planejamentos
 @Composable
 fun TelaTreinos(
     onVoltar: () -> Unit,
@@ -812,35 +857,43 @@ fun TelaTreinos(
     )
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-// Cabeçalho Roxo do aplicativo com botão Novo Treino integrado
+// Cabeçalho roxo compacto - Apenas para a Logo centralizada
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(brush = Brush.verticalGradient(colors = listOf(Color(0xFF241B50), Color(0xFF33205E))))
+                    .padding(vertical = 12.dp)
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 22.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.logo_fitcare),
-                            contentDescription = "Logo Ícaro's FitCare",
-                            modifier = Modifier.width(155.dp).height(78.dp)
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Button(
-                            onClick = { /* Iniciar formulário de novo treino */ },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDDF4E3)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("+ Novo treino", color = Color(0xFF39754A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = "Treinos", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text(text = "Gerencie os planejamentos dos seus alunos.", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_fitcare),
+                        contentDescription = "Logo Ícaro's FitCare",
+                        modifier = Modifier.width(140.dp).height(70.dp)
+                    )
                 }
             }
+// Títulos claros e Botão "Novo Treino" colocados fora da faixa roxa
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Treinos", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Texto)
+                        Text(text = "Gerencie os planejamentos dos seus alunos.", color = Cinza, fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = { /* Iniciar formulário de novo treino */ },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDDF4E3)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("+ Novo treino", color = Color(0xFF39754A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
 // Campo de pesquisa rápida da lista de planejamentos
                 OutlinedTextField(
                     value = pesquisa,
@@ -920,7 +973,7 @@ private data class RowTreinoData(
     val aluno: String, val nomeTreino: String, val periodo: String, val frequencia: String,
     val progresso: Float, val statusTxt: String, val corStatus: Color, val corTxt: Color
 )
-// Barra de navegação inferior global do aplicativo
+// Barra de navegação inferior global do aplicativo - SEM EMOJI DE PESO
 @Composable
 private fun DashboardBottomBar(
     telaAtual: AppScreen,
@@ -933,9 +986,12 @@ private fun DashboardBottomBar(
     Surface(modifier = Modifier.fillMaxWidth(), color = Color.White, shadowElevation = 8.dp) {
         Row(modifier = Modifier.fillMaxWidth().height(68.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
             DashboardNavItem(icone = "⌂", titulo = "Início", selecionado = telaAtual == AppScreen.Dashboard, onClick = onInicio)
-            DashboardNavItem(icone = "♙", titulo = "Alunos", selecionado = telaAtual == AppScreen.Alunos, onClick = onAlunos)
-            DashboardNavItem(icone = "🏋", titulo = "Treinos", selecionado = telaAtual == AppScreen.Treinos, onClick = onTreinos)
-            DashboardNavItem(icone = "▣", titulo = "Registros", selecionado = telaAtual == AppScreen.PerfilAluno, onClick = onRegistros)
+            DashboardNavItem(icone = "♙", titulo = "Alunos", selecionado = telaAtual == AppScreen.Alunos || telaAtual == AppScreen.PerfilAluno, onClick = onAlunos)
+
+            // ÍCONE ALTERADO DE '🏋' PARA '⚙' (OU OUTRO SÍMBOLO DA SUA PREFERÊNCIA)
+            DashboardNavItem(icone = "⚙", titulo = "Treinos", selecionado = telaAtual == AppScreen.Treinos, onClick = onTreinos)
+
+            DashboardNavItem(icone = "▣", titulo = "Registros", selecionado = false, onClick = onRegistros)
             DashboardNavItem(icone = "⋯", titulo = "Mais", selecionado = telaAtual == AppScreen.Login, onClick = onMais)
         }
     }
@@ -964,7 +1020,6 @@ fun PreviewLogin() {
         TelaLogin(onEntrar = {})
     }
 }
-
 @Preview(showBackground = true, showSystemUi = true, name = "02 - Dashboard")
 @Composable
 fun PreviewDashboard() {
@@ -977,7 +1032,6 @@ fun PreviewDashboard() {
         )
     }
 }
-
 @Preview(showBackground = true, showSystemUi = true, name = "03 - Alunos")
 @Composable
 fun PreviewAlunos() {
@@ -989,18 +1043,18 @@ fun PreviewAlunos() {
         )
     }
 }
-
 @Preview(showBackground = true, showSystemUi = true, name = "04 - Perfil do Aluno")
 @Composable
 fun PreviewPerfilAluno() {
     MaterialTheme {
         TelaPerfilAluno(
             nomeAluno = "Lucas Carvalho",
-            onVoltar = {}
+            onVoltar = {},
+            onDashboard = {},
+            onTreinos = {}
         )
     }
 }
-
 @Preview(showBackground = true, showSystemUi = true, name = "06 - Tela de Treinos")
 @Composable
 fun PreviewTreinos() {
