@@ -1,5 +1,8 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import android.os.Bundle
@@ -210,7 +213,12 @@ fun TelaLogin(onEntrar: () -> Unit) {
                 placeholder = { Text(text = "Senha", color = LoginPlaceholder) },
                 trailingIcon = {
                     IconButton(onClick = { senhaVisivel = !senhaVisivel }) {
-                        Text(text = if (senhaVisivel) "🙈" else "👁", fontSize = 18.sp)
+                        Icon(
+                            imageVector = if (senhaVisivel) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = if (senhaVisivel) "Esconder senha" else "Mostrar senha",
+                            tint = LoginPlaceholder,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 },
                 visualTransformation = if (senhaVisivel) VisualTransformation.None else PasswordVisualTransformation(),
@@ -234,7 +242,7 @@ fun TelaLogin(onEntrar: () -> Unit) {
                 Text(text = "ENTRAR", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(modifier = Modifier.height(22.dp))
-            Text(text = "Esqueci minha senha?", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = LoginAzulClaro, modifier = Modifier.clickable {})
+            Text(text = "Esqueci minha senha", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = LoginAzulClaro, modifier = Modifier.clickable {})
         }
     }
 }
