@@ -1,5 +1,9 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import br.com.icaros.fitcare.data.AlunoRepository
+import br.com.icaros.fitcare.data.FitCareDatabase
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -57,8 +61,12 @@ private val LoginAzulClaro = Color(0xFF8CA0FF)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val database = FitCareDatabase.getDatabase(applicationContext)
+        val repository = AlunoRepository(database.alunoDao())
+
         setContent {
-            FitCareApp()
+            FitCareApp(repository = repository)
         }
     }
 }
@@ -68,13 +76,14 @@ private enum class AppScreen {
     Login,
     Dashboard,
     Alunos,
+    CadastroAluno,
     PerfilAluno,
     Treinos
 }
 
 // Fluxo de navegação principal da aplicação
 @Composable
-fun FitCareApp() {
+fun FitCareApp(repository: AlunoRepository) {
     var tela by remember { mutableStateOf(AppScreen.Login) }
     var alunoSelecionado by remember { mutableStateOf("Ana Oliveira") }
 
@@ -97,6 +106,7 @@ fun FitCareApp() {
                 AppScreen.Dashboard -> {
                     TelaDashboard(
                         onAlunos = { tela = AppScreen.Alunos },
+                        onCadastrarAluno = { tela = AppScreen.CadastroAluno },
                         onTreinos = { tela = AppScreen.Treinos },
                         onPerfil = {
                             alunoSelecionado = "Ana Oliveira"
@@ -105,8 +115,18 @@ fun FitCareApp() {
                         onSair = { tela = AppScreen.Login }
                     )
                 }
+                AppScreen.CadastroAluno -> {
+                    Text(
+                        text = "Cadastro de aluno",
+                        modifier = Modifier.padding(24.dp),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Texto
+                    )
+                }
                 AppScreen.Alunos -> {
                     TelaAlunos(
+                        repository = repository,
                         onVoltar = { tela = AppScreen.Dashboard },
                         onSelecionarAluno = {
                             alunoSelecionado = it
@@ -251,6 +271,7 @@ fun TelaLogin(onEntrar: () -> Unit) {
 @Composable
 fun TelaDashboard(
     onAlunos: () -> Unit,
+    onCadastrarAluno: () -> Unit,
     onTreinos: () -> Unit,
     onPerfil: () -> Unit,
     onSair: () -> Unit
@@ -320,8 +341,25 @@ fun TelaDashboard(
                 Text(text = "Ações rápidas", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Texto)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DashboardAcao(modifier = Modifier.weight(1f), titulo = "Cadastrar aluno", subtitulo = "Adicionar novo aluno", corFundo = Color(0xFFE6D9FA), corTexto = Color(0xFF5E398D), icone = "+", onClick = onAlunos)
-                    DashboardAcao(modifier = Modifier.weight(1f), titulo = "Consultar alunos", subtitulo = "Ver lista e filtros", corFundo = Color(0xFFDCEBFF), corTexto = Color(0xFF416C93), icone = "⌕", onClick = onAlunos)
+                    DashboardAcao(
+                        modifier = Modifier.weight(1f),
+                        titulo = "Cadastrar aluno",
+                        subtitulo = "Adicionar novo aluno",
+                        corFundo = Color(0xFFE6D9FA),
+                        corTexto = Color(0xFF5E398D),
+                        icone = "+",
+                        onClick = onCadastrarAluno
+                    )
+
+                    DashboardAcao(
+                        modifier = Modifier.weight(1f),
+                        titulo = "Consultar alunos",
+                        subtitulo = "Ver lista e filtros",
+                        corFundo = Color(0xFFDCEBFF),
+                        corTexto = Color(0xFF416C93),
+                        icone = "⌕",
+                        onClick = onAlunos
+                    )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -415,17 +453,20 @@ private fun DashboardAluno(nome: String, treino: String, status: String, statusC
 }
 // Tela de Lista Completa de Alunos com filtros
 @Composable
-fun TelaAlunos(onVoltar: () -> Unit, onSelecionarAluno: (String) -> Unit, onTreinos: () -> Unit) {
+fun TelaAlunos(
+    repository: AlunoRepository,
+    onVoltar: () -> Unit,
+    onSelecionarAluno: (String) -> Unit,
+    onTreinos: () -> Unit
+) {
     var pesquisa by remember { mutableStateOf("") }
     var filtroSelecionado by remember { mutableStateOf("Todos") }
-    val alunos = listOf(
-        Triple("Lucas Carvalho", "Força e Hipertrofia", "Em atenção"),
-        Triple("Ana Souza", "Emagrecimento", "Em dia"),
-        Triple("Rafael Martins", "Treinamento funcional", "Em dia"),
-        Triple("Mariana Costa", "Condicionamento físico", "Em atenção")
-    )
-    val filtrados = alunos.filter { (nome, _, status) ->
-        nome.contains(pesquisa, ignoreCase = true) && (filtroSelecionado == "Todos" || status == filtroSelecionado)
+    val alunos by repository
+        .listarAlunos()
+        .collectAsState(initial = emptyList())
+    val filtrados = alunos.filter { aluno ->
+        aluno.nome.contains(pesquisa, ignoreCase = true) &&
+                (filtroSelecionado == "Todos" || aluno.status == filtroSelecionado)
     }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -485,7 +526,10 @@ fun TelaAlunos(onVoltar: () -> Unit, onSelecionarAluno: (String) -> Unit, onTrei
                     }
                 }
                 Spacer(modifier = Modifier.height(18.dp))
-                filtrados.forEach { (nome, objetivo, status) ->
+                filtrados.forEach { aluno ->
+                    val nome = aluno.nome
+                    val objetivo = aluno.objetivo
+                    val status = aluno.status
                     val corStatus = if (status == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
                     val corTextoStatus = if (status == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
                     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelecionarAluno(nome) }, shape = RoundedCornerShape(13.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -1034,23 +1078,30 @@ fun PreviewDashboard() {
     MaterialTheme {
         TelaDashboard(
             onAlunos = {},
+            onCadastrarAluno = {},
             onTreinos = {},
             onPerfil = {},
             onSair = {}
         )
     }
 }
-@Preview(showBackground = true, showSystemUi = true, name = "03 - Alunos")
+@Preview(showBackground = true)
 @Composable
 fun PreviewAlunos() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val database = FitCareDatabase.getDatabase(context)
+    val repository = AlunoRepository(database.alunoDao())
+
     MaterialTheme {
         TelaAlunos(
+            repository = repository,
             onVoltar = {},
             onSelecionarAluno = {},
             onTreinos = {}
         )
     }
 }
+
 @Preview(showBackground = true, showSystemUi = true, name = "04 - Perfil do Aluno")
 @Composable
 fun PreviewPerfilAluno() {
