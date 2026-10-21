@@ -51,19 +51,19 @@ O projeto está organizado em quatro sprints, com desenvolvimento incremental e 
 
 **Sprint 01 — Estrutura inicial e autenticação**
 
-Estruturação inicial do aplicativo, desenvolvimento das primeiras interfaces, implementação da navegação entre telas e construção da interface de login.
+Configuração inicial do projeto mobile (Kotlin/Jetpack Compose), estruturação da navegação e desenvolvimento das primeiras interfaces, incluindo login, dashboard, listagem e perfil do aluno.
 
 **Sprint 02 — Gerenciamento e persistência de alunos**
 
-Implementação da estrutura de persistência local, organização dos dados dos alunos e desenvolvimento das funcionalidades de cadastro, consulta, edição, listagem, busca e validação de informações.
+Implementação da persistência local de dados e das funcionalidades do CRUD de alunos (cadastro, consulta, edição e exclusão), além de filtros de busca e lógica inicial de classificação de restrições dos alunos.
 
 **Sprint 03 — Treinamentos e acompanhamento**
 
-Desenvolvimento das funcionalidades relacionadas à organização dos treinamentos e ao acompanhamento individual dos alunos, conforme os requisitos priorizados para essa etapa.
+Desenvolvimento das ferramentas de acompanhamento, como registro de dores, anamnese, gráficos de evolução e implementação da Central de Atenção para destacar alunos que necessitam de cuidados específicos.
 
 **Sprint 04 — Finalização e validação**
 
-Integração e revisão das funcionalidades implementadas, realização de testes, correção de problemas identificados e preparação da versão final do aplicativo.
+Integração de todos os fluxos, implementação e validação do acesso de usuários com foco em proteção de dados, realização de testes integrados, correções de usabilidade e fechamento do MVP.
 
 ## Status
 
