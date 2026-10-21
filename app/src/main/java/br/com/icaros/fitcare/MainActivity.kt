@@ -1,5 +1,11 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.database.sqlite.SQLiteConstraintException
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import br.com.icaros.fitcare.data.AlunoRepository
@@ -117,7 +123,13 @@ fun FitCareApp(repository: AlunoRepository) {
                 }
                 AppScreen.CadastroAluno -> {
                     TelaCadastroAluno(
-                        onVoltar = { tela = AppScreen.Dashboard }
+                        repository = repository,
+                        onVoltar = {
+                            tela = AppScreen.Dashboard
+                        },
+                        onCadastroConcluido = {
+                            tela = AppScreen.Alunos
+                        }
                     )
                 }
                 AppScreen.Alunos -> {
@@ -157,7 +169,9 @@ fun FitCareApp(repository: AlunoRepository) {
 
 @Composable
 fun TelaCadastroAluno(
-    onVoltar: () -> Unit
+    repository: AlunoRepository,
+    onVoltar: () -> Unit,
+    onCadastroConcluido: () -> Unit
 ) {
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -166,6 +180,12 @@ fun TelaCadastroAluno(
     var erroNome by remember { mutableStateOf(false) }
     var erroEmail by remember { mutableStateOf(false) }
     var erroObjetivo by remember { mutableStateOf(false) }
+
+    var mensagem by remember { mutableStateOf("") }
+    var cadastroSucesso by remember { mutableStateOf(false) }
+    var salvando by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -331,12 +351,51 @@ fun TelaCadastroAluno(
             }
 
             Button(
+
                 onClick = {
                     erroNome = nome.isBlank()
+
                     erroEmail = !android.util.Patterns.EMAIL_ADDRESS
                         .matcher(email.trim())
                         .matches()
+
                     erroObjetivo = objetivo.isBlank()
+
+                    mensagem = ""
+                    cadastroSucesso = false
+
+                    if (!erroNome && !erroEmail && !erroObjetivo && !salvando) {
+                        salvando = true
+
+                        coroutineScope.launch {
+                            try {
+                                val dataAtual = SimpleDateFormat(
+                                    "dd/MM/yyyy",
+                                    Locale("pt", "BR")
+                                ).format(Date())
+
+                                val aluno = br.com.icaros.fitcare.data.AlunoEntity(
+                                    nome = nome.trim(),
+                                    email = email.trim(),
+                                    dataCadastro = dataAtual,
+                                    objetivo = objetivo.trim()
+                                )
+
+                                repository.inserir(aluno)
+
+                                cadastroSucesso = true
+                                mensagem = "Aluno cadastrado com sucesso!"
+
+                                onCadastroConcluido()
+                            } catch (e: SQLiteConstraintException) {
+                                mensagem = "Este e-mail já está cadastrado."
+                            } catch (e: Exception) {
+                                mensagem = "Não foi possível cadastrar o aluno. Tente novamente."
+                            } finally {
+                                salvando = false
+                            }
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -347,9 +406,18 @@ fun TelaCadastroAluno(
                 )
             ) {
                 Text(
-                    text = "Cadastrar aluno",
+                    text = if (salvando) "Cadastrando..." else "Cadastrar aluno",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (mensagem.isNotBlank()) {
+                Text(
+                    text = mensagem,
+                    color = if (cadastroSucesso) Color(0xFF2E7D32) else Vermelho,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
 
