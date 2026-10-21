@@ -116,12 +116,8 @@ fun FitCareApp(repository: AlunoRepository) {
                     )
                 }
                 AppScreen.CadastroAluno -> {
-                    Text(
-                        text = "Cadastro de aluno",
-                        modifier = Modifier.padding(24.dp),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Texto
+                    TelaCadastroAluno(
+                        onVoltar = { tela = AppScreen.Dashboard }
                     )
                 }
                 AppScreen.Alunos -> {
@@ -155,6 +151,232 @@ fun FitCareApp(repository: AlunoRepository) {
                 }
             }
         }
+    }
+}
+// tela cadastro de aluno
+
+@Composable
+fun TelaCadastroAluno(
+    onVoltar: () -> Unit
+) {
+    var nome by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var objetivo by remember { mutableStateOf("") }
+
+    var erroNome by remember { mutableStateOf(false) }
+    var erroEmail by remember { mutableStateOf(false) }
+    var erroObjetivo by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF8F6FC))
+    ) {
+        // Cabeçalho roxo padronizado
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF241B50),
+                            Color(0xFF33205E)
+                        )
+                    )
+                )
+                .padding(vertical = 12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Botão para voltar ao Dashboard
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .clickable { onVoltar() },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "←",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Voltar",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Logo centralizada
+                Image(
+                    painter = painterResource(
+                        id = R.drawable.logo_fitcare
+                    ),
+                    contentDescription = "Logo Ícaro's FitCare",
+                    modifier = Modifier
+                        .width(140.dp)
+                        .height(70.dp)
+                )
+            }
+        }
+
+        // Conteúdo do formulário
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "Cadastro de aluno",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Texto
+            )
+
+            Text(
+                text = "Preencha os dados para cadastrar um novo aluno.",
+                fontSize = 13.sp,
+                color = Cinza
+            )
+
+            OutlinedTextField(
+                value = nome,
+                onValueChange = {
+                    nome = it
+                    erroNome = false
+                },
+                label = { Text("Nome completo") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = erroNome,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
+
+            if (erroNome) {
+                Text(
+                    text = "Informe o nome completo.",
+                    color = Vermelho,
+                    fontSize = 12.sp
+                )
+            }
+
+            OutlinedTextField(
+                value = email,
+                onValueChange = {
+                    email = it
+                    erroEmail = false
+                },
+                label = { Text("E-mail") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = erroEmail,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
+
+            if (erroEmail) {
+                Text(
+                    text = "Informe um e-mail válido.",
+                    color = Vermelho,
+                    fontSize = 12.sp
+                )
+            }
+
+            OutlinedTextField(
+                value = objetivo,
+                onValueChange = {
+                    objetivo = it
+                    erroObjetivo = false
+                },
+                label = { Text("Objetivo do aluno") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                isError = erroObjetivo,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
+
+            if (erroObjetivo) {
+                Text(
+                    text = "Informe o objetivo do aluno.",
+                    color = Vermelho,
+                    fontSize = 12.sp
+                )
+            }
+
+            Button(
+                onClick = {
+                    erroNome = nome.isBlank()
+                    erroEmail = !android.util.Patterns.EMAIL_ADDRESS
+                        .matcher(email.trim())
+                        .matches()
+                    erroObjetivo = objetivo.isBlank()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Lilas
+                )
+            ) {
+                Text(
+                    text = "Cadastrar aluno",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            OutlinedButton(
+                onClick = onVoltar,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Lilas
+                ),
+                border = BorderStroke(1.dp, Lilas)
+            ) {
+                Text("Cancelar")
+            }
+        }
+
+        // Rodapé padronizado
+        DashboardBottomBar(
+            telaAtual = AppScreen.CadastroAluno,
+            onInicio = onVoltar,
+            onAlunos = onVoltar,
+            onTreinos = onVoltar,
+            onRegistros = {},
+            onMais = {}
+        )
     }
 }
 
