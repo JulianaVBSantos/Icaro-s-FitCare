@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // Mapeamento das telas do aplicativo
-private enum class AppScreen {
+enum class AppScreen {
     Login,
     Dashboard,
     Alunos,
@@ -91,7 +91,7 @@ private enum class AppScreen {
 @Composable
 fun FitCareApp(repository: AlunoRepository) {
     var tela by remember { mutableStateOf(AppScreen.Login) }
-    var alunoSelecionado by remember { mutableStateOf("Ana Oliveira") }
+    var alunoSelecionadoId by remember { mutableStateOf<Long?>(null) }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -111,11 +111,12 @@ fun FitCareApp(repository: AlunoRepository) {
                 }
                 AppScreen.Dashboard -> {
                     TelaDashboard(
+                        repository = repository,
                         onAlunos = { tela = AppScreen.Alunos },
                         onCadastrarAluno = { tela = AppScreen.CadastroAluno },
                         onTreinos = { tela = AppScreen.Treinos },
-                        onPerfil = {
-                            alunoSelecionado = "Ana Oliveira"
+                        onPerfil = { aluno ->
+                            alunoSelecionadoId = aluno.id
                             tela = AppScreen.PerfilAluno
                         },
                         onSair = { tela = AppScreen.Login }
@@ -129,6 +130,9 @@ fun FitCareApp(repository: AlunoRepository) {
                         },
                         onCadastroConcluido = {
                             tela = AppScreen.Alunos
+                        },
+                        onTreinos = {
+                            tela = AppScreen.Treinos
                         }
                     )
                 }
@@ -136,28 +140,30 @@ fun FitCareApp(repository: AlunoRepository) {
                     TelaAlunos(
                         repository = repository,
                         onVoltar = { tela = AppScreen.Dashboard },
-                        onSelecionarAluno = {
-                            alunoSelecionado = it
+                        onSelecionarAluno = { aluno ->
+                            alunoSelecionadoId = aluno.id
                             tela = AppScreen.PerfilAluno
                         },
                         onTreinos = { tela = AppScreen.Treinos }
                     )
                 }
                 AppScreen.PerfilAluno -> {
-                    TelaPerfilAluno(
-                        nomeAluno = alunoSelecionado,
-                        onVoltar = { tela = AppScreen.Alunos },
-                        onDashboard = { tela = AppScreen.Dashboard },
-                        onTreinos = { tela = AppScreen.Treinos }
-                    )
+                    alunoSelecionadoId?.let { id ->
+                        TelaPerfilAluno(
+                            alunoId = id,
+                            repository = repository,
+                            onVoltar = { tela = AppScreen.Alunos },
+                            onDashboard = { tela = AppScreen.Dashboard },
+                            onTreinos = { tela = AppScreen.Treinos }
+                        )
+                    }
                 }
                 AppScreen.Treinos -> {
                     TelaTreinos(
                         onVoltar = { tela = AppScreen.Dashboard },
                         onAlunos = { tela = AppScreen.Alunos },
                         onPerfil = {
-                            alunoSelecionado = "Ana Oliveira"
-                            tela = AppScreen.PerfilAluno
+                            tela = AppScreen.Alunos
                         }
                     )
                 }
@@ -171,11 +177,16 @@ fun FitCareApp(repository: AlunoRepository) {
 fun TelaCadastroAluno(
     repository: AlunoRepository,
     onVoltar: () -> Unit,
-    onCadastroConcluido: () -> Unit
+    onCadastroConcluido: () -> Unit,
+    onTreinos: () -> Unit
 ) {
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objetivo by remember { mutableStateOf("") }
+
+    var observacoesProfissionais by remember { mutableStateOf("") }
+    var condicoes by remember { mutableStateOf("") }
+    var restricoes by remember { mutableStateOf("") }
 
     var erroNome by remember { mutableStateOf(false) }
     var erroEmail by remember { mutableStateOf(false) }
@@ -340,6 +351,7 @@ fun TelaCadastroAluno(
                     focusedBorderColor = Lilas,
                     unfocusedBorderColor = Color(0xFFD8D3DE)
                 )
+
             )
 
             if (erroObjetivo) {
@@ -349,6 +361,57 @@ fun TelaCadastroAluno(
                     fontSize = 12.sp
                 )
             }
+
+            OutlinedTextField(
+                value = observacoesProfissionais,
+                onValueChange = {
+                    observacoesProfissionais = it
+                },
+                label = { Text("Observações profissionais") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
+
+            OutlinedTextField(
+                value = condicoes,
+                onValueChange = {
+                    condicoes = it
+                },
+                label = { Text("Condições") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
+
+            OutlinedTextField(
+                value = restricoes,
+                onValueChange = {
+                    restricoes = it
+                },
+                label = { Text("Restrições") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Lilas,
+                    unfocusedBorderColor = Color(0xFFD8D3DE)
+                )
+            )
 
             Button(
 
@@ -378,7 +441,10 @@ fun TelaCadastroAluno(
                                     nome = nome.trim(),
                                     email = email.trim(),
                                     dataCadastro = dataAtual,
-                                    objetivo = objetivo.trim()
+                                    objetivo = objetivo.trim(),
+                                    observacoesProfissionais = observacoesProfissionais.trim(),
+                                    condicoes = condicoes.trim(),
+                                    restricoes = restricoes.trim()
                                 )
 
                                 repository.inserir(aluno)
@@ -440,8 +506,8 @@ fun TelaCadastroAluno(
         DashboardBottomBar(
             telaAtual = AppScreen.CadastroAluno,
             onInicio = onVoltar,
-            onAlunos = onVoltar,
-            onTreinos = onVoltar,
+            onAlunos = onCadastroConcluido,
+            onTreinos = onTreinos,
             onRegistros = {},
             onMais = {}
         )
@@ -560,13 +626,22 @@ fun TelaLogin(onEntrar: () -> Unit) {
 // Tela de Dashboard principal
 @Composable
 fun TelaDashboard(
+    repository: AlunoRepository,
     onAlunos: () -> Unit,
     onCadastrarAluno: () -> Unit,
     onTreinos: () -> Unit,
-    onPerfil: () -> Unit,
+    onPerfil: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onSair: () -> Unit
 ) {
     var pesquisa by remember { mutableStateOf("") }
+
+    val alunos by repository
+        .listarAlunos()
+        .collectAsState(initial = emptyList())
+
+    val alunosFiltrados = alunos.filter { aluno ->
+        aluno.nome.contains(pesquisa.trim(), ignoreCase = true)
+    }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
             // Cabeçalho roxo compacto - Apenas para a Logo centralizada
@@ -589,7 +664,7 @@ fun TelaDashboard(
                         modifier = Modifier
                             .size(36.dp)
                             .background(Color.White.copy(alpha = 0.12f), CircleShape)
-                            .clickable { onPerfil() }
+                            .clickable { onAlunos() }
                             .align(Alignment.CenterEnd),
                         contentAlignment = Alignment.Center
                     ) {
@@ -662,14 +737,67 @@ fun TelaDashboard(
                     Text(text = "Ver todos ›", fontSize = 13.sp, color = Lilas, modifier = Modifier.clickable { onAlunos() })
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                DashboardAluno(nome = "Lucas Carvalho", treino = "Treino: Força e Hipertrofia", status = "Em atenção", statusCor = Color(0xFFFFEAB5), statusTextoCor = Color(0xFF9A7000), onClick = onPerfil)
-                Spacer(modifier = Modifier.height(8.dp))
-                DashboardAluno(nome = "Ana Souza", treino = "Treino: Emagrecimento", status = "Em dia", statusCor = Color(0xFFD8F3DF), statusTextoCor = Color(0xFF36844A), onClick = onPerfil)
-                Spacer(modifier = Modifier.height(8.dp))
-                DashboardAluno(nome = "Rafael Martins", treino = "Treino: Em dia", status = "Em dia", statusCor = Color(0xFFD8F3DF), statusTextoCor = Color(0xFF36844A), onClick = onPerfil)
+                if (alunosFiltrados.isEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(13.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Nenhum aluno encontrado.",
+                                color = Texto,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = if (pesquisa.isBlank()) {
+                                    "Não há alunos cadastrados."
+                                } else {
+                                    "Tente buscar por outro nome."
+                                },
+                                color = Cinza,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    alunosFiltrados.forEach { aluno ->
+                        DashboardAluno(
+                            nome = aluno.nome,
+                            treino = "Objetivo: ${aluno.objetivo}",
+                            status = aluno.status,
+                            statusCor = if (aluno.status == "Em atenção") {
+                                Color(0xFFFFEAB5)
+                            } else {
+                                Color(0xFFD8F3DF)
+                            },
+                            statusTextoCor = if (aluno.status == "Em atenção") {
+                                Color(0xFF9A7000)
+                            } else {
+                                Color(0xFF36844A)
+                            },
+                            onClick = {
+                                onPerfil(aluno)
+                            }
+                        )
+                    }
+                }
             }
         }
-        DashboardBottomBar(telaAtual = AppScreen.Dashboard, onInicio = {}, onAlunos = onAlunos, onTreinos = onTreinos, onRegistros = onPerfil, onMais = onSair)
+        DashboardBottomBar(telaAtual = AppScreen.Dashboard, onInicio = {}, onAlunos = onAlunos, onTreinos = onTreinos, onRegistros = onAlunos, onMais = onSair)
     }
 }
 // Indicadores do topo do dashboard
@@ -746,7 +874,7 @@ private fun DashboardAluno(nome: String, treino: String, status: String, statusC
 fun TelaAlunos(
     repository: AlunoRepository,
     onVoltar: () -> Unit,
-    onSelecionarAluno: (String) -> Unit,
+    onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onTreinos: () -> Unit
 ) {
     var pesquisa by remember { mutableStateOf("") }
@@ -816,31 +944,159 @@ fun TelaAlunos(
                     }
                 }
                 Spacer(modifier = Modifier.height(18.dp))
-                filtrados.forEach { aluno ->
-                    val nome = aluno.nome
-                    val objetivo = aluno.objetivo
-                    val status = aluno.status
-                    val corStatus = if (status == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
-                    val corTextoStatus = if (status == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
-                    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelecionarAluno(nome) }, shape = RoundedCornerShape(13.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.size(44.dp).background(Color(0xFFE9E7EC), CircleShape), contentAlignment = Alignment.Center) {
-                                    Text(text = nome.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString(""), color = Color(0xFF706A75), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = nome, color = Texto, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                    Text(text = objetivo, color = Cinza, fontSize = 12.sp)
-                                }
-                                Text(text = "›", color = Color(0xFF77717F), fontSize = 26.sp)
+                if (filtrados.isEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(13.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Nenhum aluno encontrado.",
+                                color = Texto,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = if (pesquisa.isBlank()) {
+                                    "Não há alunos cadastrados."
+                                } else {
+                                    "Tente buscar por outro nome ou altere o filtro."
+                                },
+                                color = Cinza,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    filtrados.forEach { aluno ->
+                        val nome = aluno.nome
+                        val objetivo = aluno.objetivo
+                        val status = aluno.status
+
+                        val corStatus =
+                            if (status == "Em atenção") {
+                                Color(0xFFFFD9DC)
+                            } else {
+                                Color(0xFFDDF4E3)
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.background(color = corStatus, shape = RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 5.dp)) {
-                                    Text(text = status, color = corTextoStatus, fontSize = 11.sp)
+
+                        val corTextoStatus =
+                            if (status == "Em atenção") {
+                                Color(0xFF9C4350)
+                            } else {
+                                Color(0xFF39754A)
+                            }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp)
+                                .clickable {
+                                    onSelecionarAluno(aluno)
+                                },
+                            shape = RoundedCornerShape(13.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(
+                                                Color(0xFFE9E7EC),
+                                                CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = nome
+                                                .split(" ")
+                                                .take(2)
+                                                .mapNotNull { it.firstOrNull() }
+                                                .joinToString(""),
+                                            color = Color(0xFF706A75),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = nome,
+                                            color = Texto,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        Text(
+                                            text = objetivo,
+                                            color = Cinza,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "›",
+                                        color = Color(0xFF77717F),
+                                        fontSize = 26.sp
+                                    )
                                 }
-                                Text(text = "Ver perfil ›", color = Lilas, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = corStatus,
+                                                shape = RoundedCornerShape(20.dp)
+                                            )
+                                            .padding(
+                                                horizontal = 12.dp,
+                                                vertical = 5.dp
+                                            )
+                                    ) {
+                                        Text(
+                                            text = status,
+                                            color = corTextoStatus,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Ver perfil ›",
+                                        color = Lilas,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
@@ -853,21 +1109,100 @@ fun TelaAlunos(
 // Tela de Perfil Individual do Aluno - ATUALIZADA COM CABEÇALHO E RODAPÉ
 @Composable
 fun TelaPerfilAluno(
-    nomeAluno: String,
+    alunoId: Long,
+    repository: AlunoRepository,
     onVoltar: () -> Unit,
     onDashboard: () -> Unit,
     onTreinos: () -> Unit
 ) {
-    val objetivoAluno = when (nomeAluno) {
-        "Lucas Carvalho" -> "Hipertrofia muscular"
-        "Ana Souza" -> "Emagrecimento"
-        "Rafael Martins" -> "Treinamento funcional"
-        "Mariana Costa" -> "Condicionamento físico"
-        else -> "Hipertrofia muscular"
+    var alunoAtual by remember { mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null) }
+    var carregando by remember { mutableStateOf(true) }
+
+    LaunchedEffect(alunoId) {
+        repository.buscarPorId(alunoId).collect { resultado ->
+            alunoAtual = resultado
+            carregando = false
+        }
     }
-    val statusAluno = if (nomeAluno == "Lucas Carvalho" || nomeAluno == "Mariana Costa") "Em atenção" else "Em dia"
-    val corStatus = if (statusAluno == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
-    val corTextoStatus = if (statusAluno == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
+
+    if (carregando) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF8F6FC)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(color = Lilas)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Carregando dados do aluno...",
+                color = Cinza,
+                fontSize = 13.sp
+            )
+        }
+        return
+    }
+
+    if (alunoAtual == null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF8F6FC)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Aluno não encontrado.",
+                color = Texto,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Não foi possível localizar os dados deste aluno.",
+                color = Cinza,
+                fontSize = 13.sp
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = onVoltar,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Lilas
+                )
+            ) {
+                Text("Voltar para alunos")
+            }
+        }
+        return
+    }
+
+    val nomeAluno = alunoAtual!!.nome
+    val objetivoAluno = alunoAtual!!.objetivo
+    val statusAluno = alunoAtual!!.status
+
+    val observacoesProfissionais = alunoAtual!!.observacoesProfissionais
+    val condicoes = alunoAtual!!.condicoes
+    val restricoes = alunoAtual!!.restricoes
+
+    val corStatus =
+        if (statusAluno == "Em atenção") {
+            Color(0xFFFFD9DC)
+        } else {
+            Color(0xFFDDF4E3)
+        }
+
+    val corTextoStatus =
+        if (statusAluno == "Em atenção") {
+            Color(0xFF9C4350)
+        } else {
+            Color(0xFF39754A)
+        }
+
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8F6FC))) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
 // Cabeçalho Roxo Compacto Padronizado com os botões de controle integrados
@@ -937,9 +1272,20 @@ fun TelaPerfilAluno(
                         Text(text = "Dados cadastrais", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Texto)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    LinhaDado(rotulo = "E-mail", valor = "${nomeAluno.lowercase().replace(" ", "")}@email.com")
-                    LinhaDado(rotulo = "Cadastro", valor = "15/09/2026")
-                    LinhaDado(rotulo = "Objetivo", valor = objetivoAluno)
+                    LinhaDado(
+                        rotulo = "E-mail",
+                        valor = alunoAtual!!.email
+                    )
+
+                    LinhaDado(
+                        rotulo = "Cadastro",
+                        valor = alunoAtual!!.dataCadastro
+                    )
+
+                    LinhaDado(
+                        rotulo = "Objetivo",
+                        valor = alunoAtual!!.objetivo
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Editar dados ›",
@@ -949,7 +1295,46 @@ fun TelaPerfilAluno(
                         modifier = Modifier.clickable { }
                     )
                 }
-                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão informações profissionais
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "🩺",
+                            color = Lilas,
+                            fontSize = 15.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Informações profissionais",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Texto
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LinhaDado(
+                        rotulo = "Observações profissionais",
+                        valor = observacoesProfissionais.ifBlank {
+                            "Não informado."
+                        }
+                    )
+
+                    LinhaDado(
+                        rotulo = "Condições",
+                        valor = condicoes.ifBlank {
+                            "Não informado."
+                        }
+                    )
+
+                    LinhaDado(
+                        rotulo = "Restrições",
+                        valor = restricoes.ifBlank {
+                            "Não informado."
+                        }
+                    )
+                }
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // Cartão Anamnese
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "📋", color = Lilas, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -984,7 +1369,7 @@ fun TelaPerfilAluno(
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                 }
-                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // Registro de dor e avaliação
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "❤️", color = Lilas, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1037,7 +1422,7 @@ fun TelaPerfilAluno(
                         Text(text = "+ Nova avaliação", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                Cartao {
+                Cartao { // histórico do aluno e avaliações anteriores
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "📊", color = Lilas, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1091,9 +1476,7 @@ fun TelaPerfilAluno(
                     ItemAvaliacaoHistorica(data = "01/10/2026", regiao = "Região lombar", nota = "6/10", colorNota = Color(0xFFE34B63))
                     ItemAvaliacaoHistorica(data = "22/09/2026", regiao = "Região lombar", nota = "5/10", colorNota = Color(0xFFE34B63))
                 }
-                Spacer(modifier = Modifier.height(14.dp))
             }
-        }
 // Barra inferior adicionada à TelaPerfilAluno
         DashboardBottomBar(
             telaAtual = AppScreen.PerfilAluno,
@@ -1103,6 +1486,7 @@ fun TelaPerfilAluno(
             onRegistros = {},
             onMais = {}
         )
+    }
     }
 }
 @Composable
@@ -1365,8 +1749,13 @@ fun PreviewLogin() {
 @Preview(showBackground = true, showSystemUi = true, name = "02 - Dashboard")
 @Composable
 fun PreviewDashboard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val database = FitCareDatabase.getDatabase(context)
+    val repository = AlunoRepository(database.alunoDao())
+
     MaterialTheme {
         TelaDashboard(
+            repository = repository,
             onAlunos = {},
             onCadastrarAluno = {},
             onTreinos = {},
@@ -1395,9 +1784,14 @@ fun PreviewAlunos() {
 @Preview(showBackground = true, showSystemUi = true, name = "04 - Perfil do Aluno")
 @Composable
 fun PreviewPerfilAluno() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val database = FitCareDatabase.getDatabase(context)
+    val repository = AlunoRepository(database.alunoDao())
+
     MaterialTheme {
         TelaPerfilAluno(
-            nomeAluno = "Lucas Carvalho",
+            alunoId = 1L,
+            repository = repository,
             onVoltar = {},
             onDashboard = {},
             onTreinos = {}

@@ -6,6 +6,7 @@ class AlunoRepository(
     private val alunoDao: AlunoDao
 ) {
 
+
     fun listarAlunos(): Flow<List<AlunoEntity>> {
         return alunoDao.listarAlunos()
     }
