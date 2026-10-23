@@ -18,9 +18,9 @@ data class AlunoEntity(
     val email: String,
     val dataCadastro: String,
     val objetivo: String,
-    val status: String = "Em dia",
+    val status: String = "Normal",
 
     val observacoesProfissionais: String = "",
     val condicoes: String = "",
-    val restricoes: String = ""
+    val restricoes: String = "",
 )

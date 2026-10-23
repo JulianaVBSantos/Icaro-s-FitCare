@@ -43,7 +43,9 @@ abstract class FitCareDatabase : RoomDatabase() {
                     FitCareDatabase::class.java,
                     "fitcare_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                    )
                     .build()
 
                 INSTANCE = instance

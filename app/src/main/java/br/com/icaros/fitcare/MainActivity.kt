@@ -664,9 +664,11 @@ fun TelaDashboard(
     val alunosFiltrados = alunos.filter { aluno ->
         aluno.nome.contains(pesquisa.trim(), ignoreCase = true)
     }
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .background(FundoApp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -1076,9 +1078,11 @@ fun TelaAlunos(
         val correspondeStatus = filtroSelecionado == "Todos" || aluno.status == filtroSelecionado
         correspondeBusca && correspondeStatus && correspondeAcompanhamento
     }
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .background(FundoApp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -1164,7 +1168,7 @@ fun TelaAlunos(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("Todos", "Em atenção", "Em dia").forEach { tag ->
+                    listOf("Todos", "Normal", "Atenção", "Prioridade").forEach { tag ->
                         val selecionado = filtroSelecionado == tag
                         Box(
                             modifier = Modifier
@@ -1249,10 +1253,18 @@ fun TelaAlunos(
                         val nome = aluno.nome
                         val objetivo = aluno.objetivo
                         val status = aluno.status
-                        val corStatus =
-                            if (status == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
-                        val corTextoStatus =
-                            if (status == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
+
+                        val corStatus = when (status) {
+                            "Prioridade" -> Color(0xFFFFD9DC)
+                            "Atenção" -> Color(0xFFFFEAB5)
+                            else -> Color(0xFFDDF4E3)
+                        }
+
+                        val corTextoStatus = when (status) {
+                            "Prioridade" -> Color(0xFF9C4350)
+                            "Atenção" -> Color(0xFF9A7000)
+                            else -> Color(0xFF39754A)
+                        }
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1408,11 +1420,22 @@ fun TelaPerfilAluno(
     val observacoesProfissionais = alunoAtual!!.observacoesProfissionais
     val condicoes = alunoAtual!!.condicoes
     val restricoes = alunoAtual!!.restricoes
-    val corStatus = if (statusAluno == "Em atenção") Color(0xFFFFD9DC) else Color(0xFFDDF4E3)
-    val corTextoStatus = if (statusAluno == "Em atenção") Color(0xFF9C4350) else Color(0xFF39754A)
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .background(FundoApp)) {
+    val corStatus = when (statusAluno) {
+        "Prioridade" -> Color(0xFFFFD9DC)
+        "Atenção" -> Color(0xFFFFEAB5)
+        else -> Color(0xFFDDF4E3)
+    }
+
+    val corTextoStatus = when (statusAluno) {
+        "Prioridade" -> Color(0xFF9C4350)
+        "Atenção" -> Color(0xFF9A7000)
+        else -> Color(0xFF39754A)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -1511,10 +1534,12 @@ fun TelaPerfilAluno(
                 }
             }
 // Cartões de Informações
-            Column(modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)) {
-                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão de dados cadastrais
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "👤", color = AzulPrincipal, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1547,27 +1572,65 @@ fun TelaPerfilAluno(
                     Text("Excluir aluno")
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+                // cartão de informações profissionais
                 Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🩺", color = AzulPrincipal, fontSize = 15.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Informações profissionais",
+                            text = "🩺",
+                            color = AzulPrincipal,
+                            fontSize = 15.sp
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "Acompanhamento",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextoPrincipal
                         )
                     }
+
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = corStatus,
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .padding(
+                                horizontal = 12.dp,
+                                vertical = 5.dp
+                            )
+                    ) {
+                        Text(
+                            text = statusAluno.uppercase(),
+                            color = corTextoStatus,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     LinhaDado(
                         rotulo = "Observações profissionais",
-                        valor = observacoesProfissionais.ifBlank { "Não informado." })
-                    LinhaDado(rotulo = "Condições", valor = condicoes.ifBlank { "Não informado." })
+                        valor = observacoesProfissionais.ifBlank { "Não informado." }
+                    )
+
+                    LinhaDado(
+                        rotulo = "Condições",
+                        valor = condicoes.ifBlank { "Não informado." }
+                    )
+
                     LinhaDado(
                         rotulo = "Restrições",
-                        valor = restricoes.ifBlank { "Não informado." })
+                        valor = restricoes.ifBlank { "Não informado." }
+                    )
                 }
-                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão de anamnese
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "📋", color = AzulPrincipal, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1613,7 +1676,7 @@ fun TelaPerfilAluno(
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                 }
-                Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
+                Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão de registro de dor e avaliação
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "❤️", color = AzulPrincipal, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1701,7 +1764,7 @@ fun TelaPerfilAluno(
                         )
                     }
                 }
-                Cartao {
+                Cartao { // cartão de histórico do aluno
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "📊", color = AzulPrincipal, fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1719,9 +1782,11 @@ fun TelaPerfilAluno(
                         fontSize = 12.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Box(modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                    ) {
                         Row(modifier = Modifier.fillMaxSize()) {
                             Column(
                                 modifier = Modifier
@@ -1975,9 +2040,11 @@ fun TelaEditarAluno(
         }
         return
     }
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .background(FundoApp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
 // CABEÇALHO PADRÃO CLARO
         Box(
             modifier = Modifier
@@ -2180,9 +2247,11 @@ fun TelaTreinos(
             Color(0xFF9C4350)
         )
     )
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .background(FundoApp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
         Column(
             modifier = Modifier
                 .weight(1f)

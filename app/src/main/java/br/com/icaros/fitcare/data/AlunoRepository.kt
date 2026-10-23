@@ -6,7 +6,6 @@ class AlunoRepository(
     private val alunoDao: AlunoDao
 ) {
 
-
     fun listarAlunos(): Flow<List<AlunoEntity>> {
         return alunoDao.listarAlunos()
     }
@@ -21,7 +20,18 @@ class AlunoRepository(
 
     suspend fun inserir(aluno: AlunoEntity): Long {
         validarAluno(aluno)
-        return alunoDao.inserir(aluno)
+
+        val classificacao = classificarAluno(
+            condicoes = aluno.condicoes,
+            restricoes = aluno.restricoes,
+            observacoes = aluno.observacoesProfissionais
+        )
+
+        val alunoClassificado = aluno.copy(
+            status = classificacao
+        )
+
+        return alunoDao.inserir(alunoClassificado)
     }
 
     suspend fun atualizar(aluno: AlunoEntity) {
@@ -31,7 +41,17 @@ class AlunoRepository(
             "O aluno precisa possuir um ID válido para ser atualizado."
         }
 
-        alunoDao.atualizar(aluno)
+        val classificacao = classificarAluno(
+            condicoes = aluno.condicoes,
+            restricoes = aluno.restricoes,
+            observacoes = aluno.observacoesProfissionais
+        )
+
+        val alunoClassificado = aluno.copy(
+            status = classificacao
+        )
+
+        alunoDao.atualizar(alunoClassificado)
     }
 
     suspend fun excluir(aluno: AlunoEntity) {
