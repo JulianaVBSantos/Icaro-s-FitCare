@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import br.com.icaros.fitcare.data.identificarMotivosAcompanhamento
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.height
@@ -1572,7 +1573,7 @@ fun TelaPerfilAluno(
                     Text("Excluir aluno")
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                // cartão de informações profissionais
+                // cartão de acompanhamento
                 Cartao(modifier = Modifier.padding(bottom = 14.dp)) {
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1629,6 +1630,36 @@ fun TelaPerfilAluno(
                         rotulo = "Restrições",
                         valor = restricoes.ifBlank { "Não informado." }
                     )
+
+
+                    val motivos = identificarMotivosAcompanhamento(
+                        condicoes = condicoes,
+                        restricoes = restricoes,
+                        observacoes = observacoesProfissionais
+                    )
+
+                    if (motivos.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Alertas identificados",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFB3261E)
+                            )
+
+                            motivos.forEach { motivo ->
+                                Text(
+                                    text = "• $motivo",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFB3261E)
+                                )
+                            }
+                        }
+                    }
                 }
                 Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão de anamnese
                     Row(verticalAlignment = Alignment.CenterVertically) {
