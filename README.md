@@ -20,17 +20,19 @@ Desenvolver uma solução mobile que facilite o gerenciamento das informações 
 - Alunos acompanhados pelo profissional;
 - Pessoas que necessitam de acompanhamento de exercícios adaptado às suas condições e limitações.
 
-## Principais funcionalidades previstas
+## Principais funcionalidades
 
 - Cadastro e gerenciamento de alunos;
-- Registro de informações e observações sobre os alunos;
+- Consulta e edição de informações dos alunos;
 - Registro de condições e restrições físicas;
-- Acompanhamento de treinamentos;
-- Registro de relatos de dor e ocorrências;
-- Histórico de acompanhamento;
-- Organização das informações para auxiliar o profissional durante os atendimentos.
+- Classificação dos alunos conforme as regras de acompanhamento;
+- Pesquisa e filtros para facilitar a localização de alunos;
+- Visualização do perfil e do histórico de acompanhamento;
+- Cadastro, consulta, edição e exclusão de treinos;
+- Gerenciamento dos exercícios associados aos treinos;
+- Indicadores e informações para auxiliar o profissional na organização dos atendimentos.
 
-As funcionalidades poderão ser ajustadas conforme o levantamento de requisitos e a evolução do projeto durante as sprints.
+As funcionalidades são desenvolvidas de forma incremental, conforme os requisitos definidos para cada sprint.
 
 ## Tecnologias
 
@@ -51,27 +53,29 @@ O projeto está organizado em quatro sprints, com desenvolvimento incremental e 
 
 **Sprint 01 — Estrutura inicial e autenticação**
 
-Configuração inicial do projeto mobile (Kotlin/Jetpack Compose), estruturação da navegação e desenvolvimento das primeiras interfaces, incluindo login, dashboard, listagem e perfil do aluno.
+Concluída. Configuração inicial do projeto mobile com Kotlin e Jetpack Compose, estruturação da navegação e desenvolvimento das primeiras interfaces, incluindo login, dashboard, listagem e perfil do aluno.
 
-**Sprint 02 — Gerenciamento e persistência de alunos**
+**Sprint 02 — Gerenciamento, persistência e qualidade**
 
-Implementação da persistência local de dados e das funcionalidades do CRUD de alunos (cadastro, consulta, edição e exclusão), além de filtros de busca e lógica inicial de classificação de restrições dos alunos.
+Concluída com sucesso. Implementação da persistência local de dados utilizando Room e desenvolvimento das funcionalidades de cadastro, consulta, edição e exclusão de alunos. Também foram implementados filtros de busca, registro de condições e restrições físicas e regras iniciais de classificação para o acompanhamento dos alunos.
+
+A sprint contemplou ainda o desenvolvimento do gerenciamento de treinos e exercícios, a integração entre telas e repositórios e a realização de testes funcionais e correções de problemas identificados durante o desenvolvimento.
 
 **Sprint 03 — Treinamentos e acompanhamento**
 
-Desenvolvimento das ferramentas de acompanhamento, como registro de dores, anamnese, gráficos de evolução e implementação da Central de Atenção para destacar alunos que necessitam de cuidados específicos.
+Prevista para ampliar as ferramentas de acompanhamento, incluindo registro de dores, anamnese, gráficos de evolução e implementação da Central de Atenção para destacar alunos que necessitam de cuidados específicos, conforme os requisitos priorizados.
 
 **Sprint 04 — Finalização e validação**
 
-Integração de todos os fluxos, implementação e validação do acesso de usuários com foco em proteção de dados, realização de testes integrados, correções de usabilidade e fechamento do MVP.
+Prevista para a integração dos fluxos, implementação e validação do acesso de usuários com foco na proteção de dados, realização de testes integrados, correções de usabilidade e finalização do MVP.
 
-## Status
+## Status do projeto
 
-**Em desenvolvimento — Sprint 02 de 4.**
+**Sprint 02 de 4 concluída com sucesso.**
 
-A Sprint 01 foi concluída, estabelecendo a estrutura inicial do aplicativo e suas primeiras interfaces. Atualmente, o projeto está na Sprint 02, com foco no gerenciamento dos alunos, na persistência local de dados utilizando Room e na implementação do cadastro com suas respectivas validações.
+As Sprints 01 e 02 foram concluídas, estabelecendo a estrutura inicial do aplicativo e implementando as funcionalidades de gerenciamento de alunos, persistência local de dados, classificação de restrições e gerenciamento de treinos.
 
-As funcionalidades das sprints seguintes serão desenvolvidas de forma incremental, de acordo com o planejamento e a priorização dos requisitos.
+A Sprint 02 também contemplou testes funcionais e correções de bugs relacionados aos fluxos implementados. O projeto seguirá para a Sprint 03, com foco na ampliação dos recursos de acompanhamento dos alunos.
 
 ## Licença
 

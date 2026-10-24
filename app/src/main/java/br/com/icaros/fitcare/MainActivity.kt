@@ -1259,12 +1259,16 @@ fun TelaDashboard(
                             nome = aluno.nome,
                             treino = "Objetivo: ${aluno.objetivo}",
                             status = aluno.status,
-                            statusCor = if (aluno.status == "Atenção") Color(0xFFFFEAB5) else Color(
-                                0xFFD8F3DF
-                            ),
-                            statusTextoCor = if (aluno.status == "Atenção") Color(0xFF9A7000) else Color(
-                                0xFF36844A
-                            ),
+                            statusCor = when (aluno.status) {
+                                "Prioridade" -> Color(0xFFFFD9DC)
+                                "Atenção" -> Color(0xFFFFEAB5)
+                                else -> Color(0xFFD8F3DF)
+                            },
+                            statusTextoCor = when (aluno.status) {
+                                "Prioridade" -> Color(0xFFB42332)
+                                "Atenção" -> Color(0xFF9A7000)
+                                else -> Color(0xFF36844A)
+                            },
                             onClick = { onPerfil(aluno) }
                         )
                     }
