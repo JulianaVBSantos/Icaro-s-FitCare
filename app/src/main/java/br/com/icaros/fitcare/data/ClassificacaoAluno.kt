@@ -40,6 +40,7 @@ fun identificarMotivosAcompanhamento(
         .distinct()
 }
 
+
 fun classificarAluno(
     condicoes: String,
     restricoes: String,
@@ -52,13 +53,26 @@ fun classificarAluno(
         observacoes = observacoes
     )
 
+    if (motivos.isNotEmpty()) {
+        return "Prioridade"
+    }
+
+    fun contarItens(texto: String): Int {
+        return texto
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { normalizarTexto(it) }
+            .size
+    }
+
+    val totalItens =
+        contarItens(condicoes) +
+                contarItens(restricoes)
+
     return when {
-        motivos.isNotEmpty() -> "Prioridade"
-
-        condicoes.isNotBlank() ||
-                restricoes.isNotBlank() ||
-                observacoes.isNotBlank() -> "Atenção"
-
+        totalItens >= 2 -> "Prioridade"
+        totalItens == 1 -> "Atenção"
         else -> "Normal"
     }
 }

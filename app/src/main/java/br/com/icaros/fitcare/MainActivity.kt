@@ -1,5 +1,13 @@
 package br.com.icaros.fitcare
 
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -11,12 +19,10 @@ import br.com.icaros.fitcare.data.TreinoEntity
 import br.com.icaros.fitcare.data.ExercicioEntity
 import androidx.compose.ui.text.style.TextAlign
 import br.com.icaros.fitcare.data.TreinoRepository
-import br.com.icaros.fitcare.data.identificarMotivosAcompanhamento
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -331,282 +337,528 @@ fun TelaCadastroAluno(
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
-
     var observacoesProfissionais by remember { mutableStateOf("") }
-    var condicoes by remember { mutableStateOf("") }
-    var restricoes by remember { mutableStateOf("") }
 
-    var erroNome by remember { mutableStateOf(false) }
-    var erroEmail by remember { mutableStateOf(false) }
-    var erroObjetivo by remember { mutableStateOf(false) }
+    val opcoesCondicoes = listOf(
+        "Hipertensão",
+        "Diabetes",
+        "Dor lombar",
+        "Dor no joelho",
+        "Dor no ombro",
+        "Problema cardíaco"
+    )
 
-    var mensagem by remember { mutableStateOf("") }
-    var cadastroSucesso by remember { mutableStateOf(false) }
+    val opcoesRestricoes = listOf(
+        "Evitar exercícios de alto impacto",
+        "Evitar agachamentos profundos",
+        "Limitar cargas elevadas",
+        "Evitar exercícios acima da cabeça",
+        "Limitar amplitude de movimento"
+    )
+
+    var condicoesSelecionadas by remember {
+        mutableStateOf(setOf<String>())
+    }
+
+    var restricoesSelecionadas by remember {
+        mutableStateOf(setOf<String>())
+    }
+
+    var outraCondicao by remember {
+        mutableStateOf("")
+    }
+
+    var outraRestricao by remember {
+        mutableStateOf("")
+    }
+
+    var erro by remember { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) }
 
-    val coroutineScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
+
+    val requesterOutraCondicao = remember {
+        BringIntoViewRequester()
+    }
+
+    val requesterOutraRestricao = remember {
+        BringIntoViewRequester()
+    }
+
+    val requesterObservacoes = remember {
+        BringIntoViewRequester()
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
     ) {
-        // Cabeçalho claro padronizado (Correção de contraste para a Logo)
-        Box(
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(CabecalhoTopoClaro, CabecalhoBaseClaro)
-                    )
-                )
-                .padding(vertical = 12.dp)
+                .background(Branco)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.Center
+            IconButton(
+                onClick = onVoltar
             ) {
-// Botão para voltar ao Dashboard
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .clickable { onVoltar() },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "←",
-                        color = AzulPrincipal,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Voltar",
-                        color = AzulPrincipal,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-// Logo ampliada e centralizada
-                Image(
-                    painter = painterResource(id = R.drawable.logo_fitcare),
-                    contentDescription = "Logo Ícaro's FitCare",
-                    modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Voltar",
+                    tint = AzulPrincipal
                 )
             }
+
+            Text(
+                text = "Cadastrar aluno",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
         }
-// Conteúdo do formulário
+
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(
+                    horizontal = 18.dp,
+                    vertical = 16.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+
             Text(
-                text = "Cadastro de aluno",
-                fontSize = 24.sp,
+                text = "Dados do aluno",
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-            Text(
-                text = "Preencha os dados para cadastrar um novo aluno.",
-                fontSize = 13.sp,
-                color = TextoSecundario
-            )
+
             OutlinedTextField(
                 value = nome,
-                onValueChange = {
-                    nome = it
-                    erroNome = false
-                },
+                onValueChange = { nome = it },
                 label = { Text("Nome completo") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = erroNome,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
-                )
+                shape = RoundedCornerShape(10.dp)
             )
-            if (erroNome) {
-                Text(
-                    text = "Informe o nome completo.",
-                    color = Vermelho,
-                    fontSize = 12.sp
-                )
-            }
+
             OutlinedTextField(
                 value = email,
-                onValueChange = {
-                    email = it
-                    erroEmail = false
-                },
+                onValueChange = { email = it },
                 label = { Text("E-mail") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = erroEmail,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
-                )
+                shape = RoundedCornerShape(10.dp)
             )
-            if (erroEmail) {
-                Text(
-                    text = "Informe um e-mail válido.",
-                    color = Vermelho,
-                    fontSize = 12.sp
-                )
-            }
+
             OutlinedTextField(
                 value = objective,
-                onValueChange = {
-                    objective = it
-                    erroObjetivo = false
-                },
-                label = { Text("Objetivo do aluno") },
+                onValueChange = { objective = it },
+                label = { Text("Objetivo") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                isError = erroObjetivo,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
-                )
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
             )
-            if (erroObjetivo) {
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Condições",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+
+            Text(
+                text = "Selecione as condições que se aplicam ao aluno.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+
+            opcoesCondicoes.forEach { condicao ->
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            condicoesSelecionadas =
+                                if (condicoesSelecionadas.contains(condicao)) {
+                                    condicoesSelecionadas - condicao
+                                } else {
+                                    condicoesSelecionadas + condicao
+                                }
+                        }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = condicoesSelecionadas.contains(condicao),
+                        onCheckedChange = { marcado ->
+                            condicoesSelecionadas =
+                                if (marcado) {
+                                    condicoesSelecionadas + condicao
+                                } else {
+                                    condicoesSelecionadas - condicao
+                                }
+                        }
+                    )
+
+                    Text(
+                        text = condicao,
+                        fontSize = 14.sp,
+                        color = TextoPrincipal
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        condicoesSelecionadas =
+                            if (condicoesSelecionadas.contains("Outro")) {
+                                condicoesSelecionadas - "Outro"
+                            } else {
+                                condicoesSelecionadas + "Outro"
+                            }
+                    }
+                    .padding(vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = condicoesSelecionadas.contains("Outro"),
+                    onCheckedChange = { marcado ->
+                        condicoesSelecionadas =
+                            if (marcado) {
+                                condicoesSelecionadas + "Outro"
+                            } else {
+                                condicoesSelecionadas - "Outro"
+                            }
+                    }
+                )
+
                 Text(
-                    text = "Informe o objetivo do aluno.",
-                    color = Vermelho,
-                    fontSize = 12.sp
+                    text = "Outro",
+                    fontSize = 14.sp,
+                    color = TextoPrincipal
                 )
             }
+
+            if (condicoesSelecionadas.contains("Outro")) {
+
+                OutlinedTextField(
+                    value = outraCondicao,
+                    onValueChange = {
+                        outraCondicao = it
+                    },
+                    label = {
+                        Text("Descreva outra condição")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(
+                            requesterOutraCondicao
+                        )
+                        .onFocusChanged { estado ->
+                            if (estado.isFocused) {
+                                scope.launch {
+                                    requesterOutraCondicao
+                                        .bringIntoView()
+                                }
+                            }
+                        },
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Restrições",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+
+            Text(
+                text = "Selecione as restrições que devem ser consideradas durante os treinos.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+
+            opcoesRestricoes.forEach { restricao ->
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            restricoesSelecionadas =
+                                if (restricoesSelecionadas.contains(restricao)) {
+                                    restricoesSelecionadas - restricao
+                                } else {
+                                    restricoesSelecionadas + restricao
+                                }
+                        }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = restricoesSelecionadas.contains(restricao),
+                        onCheckedChange = { marcado ->
+                            restricoesSelecionadas =
+                                if (marcado) {
+                                    restricoesSelecionadas + restricao
+                                } else {
+                                    restricoesSelecionadas - restricao
+                                }
+                        }
+                    )
+
+                    Text(
+                        text = restricao,
+                        fontSize = 14.sp,
+                        color = TextoPrincipal
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        restricoesSelecionadas =
+                            if (restricoesSelecionadas.contains("Outro")) {
+                                restricoesSelecionadas - "Outro"
+                            } else {
+                                restricoesSelecionadas + "Outro"
+                            }
+                    }
+                    .padding(vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = restricoesSelecionadas.contains("Outro"),
+                    onCheckedChange = { marcado ->
+                        restricoesSelecionadas =
+                            if (marcado) {
+                                restricoesSelecionadas + "Outro"
+                            } else {
+                                restricoesSelecionadas - "Outro"
+                            }
+                    }
+                )
+
+                Text(
+                    text = "Outro",
+                    fontSize = 14.sp,
+                    color = TextoPrincipal
+                )
+            }
+
+            if (restricoesSelecionadas.contains("Outro")) {
+
+                OutlinedTextField(
+                    value = outraRestricao,
+                    onValueChange = {
+                        outraRestricao = it
+                    },
+                    label = {
+                        Text("Descreva outra restrição")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(
+                            requesterOutraRestricao
+                        )
+                        .onFocusChanged { estado ->
+                            if (estado.isFocused) {
+                                scope.launch {
+                                    requesterOutraRestricao
+                                        .bringIntoView()
+                                }
+                            }
+                        },
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+
             OutlinedTextField(
                 value = observacoesProfissionais,
-                onValueChange = { observacoesProfissionais = it },
-                label = { Text("Observações profissionais") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
-                )
+                onValueChange = {
+                    observacoesProfissionais = it
+                },
+                label = {
+                    Text("Observações profissionais")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(
+                        requesterObservacoes
+                    )
+                    .onFocusChanged { estado ->
+                        if (estado.isFocused) {
+                            scope.launch {
+                                requesterObservacoes
+                                    .bringIntoView()
+                            }
+                        }
+                    },
+                minLines = 4,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp)
             )
-            OutlinedTextField(
-                value = condicoes,
-                onValueChange = { condicoes = it },
-                label = { Text("Condições") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
+
+            if (erro.isNotBlank()) {
+                Text(
+                    text = erro,
+                    color = Vermelho,
+                    fontSize = 13.sp,
+                    modifier = Modifier.fillMaxWidth()
                 )
-            )
-            OutlinedTextField(
-                value = restricoes,
-                onValueChange = { restricoes = it },
-                label = { Text("Restrições") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-                shape = RoundedCornerShape(13.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = AzulPrincipal,
-                    unfocusedBorderColor = TextoSecundario.copy(alpha = 0.5f)
-                )
-            )
+            }
+
             Button(
                 onClick = {
-                    erroNome = nome.isBlank()
-                    erroEmail = !android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
-                    erroObjetivo = objective.isBlank()
-                    mensagem = ""
-                    cadastroSucesso = false
-                    if (!erroNome && !erroEmail && !erroObjetivo && !salvando) {
+
+                    if (nome.isBlank()) {
+                        erro = "Informe o nome do aluno."
+                        return@Button
+                    }
+                    if (
+                        condicoesSelecionadas.contains("Outro") &&
+                        outraCondicao.isBlank()
+                    ) {
+                        erro = "Descreva a outra condição selecionada."
+                        return@Button
+                    }
+
+                    if (
+                        restricoesSelecionadas.contains("Outro") &&
+                        outraRestricao.isBlank()
+                    ) {
+                        erro = "Descreva a outra restrição selecionada."
+                        return@Button
+                    }
+                    erro = ""
+
+                    scope.launch {
                         salvando = true
-                        coroutineScope.launch {
-                            try {
-                                val dataAtual = SimpleDateFormat(
-                                    "dd/MM/yyyy",
-                                    Locale("pt", "BR")
-                                ).format(Date())
-                                val aluno = br.com.icaros.fitcare.data.AlunoEntity(
+
+                        try {
+
+                            val dataAtual = SimpleDateFormat(
+                                "dd/MM/yyyy",
+                                Locale("pt", "BR")
+                            ).format(Date())
+
+                            val condicoesSalvas =
+                                condicoesSelecionadas
+                                    .filter { it != "Outro" }
+                                    .toMutableList()
+
+                            if (
+                                condicoesSelecionadas.contains("Outro") &&
+                                outraCondicao.isNotBlank()
+                            ) {
+                                condicoesSalvas.add(
+                                    outraCondicao.trim()
+                                )
+                            }
+
+                            val restricoesSalvas =
+                                restricoesSelecionadas
+                                    .filter { it != "Outro" }
+                                    .toMutableList()
+
+                            if (
+                                restricoesSelecionadas.contains("Outro") &&
+                                outraRestricao.isNotBlank()
+                            ) {
+                                restricoesSalvas.add(
+                                    outraRestricao.trim()
+                                )
+                            }
+
+                            val condicoesTexto =
+                                condicoesSalvas.joinToString(", ")
+
+                            val restricoesTexto =
+                                restricoesSalvas.joinToString(", ")
+
+                            val status = calcularStatusAcompanhamento(
+                                condicoes = condicoesTexto,
+                                restricoes = restricoesTexto
+                            )
+
+                            val aluno =
+                                br.com.icaros.fitcare.data.AlunoEntity(
                                     nome = nome.trim(),
                                     email = email.trim(),
                                     dataCadastro = dataAtual,
                                     objetivo = objective.trim(),
-                                    observacoesProfissionais = observacoesProfissionais.trim(),
-                                    condicoes = condicoes.trim(),
-                                    restricoes = restricoes.trim()
+                                    observacoesProfissionais =
+                                        observacoesProfissionais.trim(),
+                                    condicoes = condicoesTexto,
+                                    restricoes = restricoesTexto,
+                                    status = status
                                 )
-                                repository.inserir(aluno)
-                                cadastroSucesso = true
-                                mensagem = "Aluno cadastrado com sucesso!"
-                                onCadastroConcluido()
-                            } catch (e: SQLiteConstraintException) {
-                                mensagem = "Este e-mail já está cadastrado."
-                            } catch (e: Exception) {
-                                mensagem = "Não foi possível cadastrar o aluno. Tente novamente."
-                            } finally {
-                                salvando = false
-                            }
+
+                            repository.inserir(aluno)
+
+                            onCadastroConcluido()
+
+                        } catch (e: Exception) {
+
+                            erro =
+                                "Não foi possível cadastrar o aluno: " +
+                                        (e.message
+                                            ?: "erro desconhecido")
+
+                        } finally {
+                            salvando = false
                         }
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
+                enabled = !salvando,
                 shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AzulPrincipal)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AzulPrincipal
+                )
             ) {
                 Text(
-                    text = if (salvando) "Cadastrando..." else "Cadastrar aluno",
+                    text = if (salvando) {
+                        "Salvando..."
+                    } else {
+                        "Cadastrar aluno"
+                    },
+                    color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-            if (mensagem.isNotBlank()) {
-                Text(
-                    text = mensagem,
-                    color = if (cadastroSucesso) Color(0xFF2E7D32) else Vermelho,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            OutlinedButton(
-                onClick = onVoltar,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AzulPrincipal),
-                border = BorderStroke(1.dp, AzulPrincipal)
-            ) {
-                Text("Cancelar")
-            }
+
+            Spacer(modifier = Modifier.height(12.dp))
         }
-// Rodapé padronizado
+
         DashboardBottomBar(
             telaAtual = AppScreen.CadastroAluno,
             onInicio = onVoltar,
@@ -1714,12 +1966,23 @@ fun TelaPerfilAluno(
                     LinhaDado(rotulo = "Cadastro", valor = alunoAtual!!.dataCadastro)
                     LinhaDado(rotulo = "Objetivo", valor = alunoAtual!!.objetivo)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Editar dados ›",
-                        color = AzulPrincipal,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { onEditar() })
+                    Button(
+                        onClick = onEditar,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AzulPrincipal
+                        )
+                    ) {
+                        Text(
+                            text = "Editar dados",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 OutlinedButton(
                     onClick = { erroExclusao = ""; mostrarDialogoExclusao = true },
@@ -1788,36 +2051,6 @@ fun TelaPerfilAluno(
                         rotulo = "Restrições",
                         valor = restricoes.ifBlank { "Não informado." }
                     )
-
-
-                    val motivos = identificarMotivosAcompanhamento(
-                        condicoes = condicoes,
-                        restricoes = restricoes,
-                        observacoes = observacoesProfissionais
-                    )
-
-                    if (motivos.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "Alertas identificados",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFB3261E)
-                            )
-
-                            motivos.forEach { motivo ->
-                                Text(
-                                    text = "• $motivo",
-                                    fontSize = 13.sp,
-                                    color = Color(0xFFB3261E)
-                                )
-                            }
-                        }
-                    }
                 }
                 Cartao(modifier = Modifier.padding(bottom = 14.dp)) { // cartão de anamnese
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2099,6 +2332,25 @@ fun TelaPerfilAluno(
     }
 }
 
+private fun calcularStatusAcompanhamento(
+    condicoes: String,
+    restricoes: String
+): String {
+    fun contarItens(texto: String): Int {
+        return texto.split(",")
+            .count { it.trim().isNotEmpty() }
+    }
+
+    val total =
+        contarItens(condicoes) + contarItens(restricoes)
+
+    return when {
+        total == 0 -> "Normal"
+        total == 1 -> "Atenção"
+        else -> "Prioridade"
+    }
+}
+
 @Composable
 private fun ItemAvaliacaoHistorica(data: String, regiao: String, nota: String, colorNota: Color) {
     Box(
@@ -2184,215 +2436,617 @@ fun TelaEditarAluno(
     onAlunos: () -> Unit,
     onTreinos: () -> Unit
 ) {
-    var alunoOriginal by remember { mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null) }
+    var alunoOriginal by remember {
+        mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
+    }
+
     var carregando by remember { mutableStateOf(true) }
+
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objetivo by remember { mutableStateOf("") }
     var observacoes by remember { mutableStateOf("") }
-    var condicoes by remember { mutableStateOf("") }
-    var restricoes by remember { mutableStateOf("") }
+
+    val opcoesCondicoes = listOf(
+        "Hipertensão",
+        "Diabetes",
+        "Dor lombar",
+        "Dor no joelho",
+        "Dor no ombro",
+        "Problema cardíaco"
+    )
+
+    val opcoesRestricoes = listOf(
+        "Evitar exercícios de alto impacto",
+        "Evitar agachamentos profundos",
+        "Limitar cargas elevadas",
+        "Evitar exercícios acima da cabeça",
+        "Limitar amplitude de movimento"
+    )
+
+    var condicoesSelecionadas by remember {
+        mutableStateOf(setOf<String>())
+    }
+
+    var restricoesSelecionadas by remember {
+        mutableStateOf(setOf<String>())
+    }
+
+    var outraCondicao by remember {
+        mutableStateOf("")
+    }
+
+    var outraRestricao by remember {
+        mutableStateOf("")
+    }
+
     var erro by remember { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
+
+    val requesterObservacoes = remember {
+        BringIntoViewRequester()
+    }
+
+    val requesterOutraCondicao = remember {
+        BringIntoViewRequester()
+    }
+
+    val requesterOutraRestricao = remember {
+        BringIntoViewRequester()
+    }
+
     LaunchedEffect(alunoId) {
         repository.buscarPorId(alunoId).collect { aluno ->
+
             if (alunoOriginal == null && aluno != null) {
+
                 alunoOriginal = aluno
+
                 nome = aluno.nome
                 email = aluno.email
                 objetivo = aluno.objetivo
                 observacoes = aluno.observacoesProfissionais
-                condicoes = aluno.condicoes
-                restricoes = aluno.restricoes
+
+                val condicoesSalvas = aluno.condicoes
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+
+                val restricoesSalvas = aluno.restricoes
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+
+                val condicoesPadrao =
+                    condicoesSalvas.filter {
+                        opcoesCondicoes.contains(it)
+                    }.toSet()
+
+                val outrasCondicoes =
+                    condicoesSalvas.filter {
+                        !opcoesCondicoes.contains(it)
+                    }
+
+                val restricoesPadrao =
+                    restricoesSalvas.filter {
+                        opcoesRestricoes.contains(it)
+                    }.toSet()
+
+                val outrasRestricoes =
+                    restricoesSalvas.filter {
+                        !opcoesRestricoes.contains(it)
+                    }
+
+                condicoesSelecionadas =
+                    if (outrasCondicoes.isNotEmpty()) {
+                        condicoesPadrao + "Outro"
+                    } else {
+                        condicoesPadrao
+                    }
+
+                restricoesSelecionadas =
+                    if (outrasRestricoes.isNotEmpty()) {
+                        restricoesPadrao + "Outro"
+                    } else {
+                        restricoesPadrao
+                    }
+
+                outraCondicao =
+                    outrasCondicoes.joinToString(", ")
+
+                outraRestricao =
+                    outrasRestricoes.joinToString(", ")
             }
+
             carregando = false
         }
     }
+
     if (carregando) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = AzulPrincipal)
-        }
-        return
-    }
-    val original = alunoOriginal
-    if (original == null) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Text(text = "Aluno não encontrado.", color = TextoPrincipal)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onVoltar) { Text("Voltar") }
+            CircularProgressIndicator(
+                color = AzulPrincipal
+            )
         }
+
         return
     }
+
+    val original = alunoOriginal ?: return
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
     ) {
-// CABEÇALHO PADRÃO CLARO
-        Box(
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            CabecalhoTopoClaro,
-                            CabecalhoBaseClaro
-                        )
-                    )
-                )
-                .padding(vertical = 12.dp),
-            contentAlignment = Alignment.Center
+                .background(Branco)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.logo_fitcare),
-                contentDescription = "Logo FitCare",
-                modifier = Modifier
-                    .width(160.dp)
-                    .height(80.dp)
-            )
-            TextButton(
-                onClick = onVoltar,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 8.dp)
+            IconButton(
+                onClick = onVoltar
             ) {
-                Text(text = "← Voltar", color = AzulPrincipal)
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Voltar",
+                    tint = AzulPrincipal
+                )
             }
+
+            Text(
+                text = "Editar aluno",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
         }
-// CONTEÚDO DA TELA
+
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp)
+                .padding(
+                    horizontal = 18.dp,
+                    vertical = 16.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "Editar aluno",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal
-            )
-            Spacer(modifier = Modifier.height(20.dp))
+
             OutlinedTextField(
                 value = nome,
-                onValueChange = { nome = it; erro = "" },
+                onValueChange = { nome = it },
                 label = { Text("Nome completo") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
             )
-            Spacer(modifier = Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it; erro = "" },
+                onValueChange = { email = it },
                 label = { Text("E-mail") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                shape = RoundedCornerShape(10.dp)
             )
-            Spacer(modifier = Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = objetivo,
-                onValueChange = { objetivo = it; erro = "" },
-                label = { Text("Objetivo do aluno") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = observacoes,
-                onValueChange = { observacoes = it },
-                label = { Text("Observações profissionais") },
+                onValueChange = { objetivo = it },
+                label = { Text("Objetivo") },
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 3
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = condicoes,
-                onValueChange = { condicoes = it },
-                label = { Text("Condições de saúde") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = restricoes,
-                onValueChange = { restricoes = it },
-                label = { Text("Restrições") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3
-            )
-            if (erro.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(text = erro, color = Color.Red, fontSize = 14.sp)
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(
-                onClick = {
-                    erro = ""
-                    when {
-                        nome.isBlank() -> erro = "Informe o nome do aluno."
-                        !android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim())
-                            .matches() -> erro = "Informe um e-mail válido."
 
-                        objetivo.isBlank() -> erro = "Informe o objetivo do aluno."
-                        else -> {
-                            scope.launch {
-                                salvando = true
-                                try {
-                                    repository.atualizar(
-                                        original.copy(
-                                            nome = nome.trim(),
-                                            email = email.trim(),
-                                            objetivo = objetivo.trim(),
-                                            observacoesProfissionais = observacoes.trim(),
-                                            condicoes = condicoes.trim(),
-                                            restricoes = restricoes.trim()
-                                        )
-                                    )
-                                    onSalvo()
-                                } catch (e: Exception) {
-                                    erro = "Não foi possível salvar as alterações."
-                                } finally {
-                                    salvando = false
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Condições",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+
+            Text(
+                text = "Selecione as condições que se aplicam ao aluno.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+
+            opcoesCondicoes.forEach { condicao ->
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            condicoesSelecionadas =
+                                if (condicoesSelecionadas.contains(condicao)) {
+                                    condicoesSelecionadas - condicao
+                                } else {
+                                    condicoesSelecionadas + condicao
+                                }
+                        }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = condicoesSelecionadas.contains(condicao),
+                        onCheckedChange = { marcado ->
+                            condicoesSelecionadas =
+                                if (marcado) {
+                                    condicoesSelecionadas + condicao
+                                } else {
+                                    condicoesSelecionadas - condicao
+                                }
+                        }
+                    )
+
+                    Text(
+                        text = condicao,
+                        fontSize = 14.sp,
+                        color = TextoPrincipal
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        condicoesSelecionadas =
+                            if (condicoesSelecionadas.contains("Outro")) {
+                                condicoesSelecionadas - "Outro"
+                            } else {
+                                condicoesSelecionadas + "Outro"
+                            }
+                    }
+                    .padding(vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = condicoesSelecionadas.contains("Outro"),
+                    onCheckedChange = { marcado ->
+                        condicoesSelecionadas =
+                            if (marcado) {
+                                condicoesSelecionadas + "Outro"
+                            } else {
+                                condicoesSelecionadas - "Outro"
+                            }
+                    }
+                )
+
+                Text(
+                    text = "Outro",
+                    fontSize = 14.sp,
+                    color = TextoPrincipal
+                )
+            }
+
+            if (condicoesSelecionadas.contains("Outro")) {
+
+                OutlinedTextField(
+                    value = outraCondicao,
+                    onValueChange = {
+                        outraCondicao = it
+                    },
+                    label = {
+                        Text("Descreva outra condição")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(
+                            requesterOutraCondicao
+                        )
+                        .onFocusChanged { estado ->
+                            if (estado.isFocused) {
+                                scope.launch {
+                                    requesterOutraCondicao
+                                        .bringIntoView()
                                 }
                             }
+                        },
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Restrições",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+
+            Text(
+                text = "Selecione as restrições que devem ser consideradas durante os treinos.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+
+            opcoesRestricoes.forEach { restricao ->
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            restricoesSelecionadas =
+                                if (restricoesSelecionadas.contains(restricao)) {
+                                    restricoesSelecionadas - restricao
+                                } else {
+                                    restricoesSelecionadas + restricao
+                                }
+                        }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = restricoesSelecionadas.contains(restricao),
+                        onCheckedChange = { marcado ->
+                            restricoesSelecionadas =
+                                if (marcado) {
+                                    restricoesSelecionadas + restricao
+                                } else {
+                                    restricoesSelecionadas - restricao
+                                }
+                        }
+                    )
+
+                    Text(
+                        text = restricao,
+                        fontSize = 14.sp,
+                        color = TextoPrincipal
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        restricoesSelecionadas =
+                            if (restricoesSelecionadas.contains("Outro")) {
+                                restricoesSelecionadas - "Outro"
+                            } else {
+                                restricoesSelecionadas + "Outro"
+                            }
+                    }
+                    .padding(vertical = 0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = restricoesSelecionadas.contains("Outro"),
+                    onCheckedChange = { marcado ->
+                        restricoesSelecionadas =
+                            if (marcado) {
+                                restricoesSelecionadas + "Outro"
+                            } else {
+                                restricoesSelecionadas - "Outro"
+                            }
+                    }
+                )
+
+                Text(
+                    text = "Outro",
+                    fontSize = 14.sp,
+                    color = TextoPrincipal
+                )
+            }
+
+            if (restricoesSelecionadas.contains("Outro")) {
+
+                OutlinedTextField(
+                    value = outraRestricao,
+                    onValueChange = {
+                        outraRestricao = it
+                    },
+                    label = {
+                        Text("Descreva outra restrição")
+                    },
+
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(
+                            requesterOutraRestricao
+                        )
+                        .onFocusChanged { estado ->
+                            if (estado.isFocused) {
+                                scope.launch {
+                                    delay(300)
+                                    requesterOutraRestricao.bringIntoView()
+                                    delay(100)
+                                    requesterOutraRestricao.bringIntoView()
+                                }
+                            }
+                        },
+
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+
+            OutlinedTextField(
+                value = observacoes,
+                onValueChange = {
+                    observacoes = it
+                },
+                label = {
+                    Text("Observações profissionais")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(
+                        requesterObservacoes
+                    )
+                    .onFocusChanged { estado ->
+                        if (estado.isFocused) {
+                            scope.launch {
+                                requesterObservacoes
+                                    .bringIntoView()
+                            }
+                        }
+                    },
+                minLines = 4,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            if (erro.isNotBlank()) {
+                Text(
+                    text = erro,
+                    color = Vermelho,
+                    fontSize = 13.sp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Button(
+                onClick = {
+
+                    if (nome.isBlank()) {
+                        erro = "Informe o nome do aluno."
+                        return@Button
+                    }
+                    if (
+                        condicoesSelecionadas.contains("Outro") &&
+                        outraCondicao.isBlank()
+                    ) {
+                        erro = "Descreva a outra condição selecionada."
+                        return@Button
+                    }
+
+                    if (
+                        restricoesSelecionadas.contains("Outro") &&
+                        outraRestricao.isBlank()
+                    ) {
+                        erro = "Descreva a outra restrição selecionada."
+                        return@Button
+                    }
+                    erro = ""
+
+                    scope.launch {
+                        salvando = true
+
+                        try {
+
+                            val condicoesSalvas =
+                                condicoesSelecionadas
+                                    .filter { it != "Outro" }
+                                    .toMutableList()
+
+                            if (
+                                condicoesSelecionadas.contains("Outro") &&
+                                outraCondicao.isNotBlank()
+                            ) {
+                                condicoesSalvas.add(
+                                    outraCondicao.trim()
+                                )
+                            }
+
+                            val restricoesSalvas =
+                                restricoesSelecionadas
+                                    .filter { it != "Outro" }
+                                    .toMutableList()
+
+                            if (
+                                restricoesSelecionadas.contains("Outro") &&
+                                outraRestricao.isNotBlank()
+                            ) {
+                                restricoesSalvas.add(
+                                    outraRestricao.trim()
+                                )
+                            }
+
+                            val condicoesTexto =
+                                condicoesSalvas.joinToString(", ")
+
+                            val restricoesTexto =
+                                restricoesSalvas.joinToString(", ")
+
+                            val status = calcularStatusAcompanhamento(
+                                condicoes = condicoesTexto,
+                                restricoes = restricoesTexto
+                            )
+
+                            repository.atualizar(
+                                original.copy(
+                                    nome = nome.trim(),
+                                    email = email.trim(),
+                                    objetivo = objetivo.trim(),
+                                    observacoesProfissionais =
+                                        observacoes.trim(),
+                                    condicoes = condicoesTexto,
+                                    restricoes = restricoesTexto,
+                                    status = status
+                                )
+                            )
+
+                            onSalvo()
+
+                        } catch (e: Exception) {
+
+                            erro =
+                                "Não foi possível salvar as alterações: " +
+                                        (e.message
+                                            ?: "erro desconhecido")
+
+                        } finally {
+                            salvando = false
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !salvando
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                enabled = !salvando,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AzulPrincipal
+                )
             ) {
-                if (salvando) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Salvar alterações")
-                }
+                Text(
+                    text = if (salvando) {
+                        "Salvando..."
+                    } else {
+                        "Salvar alterações"
+                    },
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
+
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onVoltar,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !salvando
-            ) { Text("Cancelar") }
-            Spacer(modifier = Modifier.height(16.dp))
         }
+
         DashboardBottomBar(
             telaAtual = AppScreen.EditarAluno,
             onInicio = onDashboard,
             onAlunos = onAlunos,
             onTreinos = onTreinos,
             onRegistros = {},
-            onMais = {})
+            onMais = {}
+        )
     }
 }
 
