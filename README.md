@@ -71,7 +71,7 @@ Prevista para a integração dos fluxos, implementação e validação do acesso
 
 ## Status do projeto
 
-**Sprint 02 de 4 concluída com sucesso.**
+**Sprint 03 em andamento.**
 
 As Sprints 01 e 02 foram concluídas, estabelecendo a estrutura inicial do aplicativo e implementando as funcionalidades de gerenciamento de alunos, persistência local de dados, classificação de restrições e gerenciamento de treinos.
 
