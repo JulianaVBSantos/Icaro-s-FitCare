@@ -62,6 +62,35 @@ class AlunoRepository(
         alunoDao.excluir(aluno)
     }
 
+    // sprint 03
+    suspend fun atualizarAcompanhamentoPorAnamnese(
+        alunoId: Long,
+        condicoes: String,
+        restricoes: String,
+        observacoes: String
+    ) {
+        require(alunoId > 0) {
+            "Selecione um aluno válido."
+        }
+
+        val alunoAtual = alunoDao.buscarPorIdDireto(alunoId)
+            ?: throw IllegalArgumentException("Aluno não encontrado.")
+
+        val alunoAtualizado = alunoAtual.copy(
+            condicoes = condicoes.ifBlank {
+                alunoAtual.condicoes
+            },
+            restricoes = restricoes.ifBlank {
+                alunoAtual.restricoes
+            },
+            observacoesProfissionais = observacoes.ifBlank {
+                alunoAtual.observacoesProfissionais
+            }
+        )
+
+        atualizar(alunoAtualizado)
+    }
+
     private fun validarAluno(aluno: AlunoEntity) {
         require(aluno.nome.isNotBlank()) {
             "O nome do aluno é obrigatório."

@@ -1,5 +1,7 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import br.com.icaros.fitcare.data.AnamneseRepository
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.core.view.WindowInsetsControllerCompat
@@ -79,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 
+
 // Nova Paleta de Cores baseada na Logo
 private val AzulPrincipal = Color(0xFF002B5C)
 private val AzulSecundario = Color(0xFF164A73)
@@ -120,13 +123,16 @@ class MainActivity : ComponentActivity() {
         }
 
         val database = FitCareDatabase.getDatabase(applicationContext)
+
         val repository = AlunoRepository(database.alunoDao())
         val treinoRepository = TreinoRepository(database.treinoDao())
+        val anamneseRepository = AnamneseRepository(database.anamneseDao())
 
         setContent {
             FitCareApp(
                 repository = repository,
-                treinoRepository = treinoRepository
+                treinoRepository = treinoRepository,
+                anamneseRepository = anamneseRepository
             )
         }
     }
@@ -149,12 +155,35 @@ enum class AppScreen {
 
 // Fluxo de navegação principal da aplicação
 @Composable
-fun FitCareApp(repository: AlunoRepository, treinoRepository: TreinoRepository) {
-    var tela by remember { mutableStateOf<AppScreen>(AppScreen.Login) }
-    var alunoSelecionadoId by remember { mutableStateOf<Long?>(null) }
-    var treinoSelecionadoId by remember { mutableStateOf<Long?>(null) }
-    var registrarNovoTreino by remember { mutableStateOf<Boolean>(false) }
-    var eventoEmEdicao by remember { mutableStateOf<EventoAluno?>(null) }
+fun FitCareApp(
+    repository: AlunoRepository,
+    treinoRepository: TreinoRepository,
+    anamneseRepository: AnamneseRepository
+) {
+// PRESERVA A TELA ATUAL QUANDO A ACTIVITY É RECRIADA
+    var tela by rememberSaveable {
+        mutableStateOf(AppScreen.Login)
+    }
+
+// PRESERVA O ALUNO SELECIONADO
+    var alunoSelecionadoId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+
+// PRESERVA O TREINO SELECIONADO
+    var treinoSelecionadoId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+
+// PRESERVA O ESTADO DE REGISTRO DE TREINO
+    var registrarNovoTreino by rememberSaveable {
+        mutableStateOf(false)
+    }
+
+// MANTÉM O EVENTO EM EDIÇÃO NA COMPOSIÇÃO
+    var eventoEmEdicao by remember {
+        mutableStateOf<EventoAluno?>(null)
+    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -250,6 +279,7 @@ fun FitCareApp(repository: AlunoRepository, treinoRepository: TreinoRepository) 
                             TelaPerfilAluno(
                                 alunoId = id,
                                 repository = repository,
+                                anamneseRepository = anamneseRepository,
                                 onVoltar = { tela = AppScreen.Alunos },
                                 onDashboard = { tela = AppScreen.Dashboard },
                                 onTreinos = { tela = AppScreen.Treinos },
@@ -2172,11 +2202,11 @@ class EventoAlunoStorage(context: Context) {
     }
 }
 
-
 @Composable
 fun TelaPerfilAluno(
     alunoId: Long,
     repository: AlunoRepository,
+    anamneseRepository: AnamneseRepository,
     onVoltar: () -> Unit,
     onDashboard: () -> Unit,
     onTreinos: () -> Unit,
@@ -2555,6 +2585,7 @@ fun TelaPerfilAluno(
                     )
                 }
 
+
                 // ANAMNESE
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
@@ -2588,34 +2619,14 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    OutlinedButton(
-                        onClick = { },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = AzulPrincipal
-                        ),
-                        border = BorderStroke(1.dp, AzulPrincipal)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.FileUpload,
-                                contentDescription = "Importar anamnese",
-                                tint = AzulPrincipal,
-                                modifier = Modifier.size(18.dp)
-                            )
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Text(
-                                text = "Importar anamnese",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                    BotaoImportarDocumentoAnamnese(
+                        alunoId = alunoId,
+                        anamneseRepository = anamneseRepository,
+                        alunoRepository = repository,
+                        onDocumentoImportado = {
+                            // A lista será atualizada pelo Flow do Room.
                         }
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(6.dp))
 

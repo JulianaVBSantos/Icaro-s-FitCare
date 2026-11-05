@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import android.content.Context
@@ -12,9 +11,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         AlunoEntity::class,
         TreinoEntity::class,
-        ExercicioEntity::class
+        ExercicioEntity::class,
+        AnamneseEntity::class,
+        DocumentoAnamneseEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -23,6 +24,8 @@ abstract class FitCareDatabase : RoomDatabase() {
 
     abstract fun treinoDao(): TreinoDao
 
+    abstract fun anamneseDao(): AnamneseDao
+
     companion object {
 
         @Volatile
@@ -30,12 +33,15 @@ abstract class FitCareDatabase : RoomDatabase() {
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
+
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN observacoesProfissionais TEXT NOT NULL DEFAULT ''"
                 )
+
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN condicoes TEXT NOT NULL DEFAULT ''"
                 )
+
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN restricoes TEXT NOT NULL DEFAULT ''"
                 )
@@ -94,8 +100,89 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS anamneses (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        alunoId INTEGER NOT NULL,
+                        grupoId TEXT NOT NULL,
+                        versao INTEGER NOT NULL,
+                        dataAvaliacao TEXT NOT NULL,
+                        historicoSaude TEXT NOT NULL,
+                        medicamentos TEXT NOT NULL,
+                        cirurgias TEXT NOT NULL,
+                        acompanhamentoMedico TEXT NOT NULL,
+                        condicoesSelecionadas TEXT NOT NULL,
+                        restricoesSelecionadas TEXT NOT NULL,
+                        riscosSelecionados TEXT NOT NULL,
+                        observacoes TEXT NOT NULL,
+                        recomendacoes TEXT NOT NULL,
+                        cuidados TEXT NOT NULL,
+                        objetivos TEXT NOT NULL,
+                        profissionalResponsavel TEXT NOT NULL,
+                        dataCriacao TEXT NOT NULL,
+                        dataAtualizacao TEXT NOT NULL,
+                        FOREIGN KEY(alunoId) REFERENCES alunos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_anamneses_alunoId
+                    ON anamneses(alunoId)
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_anamneses_grupoId
+                    ON anamneses(grupoId)
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS
+                    index_anamneses_alunoId_grupoId_versao
+                    ON anamneses(alunoId, grupoId, versao)
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS documentos_anamnese (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        alunoId INTEGER NOT NULL,
+                        nomeArquivo TEXT NOT NULL,
+                        caminhoArquivo TEXT NOT NULL,
+                        tipoArquivo TEXT NOT NULL,
+                        tamanhoArquivo INTEGER NOT NULL,
+                        dataImportacao TEXT NOT NULL,
+                        FOREIGN KEY(alunoId) REFERENCES alunos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_documentos_anamnese_alunoId
+                    ON documentos_anamnese(alunoId)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
+
             return INSTANCE ?: synchronized(this) {
+
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     FitCareDatabase::class.java,
@@ -103,11 +190,13 @@ abstract class FitCareDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2,
-                        MIGRATION_2_3
+                        MIGRATION_2_3,
+                        MIGRATION_3_4
                     )
                     .build()
 
                 INSTANCE = instance
+
                 instance
             }
         }

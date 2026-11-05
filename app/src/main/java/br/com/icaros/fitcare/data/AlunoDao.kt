@@ -35,4 +35,7 @@ interface AlunoDao {
 
     @Query("SELECT COUNT(*) FROM alunos")
     suspend fun contarAlunos(): Int
+
+    @Query("SELECT * FROM alunos WHERE id = :id LIMIT 1")
+    suspend fun buscarPorIdDireto(id: Long): AlunoEntity?
 }
