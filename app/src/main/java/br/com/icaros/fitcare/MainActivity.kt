@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import br.com.icaros.fitcare.data.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import br.com.icaros.fitcare.data.AnamneseRepository
 import androidx.compose.ui.graphics.toArgb
@@ -110,6 +111,7 @@ private val LoginAzulClaro = Color(0xFF164A73)    // Links em Azul secundário
 private val CabecalhoTopoClaro = Color(0xFFEAF3F9) // Fundo claro para destacar a logo escura
 private val CabecalhoBaseClaro = Color(0xFFF5F9FC)
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,19 +126,54 @@ class MainActivity : ComponentActivity() {
 
         val database = FitCareDatabase.getDatabase(applicationContext)
 
+        // Repositórios existentes
         val repository = AlunoRepository(database.alunoDao())
         val treinoRepository = TreinoRepository(database.treinoDao())
         val anamneseRepository = AnamneseRepository(database.anamneseDao())
+
+        // Novos repositórios de anamnese digital
+        val modeloAnamneseRepository =
+            ModeloAnamneseRepository(database.modeloAnamneseDao())
+
+        val perguntaModeloAnamneseRepository =
+            PerguntaModeloAnamneseRepository(
+                database.perguntaModeloAnamneseDao()
+            )
+
+        val anamneseAtribuidaRepository =
+            AnamneseAtribuidaRepository(
+                database = database,
+                modeloDao = database.modeloAnamneseDao(),
+                perguntaModeloDao = database.perguntaModeloAnamneseDao(),
+                anamneseDao = database.anamneseAtribuidaDao(),
+                perguntaAtribuidaDao =
+                    database.perguntaAnamneseAtribuidaDao()
+            )
+
+        val respostaAnamneseRepository =
+            RespostaAnamneseRepository(
+                respostaDao = database.respostaAnamneseDao(),
+                perguntaDao = database.perguntaAnamneseAtribuidaDao(),
+                anamneseDao = database.anamneseAtribuidaDao()
+            )
 
         setContent {
             FitCareApp(
                 repository = repository,
                 treinoRepository = treinoRepository,
-                anamneseRepository = anamneseRepository
+                anamneseRepository = anamneseRepository,
+                modeloAnamneseRepository = modeloAnamneseRepository,
+                perguntaModeloAnamneseRepository =
+                    perguntaModeloAnamneseRepository,
+                anamneseAtribuidaRepository =
+                    anamneseAtribuidaRepository,
+                respostaAnamneseRepository =
+                    respostaAnamneseRepository
             )
         }
     }
 }
+
 
 // Mapeamento das telas do aplicativo
 enum class AppScreen {
@@ -150,16 +187,26 @@ enum class AppScreen {
     EditarAluno,
     Treinos,
     SelecionarAlunoTreino,
-    FormularioTreino
+    FormularioTreino,
+    ModelosAnamnese,
+    CriarModeloAnamnese,
+    FormularioAnamnese,
+    VisualizarAnamnese
 }
 
 // Fluxo de navegação principal da aplicação
+
 @Composable
 fun FitCareApp(
     repository: AlunoRepository,
     treinoRepository: TreinoRepository,
-    anamneseRepository: AnamneseRepository
+    anamneseRepository: AnamneseRepository,
+    modeloAnamneseRepository: ModeloAnamneseRepository,
+    perguntaModeloAnamneseRepository: PerguntaModeloAnamneseRepository,
+    anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
+    respostaAnamneseRepository: RespostaAnamneseRepository
 ) {
+
 // PRESERVA A TELA ATUAL QUANDO A ACTIVITY É RECRIADA
     var tela by rememberSaveable {
         mutableStateOf(AppScreen.Login)
@@ -183,6 +230,10 @@ fun FitCareApp(
 // MANTÉM O EVENTO EM EDIÇÃO NA COMPOSIÇÃO
     var eventoEmEdicao by remember {
         mutableStateOf<EventoAluno?>(null)
+    }
+
+    var modeloAnamneseSelecionadoId by rememberSaveable {
+        mutableStateOf<Long?>(null)
     }
 
     MaterialTheme(
@@ -439,14 +490,58 @@ fun FitCareApp(
                             tela = AppScreen.Alunos
                         }
                     }
+
+                    AppScreen.ModelosAnamnese -> {
+                        TelaModelosAnamnese(
+                            repository = modeloAnamneseRepository,
+
+                            onVoltar = {
+                                tela = AppScreen.Dashboard
+                            },
+
+                            onNovoModelo = {
+                                modeloAnamneseSelecionadoId = null
+                                tela = AppScreen.CriarModeloAnamnese
+                            },
+
+                            onEditarModelo = { modelo ->
+                                modeloAnamneseSelecionadoId = modelo.id
+                                tela = AppScreen.CriarModeloAnamnese
+                            },
+
+                            onPerguntas = { modelo ->
+                                modeloAnamneseSelecionadoId = modelo.id
+                                tela = AppScreen.FormularioAnamnese
+                            }
+                        )
+                    }
+
+                    AppScreen.CriarModeloAnamnese -> {
+                        TelaCriarModeloAnamnese(
+                            modeloId = modeloAnamneseSelecionadoId,
+                            repository = modeloAnamneseRepository,
+                            onVoltar = {
+                                tela = AppScreen.ModelosAnamnese
+                            },
+                            onSalvo = {
+                                modeloAnamneseSelecionadoId = null
+                                tela = AppScreen.ModelosAnamnese
+                            }
+                        )
+                    }
+
+                    AppScreen.FormularioAnamnese -> {
+                        Text("Formulário de Anamnese")
+                    }
+
+                    AppScreen.VisualizarAnamnese -> {
+                        Text("Visualizar Anamnese")
+                    }
                 }
-
-
             }
         }
     }
 }
-
 
 @Composable
 fun BotaoVoltarPadrao(
@@ -2225,12 +2320,28 @@ fun TelaPerfilAluno(
     val scope = rememberCoroutineScope()
     val contextoEventosPerfil = LocalContext.current
 
+    val documentosAnamnese by anamneseRepository
+        .listarDocumentos(alunoId)
+        .collectAsState(initial = emptyList())
+
     val storageEventosPerfil = remember(contextoEventosPerfil) {
         EventoAlunoStorage(contextoEventosPerfil)
     }
 
     var eventosAluno by remember(alunoId) {
         mutableStateOf(storageEventosPerfil.listarPorAluno(alunoId))
+    }
+
+    var documentoParaExcluir by remember {
+        mutableStateOf<br.com.icaros.fitcare.data.DocumentoAnamneseEntity?>(null)
+    }
+
+    var excluindoDocumento by remember {
+        mutableStateOf(false)
+    }
+
+    var erroExclusaoDocumento by remember {
+        mutableStateOf("")
     }
 
     LaunchedEffect(alunoId) {
@@ -2586,7 +2697,7 @@ fun TelaPerfilAluno(
                 }
 
 
-                // ANAMNESE
+// ANAMNESE E DOCUMENTOS SALVOS
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -2611,7 +2722,7 @@ fun TelaPerfilAluno(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Importe o documento de anamnese para manter as informações do aluno disponíveis no perfil.",
+                        text = "Importe documentos ou consulte os arquivos já associados a este aluno.",
                         color = TextoSecundario,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -2619,22 +2730,247 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // IMPORTAR DOCUMENTO
                     BotaoImportarDocumentoAnamnese(
                         alunoId = alunoId,
                         anamneseRepository = anamneseRepository,
                         alunoRepository = repository,
                         onDocumentoImportado = {
-                            // A lista será atualizada pelo Flow do Room.
+                            // A lista é atualizada automaticamente pelo Flow do Room.
                         }
                     )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Divider(color = Color.LightGray)
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // LISTA DE DOCUMENTOS SALVOS
+                    Text(
+                        text = "DOCUMENTOS IMPORTADOS E GERADOS",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextoPrincipal
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (documentosAnamnese.isEmpty()) {
+
+                        Text(
+                            text = "Nenhum documento salvo para este aluno.",
+                            color = TextoSecundario,
+                            fontSize = 12.sp
+                        )
+
+                    } else {
+
+                        documentosAnamnese.forEach { documento ->
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = AzulMuitoClaro
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+
+                                    // NOME E BOTÃO DE EXCLUSÃO
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = documento.nomeArquivo,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextoPrincipal,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                documentoParaExcluir = documento
+                                                erroExclusaoDocumento = ""
+                                            },
+                                            enabled = !excluindoDocumento
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Delete,
+                                                contentDescription = "Remover documento",
+                                                tint = Color.Red
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Text(
+                                        text = "Formato: ${documento.tipoArquivo.uppercase()}",
+                                        fontSize = 11.sp,
+                                        color = TextoSecundario
+                                    )
+
+                                    Text(
+                                        text = "Salvo em: ${documento.dataImportacao}",
+                                        fontSize = 11.sp,
+                                        color = TextoSecundario
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // ABRIR DOCUMENTO
+                                    OutlinedButton(
+                                        onClick = {
+                                            try {
+                                                abrirDocumentoAnamnese(
+                                                    context = contextoEventosPerfil,
+                                                    documento = documento
+                                                )
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(
+                                                    contextoEventosPerfil,
+                                                    e.message
+                                                        ?: "Não foi possível abrir o documento.",
+                                                    android.widget.Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("ABRIR DOCUMENTO")
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Formatos aceitos: PDF ou imagem",
+                        text = "Formatos aceitos para importação: PDF ou imagem.",
                         color = TextoSecundario,
-                        fontSize = 10.sp,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                        fontSize = 10.sp
+                    )
+                }
+
+// DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO
+                if (documentoParaExcluir != null) {
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!excluindoDocumento) {
+                                documentoParaExcluir = null
+                                erroExclusaoDocumento = ""
+                            }
+                        },
+
+                        title = {
+                            Text("Remover documento?")
+                        },
+
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Deseja realmente excluir este documento? " +
+                                            "O arquivo será removido permanentemente."
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = documentoParaExcluir?.nomeArquivo.orEmpty(),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextoPrincipal
+                                )
+
+                                if (erroExclusaoDocumento.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = erroExclusaoDocumento,
+                                        color = Color.Red,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        },
+
+                        confirmButton = {
+                            TextButton(
+                                enabled = !excluindoDocumento,
+                                onClick = {
+                                    val documento = documentoParaExcluir
+
+                                    if (documento != null && !excluindoDocumento) {
+                                        excluindoDocumento = true
+
+                                        scope.launch {
+                                            try {
+                                                val arquivo = java.io.File(
+                                                    documento.caminhoArquivo
+                                                )
+
+                                                if (
+                                                    arquivo.exists() &&
+                                                    !arquivo.delete()
+                                                ) {
+                                                    throw Exception(
+                                                        "Não foi possível remover o arquivo."
+                                                    )
+                                                }
+
+                                                anamneseRepository.excluirDocumento(
+                                                    documento.id
+                                                )
+
+                                                documentoParaExcluir = null
+
+                                                android.widget.Toast.makeText(
+                                                    contextoEventosPerfil,
+                                                    "Documento removido com sucesso.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+
+                                            } catch (e: Exception) {
+                                                erroExclusaoDocumento =
+                                                    "Não foi possível excluir o documento. Tente novamente."
+                                            } finally {
+                                                excluindoDocumento = false
+                                            }
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = if (excluindoDocumento) {
+                                        "Excluindo..."
+                                    } else {
+                                        "Excluir"
+                                    },
+                                    color = Color.Red
+                                )
+                            }
+                        },
+
+                        dismissButton = {
+                            TextButton(
+                                enabled = !excluindoDocumento,
+                                onClick = {
+                                    documentoParaExcluir = null
+                                    erroExclusaoDocumento = ""
+                                }
+                            ) {
+                                Text("Cancelar")
+                            }
+                        }
                     )
                 }
 

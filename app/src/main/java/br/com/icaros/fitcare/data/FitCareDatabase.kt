@@ -1,3 +1,4 @@
+
 package br.com.icaros.fitcare.data
 
 import android.content.Context
@@ -13,9 +14,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TreinoEntity::class,
         ExercicioEntity::class,
         AnamneseEntity::class,
-        DocumentoAnamneseEntity::class
+        DocumentoAnamneseEntity::class,
+        ModeloAnamneseEntity::class,
+        PerguntaModeloAnamneseEntity::class,
+        AnamneseAtribuidaEntity::class,
+        PerguntaAnamneseAtribuidaEntity::class,
+        RespostaAnamneseEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -25,6 +31,16 @@ abstract class FitCareDatabase : RoomDatabase() {
     abstract fun treinoDao(): TreinoDao
 
     abstract fun anamneseDao(): AnamneseDao
+
+    abstract fun modeloAnamneseDao(): ModeloAnamneseDao
+
+    abstract fun perguntaModeloAnamneseDao(): PerguntaModeloAnamneseDao
+
+    abstract fun anamneseAtribuidaDao(): AnamneseAtribuidaDao
+
+    abstract fun perguntaAnamneseAtribuidaDao(): PerguntaAnamneseAtribuidaDao
+
+    abstract fun respostaAnamneseDao(): RespostaAnamneseDao
 
     companion object {
 
@@ -179,6 +195,157 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        // MIGRAÇÃO DA VERSÃO 4 PARA A VERSÃO 5
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+
+                // 1. MODELOS DE ANAMNESE
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS modelos_anamnese (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        nome TEXT NOT NULL,
+                        descricao TEXT NOT NULL,
+                        categoria TEXT NOT NULL,
+                        ativo INTEGER NOT NULL,
+                        dataCriacao TEXT NOT NULL,
+                        dataAtualizacao TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                // 2. PERGUNTAS DOS MODELOS
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS perguntas_modelo_anamnese (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        modeloId INTEGER NOT NULL,
+                        texto TEXT NOT NULL,
+                        tipoResposta TEXT NOT NULL,
+                        opcoes TEXT NOT NULL,
+                        obrigatoria INTEGER NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(modeloId)
+                        REFERENCES modelos_anamnese(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_perguntas_modelo_anamnese_modeloId
+                    ON perguntas_modelo_anamnese(modeloId)
+                    """.trimIndent()
+                )
+
+                // 3. ANAMNESES ATRIBUÍDAS AOS ALUNOS
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS anamneses_atribuidas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        alunoId INTEGER NOT NULL,
+                        modeloId INTEGER NOT NULL,
+                        nomeModelo TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        dataCriacao TEXT NOT NULL,
+                        dataEnvio TEXT NOT NULL,
+                        dataInicioResposta TEXT NOT NULL,
+                        dataResposta TEXT NOT NULL,
+                        profissionalResponsavel TEXT NOT NULL,
+                        identificadorExterno TEXT NOT NULL,
+                        FOREIGN KEY(alunoId)
+                        REFERENCES alunos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(modeloId)
+                        REFERENCES modelos_anamnese(id)
+                        ON UPDATE NO ACTION ON DELETE RESTRICT
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_anamneses_atribuidas_alunoId
+                    ON anamneses_atribuidas(alunoId)
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_anamneses_atribuidas_modeloId
+                    ON anamneses_atribuidas(modeloId)
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_anamneses_atribuidas_status
+                    ON anamneses_atribuidas(status)
+                    """.trimIndent()
+                )
+
+                // 4. PERGUNTAS COPIADAS PARA CADA ANAMNESE
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS perguntas_anamnese_atribuidas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        anamneseAtribuidaId INTEGER NOT NULL,
+                        perguntaModeloId INTEGER,
+                        texto TEXT NOT NULL,
+                        tipoResposta TEXT NOT NULL,
+                        opcoes TEXT NOT NULL,
+                        obrigatoria INTEGER NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(anamneseAtribuidaId)
+                        REFERENCES anamneses_atribuidas(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_perguntas_anamnese_atribuidas_anamneseAtribuidaId
+                    ON perguntas_anamnese_atribuidas(anamneseAtribuidaId)
+                    """.trimIndent()
+                )
+
+                // 5. RESPOSTAS DOS ALUNOS
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS respostas_anamnese (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        perguntaAtribuidaId INTEGER NOT NULL,
+                        resposta TEXT NOT NULL,
+                        dataAtualizacao TEXT NOT NULL,
+                        FOREIGN KEY(perguntaAtribuidaId)
+                        REFERENCES perguntas_anamnese_atribuidas(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS
+                    index_respostas_anamnese_perguntaAtribuidaId
+                    ON respostas_anamnese(perguntaAtribuidaId)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
 
             return INSTANCE ?: synchronized(this) {
@@ -191,7 +358,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2,
                         MIGRATION_2_3,
-                        MIGRATION_3_4
+                        MIGRATION_3_4,
+                        MIGRATION_4_5
                     )
                     .build()
 
