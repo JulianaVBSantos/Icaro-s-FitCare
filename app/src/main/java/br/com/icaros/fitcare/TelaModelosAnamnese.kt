@@ -1,5 +1,7 @@
+
 package br.com.icaros.fitcare
 
+import br.com.icaros.fitcare.data.AlunoRepository
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -23,24 +25,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.ModeloAnamneseEntity
 import br.com.icaros.fitcare.data.ModeloAnamneseRepository
+import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
 import kotlinx.coroutines.launch
 
 @Composable
 fun TelaModelosAnamnese(
     repository: ModeloAnamneseRepository,
+    alunoRepository: AlunoRepository,
+    anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
+    alunoId: Long?,
     onVoltar: () -> Unit,
     onNovoModelo: () -> Unit,
     onEditarModelo: (ModeloAnamneseEntity) -> Unit,
     onPerguntas: (ModeloAnamneseEntity) -> Unit
 ) {
+
     val modelos by repository.listarTodos()
         .collectAsState(initial = emptyList())
 
-    val scope = rememberCoroutineScope()
+    var modeloEmEnvioId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var mensagemEnvio by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var envioSucesso by remember {
+        mutableStateOf(false)
+    }
 
     var modeloParaExcluir by remember {
         mutableStateOf<ModeloAnamneseEntity?>(null)
     }
+
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -52,10 +71,12 @@ fun TelaModelosAnamnese(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // Cabeçalho
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+
             IconButton(onClick = onVoltar) {
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
@@ -67,7 +88,9 @@ fun TelaModelosAnamnese(
             Spacer(modifier = Modifier.weight(1f))
 
             Image(
-                painter = painterResource(id = R.drawable.logo_fitcare),
+                painter = painterResource(
+                    id = R.drawable.logo_fitcare
+                ),
                 contentDescription = "Ícaros FitCare",
                 modifier = Modifier.height(48.dp)
             )
@@ -94,8 +117,40 @@ fun TelaModelosAnamnese(
             color = Color(0xFF757575)
         )
 
+        // Mensagem de resultado da atribuição
+        mensagemEnvio?.let { mensagem ->
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (envioSucesso) {
+                        Color(0xFFE8F5E9)
+                    } else {
+                        Color(0xFFFFEBEE)
+                    }
+                )
+            ) {
+
+                Text(
+                    text = mensagem,
+                    modifier = Modifier.padding(14.dp),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (envioSucesso) {
+                        Color(0xFF2E7D32)
+                    } else {
+                        Color(0xFFC62828)
+                    }
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
+        // Criar modelo
         Button(
             onClick = onNovoModelo,
             modifier = Modifier
@@ -107,6 +162,7 @@ fun TelaModelosAnamnese(
                 contentColor = Color.White
             )
         ) {
+
             Icon(
                 imageVector = Icons.Filled.Add,
                 contentDescription = null
@@ -133,6 +189,7 @@ fun TelaModelosAnamnese(
         Spacer(modifier = Modifier.height(10.dp))
 
         if (modelos.isEmpty()) {
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -140,12 +197,14 @@ fun TelaModelosAnamnese(
                     containerColor = Color.White
                 )
             ) {
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+
                     Icon(
                         imageVector = Icons.Default.HelpOutline,
                         contentDescription = null,
@@ -170,13 +229,16 @@ fun TelaModelosAnamnese(
                     )
                 }
             }
+
         } else {
+
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+
                 modelos.forEach { modelo ->
 
                     Card(
@@ -189,9 +251,12 @@ fun TelaModelosAnamnese(
                             defaultElevation = 2.dp
                         )
                     ) {
+
                         Column(
                             modifier = Modifier.padding(16.dp)
                         ) {
+
+                            // Nome do modelo
                             Text(
                                 text = modelo.nome,
                                 fontSize = 17.sp,
@@ -201,8 +266,11 @@ fun TelaModelosAnamnese(
 
                             Spacer(modifier = Modifier.height(5.dp))
 
+                            // Categoria
                             Text(
-                                text = if (modelo.categoria == "PADRAO") {
+                                text = if (
+                                    modelo.categoria == "PADRAO"
+                                ) {
                                     "Modelo padrão"
                                 } else {
                                     "Modelo personalizado"
@@ -212,7 +280,9 @@ fun TelaModelosAnamnese(
                                 fontWeight = FontWeight.SemiBold
                             )
 
+                            // Descrição
                             if (modelo.descricao.isNotBlank()) {
+
                                 Spacer(modifier = Modifier.height(7.dp))
 
                                 Text(
@@ -224,6 +294,7 @@ fun TelaModelosAnamnese(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
+                            // Status do modelo
                             Text(
                                 text = if (modelo.ativo) {
                                     "Ativo"
@@ -244,32 +315,39 @@ fun TelaModelosAnamnese(
                                 color = Color(0xFFF5F7FA)
                             )
 
+                            // Ações do modelo
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+
                                 TextButton(
                                     onClick = {
                                         onPerguntas(modelo)
                                     }
                                 ) {
+
                                     Icon(
                                         imageVector = Icons.Default.HelpOutline,
                                         contentDescription = null
                                     )
 
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(
+                                        modifier = Modifier.width(4.dp)
+                                    )
 
                                     Text("Perguntas")
                                 }
 
                                 Row {
+
                                     IconButton(
                                         onClick = {
                                             onEditarModelo(modelo)
                                         }
                                     ) {
+
                                         Icon(
                                             imageVector = Icons.Default.Edit,
                                             contentDescription = "Editar modelo",
@@ -282,10 +360,105 @@ fun TelaModelosAnamnese(
                                             modeloParaExcluir = modelo
                                         }
                                     ) {
+
                                         Icon(
                                             imageVector = Icons.Default.Delete,
                                             contentDescription = "Excluir modelo",
-                                            tint = MaterialTheme.colorScheme.error
+                                            tint = MaterialTheme
+                                                .colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Atribuição ao aluno selecionado
+                            if (alunoId != null) {
+
+                                Spacer(
+                                    modifier = Modifier.height(6.dp)
+                                )
+
+                                Button(
+                                    onClick = {
+
+                                        val idAluno = alunoId
+
+                                        if (
+                                            modeloEmEnvioId == null &&
+                                            modelo.ativo
+                                        ) {
+
+                                            modeloEmEnvioId = modelo.id
+                                            mensagemEnvio = null
+                                            envioSucesso = false
+
+                                            scope.launch {
+
+                                                try {
+
+                                                    val novaAnamneseId =
+                                                        anamneseAtribuidaRepository.atribuir(
+                                                            alunoId = idAluno,
+                                                            modeloId = modelo.id
+                                                        )
+
+                                                    mensagemEnvio =
+                                                        "Avaliação criada com sucesso! " +
+                                                                "Código: $novaAnamneseId. " +
+                                                                "Agora ela está aguardando o envio do PDF."
+
+                                                    envioSucesso = true
+
+                                                } catch (e: Exception) {
+
+                                                    mensagemEnvio =
+                                                        e.message
+                                                            ?: "Não foi possível criar a avaliação."
+
+                                                    envioSucesso = false
+
+                                                } finally {
+
+                                                    modeloEmEnvioId = null
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = modeloEmEnvioId == null &&
+                                            modelo.ativo,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(9.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF002B5C)
+                                    )
+                                ) {
+
+                                    if (
+                                        modeloEmEnvioId == modelo.id
+                                    ) {
+
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.White
+                                        )
+
+                                        Spacer(
+                                            modifier = Modifier.width(8.dp)
+                                        )
+
+                                        Text("Preparando avaliação...")
+
+                                    } else {
+
+                                        Text(
+                                            text = if (modelo.ativo) {
+                                                "Criar avaliação para este aluno"
+                                            } else {
+                                                "Modelo indisponível"
+                                            },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
@@ -299,15 +472,18 @@ fun TelaModelosAnamnese(
         }
     }
 
+    // Confirmação de exclusão
     modeloParaExcluir?.let { modelo ->
 
         AlertDialog(
             onDismissRequest = {
                 modeloParaExcluir = null
             },
+
             title = {
                 Text("Excluir modelo?")
             },
+
             text = {
                 Text(
                     "Deseja realmente excluir o modelo \"${modelo.nome}\"? " +
@@ -315,30 +491,51 @@ fun TelaModelosAnamnese(
                             "Modelos já atribuídos possuem uma cópia independente das perguntas."
                 )
             },
+
             confirmButton = {
+
                 TextButton(
                     onClick = {
+
                         scope.launch {
+
                             try {
+
                                 repository.excluir(modelo)
+
+                                mensagemEnvio = null
+
+                            } catch (e: Exception) {
+
+                                mensagemEnvio =
+                                    e.message
+                                        ?: "Não foi possível excluir o modelo."
+
+                                envioSucesso = false
+
                             } finally {
+
                                 modeloParaExcluir = null
                             }
                         }
                     }
                 ) {
+
                     Text(
                         "Excluir",
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             },
+
             dismissButton = {
+
                 TextButton(
                     onClick = {
                         modeloParaExcluir = null
                     }
                 ) {
+
                     Text("Cancelar")
                 }
             }

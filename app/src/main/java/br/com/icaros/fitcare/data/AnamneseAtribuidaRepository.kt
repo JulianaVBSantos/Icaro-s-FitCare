@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.withTransaction
@@ -28,6 +27,9 @@ class AnamneseAtribuidaRepository(
 
     suspend fun buscarPorId(id: Long) =
         anamneseDao.buscarPorId(id)
+
+    suspend fun buscarPerguntas(anamneseId: Long) =
+        perguntaAtribuidaDao.buscarPorAnamnese(anamneseId)
 
     suspend fun atribuir(
         alunoId: Long,

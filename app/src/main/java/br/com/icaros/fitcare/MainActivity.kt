@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.runtime.rememberCoroutineScope
 import br.com.icaros.fitcare.data.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import br.com.icaros.fitcare.data.AnamneseRepository
@@ -24,6 +25,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Checkbox
@@ -523,44 +525,34 @@ fun FitCareApp(
                         }
                     }
 
+
                     AppScreen.ModelosAnamnese -> {
-
                         TelaModelosAnamnese(
-
-                            // Repositório responsável pelos modelos cadastrados.
                             repository = modeloAnamneseRepository,
+                            alunoRepository = repository,
+                            alunoId = alunoSelecionadoId,
+                            anamneseAtribuidaRepository = anamneseAtribuidaRepository,
 
-                            // Retorna à tela de origem.
-                            // Se veio do perfil, retorna ao perfil do aluno.
-                            // Caso contrário, retorna ao Dashboard.
                             onVoltar = {
                                 if (voltarModelosParaPerfil) {
-
                                     voltarModelosParaPerfil = false
                                     tela = AppScreen.PerfilAluno
-
                                 } else {
-
                                     tela = AppScreen.Dashboard
                                 }
                             },
 
-                            // Abre o formulário para criar um novo modelo.
                             onNovoModelo = {
                                 modeloAnamneseSelecionadoId = null
                                 tela = AppScreen.CriarModeloAnamnese
                             },
 
-                            // Abre o formulário para editar um modelo existente.
                             onEditarModelo = { modelo ->
-
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.CriarModeloAnamnese
                             },
 
-                            // Abre a configuração das perguntas do modelo.
                             onPerguntas = { modelo ->
-
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.FormularioAnamnese
                             }
