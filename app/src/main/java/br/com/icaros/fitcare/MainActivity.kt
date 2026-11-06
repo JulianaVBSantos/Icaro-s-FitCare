@@ -195,7 +195,6 @@ enum class AppScreen {
 }
 
 // Fluxo de navegação principal da aplicação
-
 @Composable
 fun FitCareApp(
     repository: AlunoRepository,
@@ -207,33 +206,40 @@ fun FitCareApp(
     respostaAnamneseRepository: RespostaAnamneseRepository
 ) {
 
-// PRESERVA A TELA ATUAL QUANDO A ACTIVITY É RECRIADA
+// Mantém a tela atual quando a Activity é recriada.
     var tela by rememberSaveable {
         mutableStateOf(AppScreen.Login)
     }
 
-// PRESERVA O ALUNO SELECIONADO
+// Identificador do aluno selecionado.
     var alunoSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
 
-// PRESERVA O TREINO SELECIONADO
+// Identificador do treino selecionado.
     var treinoSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
 
-// PRESERVA O ESTADO DE REGISTRO DE TREINO
+// Indica se o usuário está iniciando um novo registro de treino.
     var registrarNovoTreino by rememberSaveable {
         mutableStateOf(false)
     }
 
-// MANTÉM O EVENTO EM EDIÇÃO NA COMPOSIÇÃO
+// Mantém temporariamente o evento que está sendo editado.
     var eventoEmEdicao by remember {
         mutableStateOf<EventoAluno?>(null)
     }
 
+// Identificador do modelo de anamnese selecionado.
     var modeloAnamneseSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
+    }
+
+// Controla a origem da navegação para retornar ao perfil do aluno
+// depois de acessar os modelos de anamnese
+    var voltarModelosParaPerfil by rememberSaveable {
+        mutableStateOf(false)
     }
 
     MaterialTheme(
@@ -326,16 +332,42 @@ fun FitCareApp(
                     }
 
                     AppScreen.PerfilAluno -> {
+
                         alunoSelecionadoId?.let { id ->
+
                             TelaPerfilAluno(
+
                                 alunoId = id,
+
                                 repository = repository,
+
                                 anamneseRepository = anamneseRepository,
-                                onVoltar = { tela = AppScreen.Alunos },
-                                onDashboard = { tela = AppScreen.Dashboard },
-                                onTreinos = { tela = AppScreen.Treinos },
-                                onEditar = { tela = AppScreen.EditarAluno },
-                                onLinhaDoTempo = { tela = AppScreen.LinhaDoTempoAluno }
+
+                                onVoltar = {
+                                    tela = AppScreen.Alunos
+                                },
+
+                                onDashboard = {
+                                    tela = AppScreen.Dashboard
+                                },
+
+                                onTreinos = {
+                                    tela = AppScreen.Treinos
+                                },
+
+                                onEditar = {
+                                    tela = AppScreen.EditarAluno
+                                },
+
+                                onLinhaDoTempo = {
+                                    tela = AppScreen.LinhaDoTempoAluno
+                                },
+
+                                // Abre os modelos de anamnese a partir do perfil.
+                                onModelosAnamnese = {
+                                    voltarModelosParaPerfil = true
+                                    tela = AppScreen.ModelosAnamnese
+                                }
                             )
                         }
                     }
@@ -492,24 +524,43 @@ fun FitCareApp(
                     }
 
                     AppScreen.ModelosAnamnese -> {
+
                         TelaModelosAnamnese(
+
+                            // Repositório responsável pelos modelos cadastrados.
                             repository = modeloAnamneseRepository,
 
+                            // Retorna à tela de origem.
+                            // Se veio do perfil, retorna ao perfil do aluno.
+                            // Caso contrário, retorna ao Dashboard.
                             onVoltar = {
-                                tela = AppScreen.Dashboard
+                                if (voltarModelosParaPerfil) {
+
+                                    voltarModelosParaPerfil = false
+                                    tela = AppScreen.PerfilAluno
+
+                                } else {
+
+                                    tela = AppScreen.Dashboard
+                                }
                             },
 
+                            // Abre o formulário para criar um novo modelo.
                             onNovoModelo = {
                                 modeloAnamneseSelecionadoId = null
                                 tela = AppScreen.CriarModeloAnamnese
                             },
 
+                            // Abre o formulário para editar um modelo existente.
                             onEditarModelo = { modelo ->
+
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.CriarModeloAnamnese
                             },
 
+                            // Abre a configuração das perguntas do modelo.
                             onPerguntas = { modelo ->
+
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.FormularioAnamnese
                             }
@@ -520,6 +571,7 @@ fun FitCareApp(
                         TelaCriarModeloAnamnese(
                             modeloId = modeloAnamneseSelecionadoId,
                             repository = modeloAnamneseRepository,
+                            perguntaRepository = perguntaModeloAnamneseRepository,
                             onVoltar = {
                                 tela = AppScreen.ModelosAnamnese
                             },
@@ -530,8 +582,51 @@ fun FitCareApp(
                         )
                     }
 
+// Tela responsável por cadastrar e organizar as perguntas do modelo.
                     AppScreen.FormularioAnamnese -> {
-                        Text("Formulário de Anamnese")
+
+                        val modeloId = modeloAnamneseSelecionadoId
+
+                        if (modeloId != null) {
+
+                            TelaPerguntasModeloAnamnese(
+                                modeloId = modeloId,
+
+                                // Repositório responsável pelas perguntas do modelo.
+                                repository = perguntaModeloAnamneseRepository,
+
+                                // Retorna à lista de modelos.
+                                onVoltar = {
+                                    tela = AppScreen.ModelosAnamnese
+                                }
+                            )
+
+                        } else {
+
+                            // Proteção caso a tela seja aberta sem um modelo selecionado.
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text("Nenhum modelo de anamnese foi selecionado.")
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        tela = AppScreen.ModelosAnamnese
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = AzulPrincipal
+                                    )
+                                ) {
+                                    Text("Voltar aos modelos")
+                                }
+                            }
+                        }
                     }
 
                     AppScreen.VisualizarAnamnese -> {
@@ -2306,7 +2401,8 @@ fun TelaPerfilAluno(
     onDashboard: () -> Unit,
     onTreinos: () -> Unit,
     onEditar: () -> Unit,
-    onLinhaDoTempo: () -> Unit
+    onLinhaDoTempo: () -> Unit,
+    onModelosAnamnese: () -> Unit
 ) {
     var alunoAtual by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
@@ -2727,6 +2823,34 @@ fun TelaPerfilAluno(
                         fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // ACESSAR MODELOS E FORMULÁRIOS DE ANAMNESE
+                    Button(
+                        onClick = onModelosAnamnese,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AzulPrincipal
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Assignment,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "Modelos e formulários de anamnese",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 

@@ -60,7 +60,7 @@ fun TelaModelosAnamnese(
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
                     contentDescription = "Voltar",
-                    tint = Color(0xFF1565C0)
+                    tint = Color(0xFF002B5C)
                 )
             }
 
@@ -100,20 +100,25 @@ fun TelaModelosAnamnese(
             onClick = onNovoModelo,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
-            shape = RoundedCornerShape(12.dp),
+                .height(46.dp),
+            shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF1565C0)
+                containerColor = Color(0xFF002B5C),
+                contentColor = Color.White
             )
         ) {
             Icon(
-                imageVector = Icons.Default.Add,
+                imageVector = Icons.Filled.Add,
                 contentDescription = null
             )
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            Text("Criar novo modelo")
+            Text(
+                text = "Criar novo modelo",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(18.dp))
@@ -203,7 +208,7 @@ fun TelaModelosAnamnese(
                                     "Modelo personalizado"
                                 },
                                 fontSize = 12.sp,
-                                color = Color(0xFF1565C0),
+                                color = Color(0xFF002B5C),
                                 fontWeight = FontWeight.SemiBold
                             )
 
@@ -227,7 +232,7 @@ fun TelaModelosAnamnese(
                                 },
                                 fontSize = 12.sp,
                                 color = if (modelo.ativo) {
-                                    Color(0xFF1565C0)
+                                    Color(0xFF002B5C)
                                 } else {
                                     Color(0xFF757575)
                                 }
