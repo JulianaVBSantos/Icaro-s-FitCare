@@ -1,55 +1,103 @@
+
 package br.com.icaros.fitcare
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 @Composable
 fun TelaEscolherPerfil(
     onSelecionarPerfil: (String) -> Unit,
     onCadastrarProfessor: () -> Unit
 ) {
-    Column(
+    val azulClaro = Color(0xFFEAF5FF)
+    val azulFundo = Color(0xFFD8ECFF)
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(azulClaro, azulFundo)
+                )
+            )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 28.dp)
     ) {
-        Text(
-            "Bem-vindo ao Ícaros FitCare",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text("Como deseja acessar o aplicativo?")
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = { onSelecionarPerfil("PROFESSOR") },
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("SOU PROFESSOR")
-        }
+            Image(
+                painter = painterResource(R.drawable.logo_fitcare),
+                contentDescription = "Logo Ícaros FitCare",
+                modifier = Modifier
+                    .width(250.dp)
+                    .height(165.dp)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-        OutlinedButton(
-            onClick = { onSelecionarPerfil("ALUNO") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("SOU ALUNO")
-        }
+            Text(
+                text = "Bem-vindo ao Ícaros FitCare",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF173B5E)
+            )
 
-        Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        TextButton(onClick = onCadastrarProfessor) {
-            Text("Criar minha conta profissional")
+            Text(
+                text = "Como deseja acessar o aplicativo?",
+                color = Color(0xFF38566F),
+                fontSize = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(36.dp))
+
+            Button(
+                onClick = { onSelecionarPerfil("PROFESSOR") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("SOU PROFESSOR")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = { onSelecionarPerfil("ALUNO") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("SOU ALUNO")
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            TextButton(onClick = onCadastrarProfessor) {
+                Text(
+                    text = "Criar minha conta profissional",
+                    color = Color(0xFF174F80)
+                )
+            }
         }
     }
 }

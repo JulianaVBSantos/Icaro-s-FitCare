@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import android.util.Base64
@@ -159,6 +158,12 @@ class UsuarioRepository(
         }
     }
 
+    suspend fun buscarPorId(id: Long): UsuarioEntity? {
+        if (id <= 0) return null
+
+        return usuarioDao.buscarPorId(id)
+    }
+
     suspend fun vincularAlunoAoProfessor(
         alunoUsuarioId: Long,
         professorUsuarioId: Long
@@ -190,6 +195,16 @@ class UsuarioRepository(
             usuarioId = alunoUsuarioId,
             professorId = professorUsuarioId
         )
+    }
+
+    suspend fun buscarUsuarioAtivoPorId(
+        id: Long
+    ): UsuarioEntity? {
+
+        if (id <= 0) return null
+
+        return usuarioDao.buscarPorId(id)
+            ?.takeIf { it.ativo }
     }
 
     fun sair() {
@@ -297,5 +312,40 @@ class UsuarioRepository(
         } finally {
             spec.clearPassword()
         }
+    }
+    suspend fun redefinirSenhaDoAluno(
+        alunoId: Long,
+        novaSenha: String
+    ) {
+        val professorAtual = SessaoUsuario.usuarioAtual
+            ?: throw IllegalStateException("Nenhum professor está conectado.")
+
+        if (professorAtual.perfil != "PROFESSOR") {
+            throw IllegalStateException(
+                "Somente o professor pode redefinir a senha do aluno."
+            )
+        }
+
+        if (novaSenha.length < 8) {
+            throw IllegalArgumentException(
+                "A senha deve ter pelo menos 8 caracteres."
+            )
+        }
+
+        val usuarioAluno = usuarioDao.buscarPorAlunoId(alunoId)
+            ?: throw IllegalStateException(
+                "Este aluno ainda não possui uma conta de acesso."
+            )
+
+        if (usuarioAluno.professorId != professorAtual.id) {
+            throw IllegalStateException(
+                "Você não tem permissão para alterar a senha deste aluno."
+            )
+        }
+
+        usuarioDao.atualizarSenha(
+            id = usuarioAluno.id,
+            senhaHash = gerarHashSenha(novaSenha)
+        )
     }
 }

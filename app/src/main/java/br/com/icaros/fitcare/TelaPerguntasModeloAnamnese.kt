@@ -22,6 +22,14 @@ import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.PerguntaModeloAnamneseEntity
 import br.com.icaros.fitcare.data.PerguntaModeloAnamneseRepository
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Checkbox
 import org.json.JSONArray
 
 @OptIn(ExperimentalMaterial3Api::class)

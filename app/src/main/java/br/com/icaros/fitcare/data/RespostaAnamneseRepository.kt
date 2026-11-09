@@ -45,12 +45,6 @@ class RespostaAnamneseRepository(
             "Esta anamnese não está disponível para respostas."
         }
 
-        if (pergunta.obrigatoria) {
-            require(resposta.isNotBlank()) {
-                "Esta pergunta é obrigatória."
-            }
-        }
-
         val data = agora()
 
         val respostaExistente =

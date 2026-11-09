@@ -31,6 +31,8 @@ abstract class FitCareDatabase : RoomDatabase() {
 
     abstract fun alunoDao(): AlunoDao
 
+    abstract fun documentoAnamneseDao(): DocumentoAnamneseDao
+
     abstract fun treinoDao(): TreinoDao
 
     abstract fun anamneseDao(): AnamneseDao

@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material.icons.filled.Lock
 import br.com.icaros.fitcare.data.SessaoUsuario
 import br.com.icaros.fitcare.data.UsuarioRepository
@@ -118,6 +119,10 @@ private val LoginAzulClaro = Color(0xFF164A73)    // Links em Azul secundário
 private val CabecalhoTopoClaro = Color(0xFFEAF3F9) // Fundo claro para destacar a logo escura
 private val CabecalhoBaseClaro = Color(0xFFF5F9FC)
 
+private const val PREFERENCIAS_SESSAO = "fitcare_sessao"
+const val CHAVE_MANTER_CONECTADO = "manter_conectado"
+const val CHAVE_USUARIO_ID = "usuario_id"
+const val CHAVE_PERFIL = "perfil"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -261,6 +266,52 @@ fun FitCareApp(
     var alunoAutenticado by rememberSaveable {
         mutableStateOf(false)
     }
+
+    val context = LocalContext.current
+
+    val preferenciasSessao = remember {
+        context.getSharedPreferences(
+            PREFERENCIAS_SESSAO,
+            Context.MODE_PRIVATE
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        val manterConectado = preferenciasSessao.getBoolean(
+            CHAVE_MANTER_CONECTADO,
+            false
+        )
+
+        val usuarioIdSalvo = preferenciasSessao.getLong(
+            CHAVE_USUARIO_ID,
+            -1L
+        )
+
+        if (manterConectado && usuarioIdSalvo > 0L) {
+            val usuario = usuarioRepository.buscarUsuarioAtivoPorId(
+                usuarioIdSalvo
+            )
+
+            if (usuario != null) {
+                SessaoUsuario.iniciar(usuario)
+                perfilSelecionado = usuario.perfil
+
+                if (usuario.perfil == "PROFESSOR") {
+                    alunoAutenticado = false
+                    tela = AppScreen.Dashboard
+                } else {
+                    alunoAutenticado = true
+                    tela = AppScreen.Login
+                }
+            } else {
+                preferenciasSessao.edit()
+                    .remove(CHAVE_USUARIO_ID)
+                    .remove(CHAVE_PERFIL)
+                    .apply()
+            }
+        }
+    }
+
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = AzulPrincipal,
@@ -288,10 +339,17 @@ fun FitCareApp(
                                 alunoId = SessaoUsuario.usuarioAtual?.alunoId,
                                 anamneseRepository = anamneseAtribuidaRepository,
                                 respostaRepository = respostaAnamneseRepository,
+                                documentoRepository = anamneseRepository,
+                                alunoRepository = repository,
                                 onSair = {
+                                    preferenciasSessao.edit()
+                                        .remove(CHAVE_USUARIO_ID)
+                                        .remove(CHAVE_PERFIL)
+                                        .apply()
+
                                     SessaoUsuario.encerrar()
                                     alunoAutenticado = false
-                                    perfilSelecionado = null
+                                    perfilSelecionado = "ALUNO"
                                     tela = AppScreen.Login
                                 }
                             )
@@ -315,10 +373,29 @@ fun FitCareApp(
                                     perfilSelecionado = null
                                 },
                                 onEntrar = { usuario ->
-
                                     SessaoUsuario.iniciar(usuario)
 
+                                    if (
+                                        preferenciasSessao.getBoolean(
+                                            CHAVE_MANTER_CONECTADO,
+                                            false
+                                        )
+                                    ) {
+                                        preferenciasSessao.edit()
+                                            .putLong(CHAVE_USUARIO_ID, usuario.id)
+                                            .putString(CHAVE_PERFIL, usuario.perfil)
+                                            .apply()
+                                    } else {
+                                        preferenciasSessao.edit()
+                                            .remove(CHAVE_USUARIO_ID)
+                                            .remove(CHAVE_PERFIL)
+                                            .apply()
+                                    }
+
+                                    perfilSelecionado = usuario.perfil
+
                                     if (usuario.perfil == "PROFESSOR") {
+                                        alunoAutenticado = false
                                         tela = AppScreen.Dashboard
                                     } else {
                                         alunoAutenticado = true
@@ -367,9 +444,14 @@ fun FitCareApp(
                                 tela = AppScreen.PerfilAluno
                             },
                             onSair = {
+                                preferenciasSessao.edit()
+                                    .remove(CHAVE_USUARIO_ID)
+                                    .remove(CHAVE_PERFIL)
+                                    .apply()
+
                                 SessaoUsuario.encerrar()
-                                perfilSelecionado = null
                                 alunoAutenticado = false
+                                perfilSelecionado = "PROFESSOR"
                                 tela = AppScreen.Login
                             }
                         )
@@ -708,7 +790,38 @@ fun FitCareApp(
                     }
 
                     AppScreen.VisualizarAnamnese -> {
-                        Text("Visualizar Anamnese")
+                        val anamneseId = anamneseAtribuidaSelecionadaId
+
+                        if (anamneseId != null) {
+                            TelaVisualizarAnamnese(
+                                anamneseId = anamneseId,
+                                anamneseRepository = anamneseAtribuidaRepository,
+                                respostaRepository = respostaAnamneseRepository,
+                                onVoltar = {
+                                    tela = AppScreen.ModelosAnamnese
+                                }
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("Nenhuma anamnese foi selecionada.")
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        tela = AppScreen.ModelosAnamnese
+                                    }
+                                ) {
+                                    Text("VOLTAR")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1314,22 +1427,59 @@ fun TelaLogin(
     onVoltar: () -> Unit,
     onEntrar: (UsuarioEntity) -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
-    var senha by remember { mutableStateOf("") }
-    var senhaVisivel by remember { mutableStateOf(false) }
-    var mensagemErro by remember { mutableStateOf<String?>(null) }
-    var carregando by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val preferencias = remember {
+        context.getSharedPreferences(
+            PREFERENCIAS_SESSAO,
+            Context.MODE_PRIVATE
+        )
+    }
+
+    var email by rememberSaveable {
+        mutableStateOf("")
+    }
+
+    var senha by rememberSaveable {
+        mutableStateOf("")
+    }
+
+    var senhaVisivel by remember {
+        mutableStateOf(false)
+    }
+
+    var manterConectado by remember {
+        mutableStateOf(
+            preferencias.getBoolean(
+                CHAVE_MANTER_CONECTADO,
+                false
+            )
+        )
+    }
+
+    var carregando by remember {
+        mutableStateOf(false)
+    }
+
+    var mensagemErro by remember {
+        mutableStateOf<String?>(null)
+    }
 
     val scope = rememberCoroutineScope()
+
+    val azulClaro = Color(0xFFEAF5FF)
+    val azulFundo = Color(0xFFD8ECFF)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(LoginTopo, LoginBase)
+                    colors = listOf(azulClaro, azulFundo)
                 )
             )
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         Column(
             modifier = Modifier
@@ -1339,7 +1489,6 @@ fun TelaLogin(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-
             Image(
                 painter = painterResource(R.drawable.logo_fitcare),
                 contentDescription = "Logo Ícaros FitCare",
@@ -1350,7 +1499,9 @@ fun TelaLogin(
 
             Text(
                 text = "Bem-vindo de volta",
-                style = MaterialTheme.typography.headlineSmall
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF173B5E)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -1360,7 +1511,8 @@ fun TelaLogin(
                     "Acesse sua conta profissional."
                 } else {
                     "Acesse sua conta de aluno."
-                }
+                },
+                color = Color(0xFF38566F)
             )
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -1373,7 +1525,8 @@ fun TelaLogin(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("E-mail") },
-                singleLine = true
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1387,6 +1540,7 @@ fun TelaLogin(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Senha") },
                 singleLine = true,
+                shape = RoundedCornerShape(10.dp),
                 visualTransformation = if (senhaVisivel) {
                     VisualTransformation.None
                 } else {
@@ -1398,13 +1552,48 @@ fun TelaLogin(
                             senhaVisivel = !senhaVisivel
                         }
                     ) {
-                        Text(if (senhaVisivel) "Ocultar" else "Mostrar")
+                        Text(
+                            if (senhaVisivel) "Ocultar" else "Mostrar"
+                        )
                     }
                 }
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = manterConectado,
+                    onCheckedChange = { marcado ->
+                        manterConectado = marcado
+
+                        preferencias.edit()
+                            .putBoolean(
+                                CHAVE_MANTER_CONECTADO,
+                                marcado
+                            )
+                            .apply()
+
+                        if (!marcado) {
+                            preferencias.edit()
+                                .remove(CHAVE_USUARIO_ID)
+                                .remove(CHAVE_PERFIL)
+                                .apply()
+                        }
+                    }
+                )
+
+                Text(
+                    text = "Manter-me conectado",
+                    color = Color(0xFF24445F)
+                )
+            }
+
             if (mensagemErro != null) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     text = mensagemErro!!,
@@ -1412,12 +1601,13 @@ fun TelaLogin(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = {
                     if (email.isBlank() || senha.isBlank()) {
-                        mensagemErro = "Informe seu e-mail e sua senha."
+                        mensagemErro =
+                            "Informe seu e-mail e sua senha."
                         return@Button
                     }
 
@@ -1427,7 +1617,7 @@ fun TelaLogin(
 
                         try {
                             val usuario = usuarioRepository.autenticar(
-                                email = email,
+                                email = email.trim(),
                                 senha = senha,
                                 perfilEsperado = perfil
                             )
@@ -1436,30 +1626,58 @@ fun TelaLogin(
                                 mensagemErro =
                                     "E-mail, senha ou perfil incorreto."
                             } else {
+                                preferencias.edit().apply {
+                                    putBoolean(
+                                        CHAVE_MANTER_CONECTADO,
+                                        manterConectado
+                                    )
+
+                                    if (manterConectado) {
+                                        putLong(
+                                            CHAVE_USUARIO_ID,
+                                            usuario.id
+                                        )
+                                        putString(
+                                            CHAVE_PERFIL,
+                                            usuario.perfil
+                                        )
+                                    } else {
+                                        remove(CHAVE_USUARIO_ID)
+                                        remove(CHAVE_PERFIL)
+                                    }
+
+                                    apply()
+                                }
+
                                 onEntrar(usuario)
                             }
-
                         } catch (e: Exception) {
                             mensagemErro =
-                                e.message ?: "Não foi possível realizar o login."
+                                e.message
+                                    ?: "Não foi possível realizar o login."
                         } finally {
                             carregando = false
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !carregando
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                enabled = !carregando,
+                shape = RoundedCornerShape(10.dp)
             ) {
                 Text(
-                    if (carregando) "AGUARDE..."
-                    else "ENTRAR"
+                    if (carregando) "AGUARDE..." else "ENTRAR"
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             TextButton(onClick = onVoltar) {
-                Text("Voltar")
+                Text(
+                    "Voltar",
+                    color = Color(0xFF174F80)
+                )
             }
         }
     }
@@ -2536,9 +2754,21 @@ fun TelaPerfilAluno(
     val documentosAnamnese by anamneseRepository
         .listarDocumentos(alunoId)
         .collectAsState(initial = emptyList())
+
+    // SEPARAÇÃO DOS DOCUMENTOS MÉDICOS E IMAGENS DE COMPARAÇÃO
+    val documentosMedicos = documentosAnamnese.filterNot { documento ->
+        documento.tipoArquivo.startsWith("comparacao_", ignoreCase = true) ||
+                documento.nomeArquivo.startsWith("comparacao_", ignoreCase = true)
+    }
+
+    val imagensComparacao = documentosAnamnese.filter { documento ->
+        documento.tipoArquivo.startsWith("comparacao_", ignoreCase = true) ||
+                documento.nomeArquivo.startsWith("comparacao_", ignoreCase = true)
+    }
     val avaliacoesAnamnese by anamneseAtribuidaRepository
         .listarPorAluno(alunoId)
         .collectAsState(initial = emptyList())
+
     val storageEventosPerfil = remember(contextoEventosPerfil) {
         EventoAlunoStorage(contextoEventosPerfil)
     }
@@ -2563,31 +2793,40 @@ fun TelaPerfilAluno(
         mutableStateOf(false)
     }
 
-    var nomeAcessoAluno by remember {
-        mutableStateOf("")
-    }
-
-    var emailAcessoAluno by remember {
-        mutableStateOf("")
-    }
-
-    var senhaAcessoAluno by remember {
-        mutableStateOf("")
-    }
-
-    var confirmarSenhaAcessoAluno by remember {
-        mutableStateOf("")
-    }
+    var nomeAcessoAluno by remember { mutableStateOf("") }
+    var emailAcessoAluno by remember { mutableStateOf("") }
+    var senhaAcessoAluno by remember { mutableStateOf("") }
+    var confirmarSenhaAcessoAluno by remember { mutableStateOf("") }
 
     var carregandoCadastroAcesso by remember {
         mutableStateOf(false)
     }
 
-    var erroCadastroAcesso by remember {
+    var erroCadastroAcesso by remember { mutableStateOf("") }
+    var sucessoCadastroAcesso by remember { mutableStateOf("") }
+
+    // REDEFINIÇÃO DE SENHA
+    var mostrarDialogoRedefinirSenha by remember {
+        mutableStateOf(false)
+    }
+
+    var novaSenhaAluno by remember {
         mutableStateOf("")
     }
 
-    var sucessoCadastroAcesso by remember {
+    var confirmarNovaSenhaAluno by remember {
+        mutableStateOf("")
+    }
+
+    var carregandoRedefinicaoSenha by remember {
+        mutableStateOf(false)
+    }
+
+    var erroRedefinicaoSenha by remember {
+        mutableStateOf("")
+    }
+
+    var sucessoRedefinicaoSenha by remember {
         mutableStateOf("")
     }
 
@@ -2688,7 +2927,7 @@ fun TelaPerfilAluno(
             .background(FundoApp)
     ) {
 
-        // CABEÇALHO COM LOGO DO APLICATIVO
+        // CABEÇALHO COM LOGO
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2709,7 +2948,6 @@ fun TelaPerfilAluno(
                     .padding(horizontal = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // LOGO CENTRALIZADA
                 Image(
                     painter = painterResource(
                         id = R.drawable.logo_fitcare
@@ -2720,13 +2958,10 @@ fun TelaPerfilAluno(
                         .height(80.dp)
                 )
 
-                // BOTÃO VOLTAR À ESQUERDA
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
-                    BotaoVoltarPadrao(
-                        onVoltar = onVoltar
-                    )
+                    BotaoVoltarPadrao(onVoltar = onVoltar)
                 }
             }
         }
@@ -2752,10 +2987,7 @@ fun TelaPerfilAluno(
                         .background(Color(0xFFE9E7EC), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "👤",
-                        fontSize = 24.sp
-                    )
+                    Text("👤", fontSize = 24.sp)
                 }
 
                 Spacer(modifier = Modifier.width(14.dp))
@@ -2794,7 +3026,6 @@ fun TelaPerfilAluno(
                 }
             }
 
-            // CARTÕES DE INFORMAÇÕES
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2825,20 +3056,9 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    LinhaDado(
-                        rotulo = "E-mail",
-                        valor = alunoAtual!!.email
-                    )
-
-                    LinhaDado(
-                        rotulo = "Cadastro",
-                        valor = alunoAtual!!.dataCadastro
-                    )
-
-                    LinhaDado(
-                        rotulo = "Objetivo",
-                        valor = alunoAtual!!.objetivo
-                    )
+                    LinhaDado("E-mail", alunoAtual!!.email)
+                    LinhaDado("Cadastro", alunoAtual!!.dataCadastro)
+                    LinhaDado("Objetivo", alunoAtual!!.objetivo)
 
                     Spacer(modifier = Modifier.height(4.dp))
 
@@ -2861,10 +3081,10 @@ fun TelaPerfilAluno(
                     }
                 }
 
-
+                // CRIAR ACESSO DO ALUNO
                 Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedButton(
+                Button(
                     onClick = {
                         nomeAcessoAluno = alunoAtual!!.nome
                         emailAcessoAluno = alunoAtual!!.email
@@ -2876,7 +3096,12 @@ fun TelaPerfilAluno(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(48.dp),
+                    shape = RectangleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFF2BF),
+                        contentColor = Color(0xFF665000)
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Lock,
@@ -2885,7 +3110,36 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    Text("Criar acesso do aluno")
+                    Text(
+                        text = "Criar acesso do aluno",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // REDEFINIR SENHA
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        novaSenhaAluno = ""
+                        confirmarNovaSenhaAluno = ""
+                        erroRedefinicaoSenha = ""
+                        sucessoRedefinicaoSenha = ""
+                        mostrarDialogoRedefinirSenha = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RectangleShape
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text("Redefinir senha do aluno")
                 }
 
                 // EXCLUIR ALUNO
@@ -2970,8 +3224,7 @@ fun TelaPerfilAluno(
                     )
                 }
 
-
-// ANAMNESE E DOCUMENTOS SALVOS
+                // ANAMNESE E DOCUMENTOS
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -2996,7 +3249,7 @@ fun TelaPerfilAluno(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Importe documentos ou consulte os arquivos já associados a este aluno.",
+                        text = "Atribua uma anamnese ao aluno e consulte as respostas e os documentos médicos anexados por ele.",
                         color = TextoSecundario,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -3004,7 +3257,7 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // ACESSAR MODELOS E FORMULÁRIOS DE ANAMNESE
+                    // ATRIBUIR ANAMNESE
                     Button(
                         onClick = onModelosAnamnese,
                         modifier = Modifier
@@ -3024,7 +3277,7 @@ fun TelaPerfilAluno(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = "Modelos e formulários de anamnese",
+                            text = "Atribuir anamnese",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3032,9 +3285,8 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // AVALIAÇÕES DE ANAMNESE ATRIBUÍDAS
                     Text(
-                        text = "Avaliações de anamnese criadas",
+                        text = "Anamneses atribuídas",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
@@ -3044,7 +3296,7 @@ fun TelaPerfilAluno(
 
                     if (avaliacoesAnamnese.isEmpty()) {
                         Text(
-                            text = "Nenhuma avaliação de anamnese foi criada para este aluno.",
+                            text = "Nenhuma anamnese foi atribuída a este aluno.",
                             color = TextoSecundario,
                             fontSize = 12.sp
                         )
@@ -3140,25 +3392,13 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // IMPORTAR DOCUMENTO
-                    BotaoImportarDocumentoAnamnese(
-                        alunoId = alunoId,
-                        anamneseRepository = anamneseRepository,
-                        alunoRepository = repository,
-                        onDocumentoImportado = {
-                            // A lista é atualizada automaticamente pelo Flow do Room.
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
                     Divider(color = Color.LightGray)
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // LISTA DE DOCUMENTOS SALVOS
+                    // DOCUMENTOS ANEXADOS PELO ALUNO
                     Text(
-                        text = "DOCUMENTOS IMPORTADOS E GERADOS",
+                        text = "Documentos médicos anexados pelo aluno:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
@@ -3166,18 +3406,14 @@ fun TelaPerfilAluno(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    if (documentosAnamnese.isEmpty()) {
-
+                    if (documentosMedicos.isEmpty()) {
                         Text(
-                            text = "Nenhum documento salvo para este aluno.",
+                            text = "Nenhum documento médico foi anexado pelo aluno.",
                             color = TextoSecundario,
                             fontSize = 12.sp
                         )
-
                     } else {
-
-                        documentosAnamnese.forEach { documento ->
-
+                        documentosMedicos.forEach { documento ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -3190,8 +3426,6 @@ fun TelaPerfilAluno(
                                 Column(
                                     modifier = Modifier.padding(12.dp)
                                 ) {
-
-                                    // NOME E BOTÃO DE EXCLUSÃO
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -3219,8 +3453,6 @@ fun TelaPerfilAluno(
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(4.dp))
-
                                     Text(
                                         text = "Formato: ${documento.tipoArquivo.uppercase()}",
                                         fontSize = 11.sp,
@@ -3228,14 +3460,13 @@ fun TelaPerfilAluno(
                                     )
 
                                     Text(
-                                        text = "Salvo em: ${documento.dataImportacao}",
+                                        text = "Anexado em: ${documento.dataImportacao}",
                                         fontSize = 11.sp,
                                         color = TextoSecundario
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
-                                    // ABRIR DOCUMENTO
                                     OutlinedButton(
                                         onClick = {
                                             try {
@@ -3246,8 +3477,7 @@ fun TelaPerfilAluno(
                                             } catch (e: Exception) {
                                                 android.widget.Toast.makeText(
                                                     contextoEventosPerfil,
-                                                    e.message
-                                                        ?: "Não foi possível abrir o documento.",
+                                                    e.message ?: "Não foi possível abrir o documento.",
                                                     android.widget.Toast.LENGTH_LONG
                                                 ).show()
                                             }
@@ -3260,128 +3490,107 @@ fun TelaPerfilAluno(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Divider(color = Color.LightGray)
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+// IMAGENS DE COMPARAÇÃO
                     Text(
-                        text = "Formatos aceitos para importação: PDF ou imagem.",
-                        color = TextoSecundario,
-                        fontSize = 10.sp
+                        text = "Imagens para comparação anexadas pelo aluno:",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextoPrincipal
                     )
-                }
 
-// DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO
-                if (documentoParaExcluir != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    AlertDialog(
-                        onDismissRequest = {
-                            if (!excluindoDocumento) {
-                                documentoParaExcluir = null
-                                erroExclusaoDocumento = ""
-                            }
-                        },
-
-                        title = {
-                            Text("Remover documento?")
-                        },
-
-                        text = {
-                            Column {
-                                Text(
-                                    text = "Deseja realmente excluir este documento? " +
-                                            "O arquivo será removido permanentemente."
+                    if (imagensComparacao.isEmpty()) {
+                        Text(
+                            text = "Nenhuma imagem de comparação foi anexada pelo aluno.",
+                            color = TextoSecundario,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        imagensComparacao.forEach { documento ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = AzulMuitoClaro
                                 )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = documento.nomeArquivo,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextoPrincipal,
+                                            modifier = Modifier.weight(1f)
+                                        )
 
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text(
-                                    text = documentoParaExcluir?.nomeArquivo.orEmpty(),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextoPrincipal
-                                )
-
-                                if (erroExclusaoDocumento.isNotBlank()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Text(
-                                        text = erroExclusaoDocumento,
-                                        color = Color.Red,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        },
-
-                        confirmButton = {
-                            TextButton(
-                                enabled = !excluindoDocumento,
-                                onClick = {
-                                    val documento = documentoParaExcluir
-
-                                    if (documento != null && !excluindoDocumento) {
-                                        excluindoDocumento = true
-
-                                        scope.launch {
-                                            try {
-                                                val arquivo = java.io.File(
-                                                    documento.caminhoArquivo
-                                                )
-
-                                                if (
-                                                    arquivo.exists() &&
-                                                    !arquivo.delete()
-                                                ) {
-                                                    throw Exception(
-                                                        "Não foi possível remover o arquivo."
-                                                    )
-                                                }
-
-                                                anamneseRepository.excluirDocumento(
-                                                    documento.id
-                                                )
-
-                                                documentoParaExcluir = null
-
-                                                android.widget.Toast.makeText(
-                                                    contextoEventosPerfil,
-                                                    "Documento removido com sucesso.",
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-
-                                            } catch (e: Exception) {
-                                                erroExclusaoDocumento =
-                                                    "Não foi possível excluir o documento. Tente novamente."
-                                            } finally {
-                                                excluindoDocumento = false
-                                            }
+                                        IconButton(
+                                            onClick = {
+                                                documentoParaExcluir = documento
+                                                erroExclusaoDocumento = ""
+                                            },
+                                            enabled = !excluindoDocumento
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Delete,
+                                                contentDescription = "Remover imagem",
+                                                tint = Color.Red
+                                            )
                                         }
                                     }
-                                }
-                            ) {
-                                Text(
-                                    text = if (excluindoDocumento) {
-                                        "Excluindo..."
-                                    } else {
-                                        "Excluir"
-                                    },
-                                    color = Color.Red
-                                )
-                            }
-                        },
 
-                        dismissButton = {
-                            TextButton(
-                                enabled = !excluindoDocumento,
-                                onClick = {
-                                    documentoParaExcluir = null
-                                    erroExclusaoDocumento = ""
+                                    Text(
+                                        text = "Formato: ${documento.tipoArquivo.uppercase()}",
+                                        fontSize = 11.sp,
+                                        color = TextoSecundario
+                                    )
+
+                                    Text(
+                                        text = "Anexada em: ${documento.dataImportacao}",
+                                        fontSize = 11.sp,
+                                        color = TextoSecundario
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            try {
+                                                abrirDocumentoAnamnese(
+                                                    context = contextoEventosPerfil,
+                                                    documento = documento
+                                                )
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(
+                                                    contextoEventosPerfil,
+                                                    e.message ?: "Não foi possível abrir a imagem.",
+                                                    android.widget.Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                    ) {
+                                        Text("ABRIR IMAGEM")
+                                    }
                                 }
-                            ) {
-                                Text("Cancelar")
                             }
                         }
-                    )
+                    }
                 }
 
                 // HISTÓRICO DO ALUNO
@@ -3511,7 +3720,7 @@ fun TelaPerfilAluno(
             }
         }
 
-        // RODAPÉ - MESMO PADRÃO DA TELA DE ALUNOS
+        // RODAPÉ
         DashboardBottomBar(
             telaAtual = AppScreen.PerfilAluno,
             onInicio = onDashboard,
@@ -3522,7 +3731,112 @@ fun TelaPerfilAluno(
         )
     }
 
-    // DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO
+    // DIÁLOGO DE EXCLUSÃO DE DOCUMENTO
+    if (documentoParaExcluir != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!excluindoDocumento) {
+                    documentoParaExcluir = null
+                    erroExclusaoDocumento = ""
+                }
+            },
+            title = {
+                Text("Remover documento?")
+            },
+            text = {
+                Column {
+                    Text(
+                        "Deseja realmente excluir este documento? O arquivo será removido permanentemente."
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = documentoParaExcluir?.nomeArquivo.orEmpty(),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextoPrincipal
+                    )
+
+                    if (erroExclusaoDocumento.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = erroExclusaoDocumento,
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !excluindoDocumento,
+                    onClick = {
+                        val documento = documentoParaExcluir
+
+                        if (documento != null && !excluindoDocumento) {
+                            excluindoDocumento = true
+
+                            scope.launch {
+                                try {
+                                    val arquivo = java.io.File(
+                                        documento.caminhoArquivo
+                                    )
+
+                                    if (arquivo.exists() && !arquivo.delete()) {
+                                        throw Exception(
+                                            "Não foi possível remover o arquivo."
+                                        )
+                                    }
+
+                                    anamneseRepository.excluirDocumento(
+                                        documento.id
+                                    )
+
+                                    documentoParaExcluir = null
+
+                                    android.widget.Toast.makeText(
+                                        contextoEventosPerfil,
+                                        "Documento removido com sucesso.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+
+                                } catch (e: Exception) {
+                                    erroExclusaoDocumento =
+                                        "Não foi possível excluir o documento. Tente novamente."
+                                } finally {
+                                    excluindoDocumento = false
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = if (excluindoDocumento) {
+                            "Excluindo..."
+                        } else {
+                            "Excluir"
+                        },
+                        color = Color.Red
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !excluindoDocumento,
+                    onClick = {
+                        documentoParaExcluir = null
+                        erroExclusaoDocumento = ""
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // DIÁLOGO DE EXCLUSÃO DO ALUNO
     if (mostrarDialogoExclusao) {
         AlertDialog(
             onDismissRequest = {
@@ -3591,6 +3905,7 @@ fun TelaPerfilAluno(
         )
     }
 
+    // DIÁLOGO DE CRIAÇÃO DE ACESSO
     if (mostrarCadastroAcessoAluno) {
         AlertDialog(
             onDismissRequest = {
@@ -3616,9 +3931,7 @@ fun TelaPerfilAluno(
 
                     OutlinedTextField(
                         value = nomeAcessoAluno,
-                        onValueChange = {
-                            nomeAcessoAluno = it
-                        },
+                        onValueChange = { nomeAcessoAluno = it },
                         label = { Text("Nome") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -3628,9 +3941,7 @@ fun TelaPerfilAluno(
 
                     OutlinedTextField(
                         value = emailAcessoAluno,
-                        onValueChange = {
-                            emailAcessoAluno = it
-                        },
+                        onValueChange = { emailAcessoAluno = it },
                         label = { Text("E-mail de acesso") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -3640,9 +3951,7 @@ fun TelaPerfilAluno(
 
                     OutlinedTextField(
                         value = senhaAcessoAluno,
-                        onValueChange = {
-                            senhaAcessoAluno = it
-                        },
+                        onValueChange = { senhaAcessoAluno = it },
                         label = { Text("Senha") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -3653,9 +3962,7 @@ fun TelaPerfilAluno(
 
                     OutlinedTextField(
                         value = confirmarSenhaAcessoAluno,
-                        onValueChange = {
-                            confirmarSenhaAcessoAluno = it
-                        },
+                        onValueChange = { confirmarSenhaAcessoAluno = it },
                         label = { Text("Confirmar senha") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -3741,6 +4048,143 @@ fun TelaPerfilAluno(
                     enabled = !carregandoCadastroAcesso,
                     onClick = {
                         mostrarCadastroAcessoAluno = false
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // DIÁLOGO DE REDEFINIÇÃO DE SENHA
+    if (mostrarDialogoRedefinirSenha) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!carregandoRedefinicaoSenha) {
+                    mostrarDialogoRedefinirSenha = false
+                }
+            },
+            title = {
+                Text("Redefinir senha do aluno")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(
+                        rememberScrollState()
+                    )
+                ) {
+                    Text(
+                        text = "Defina uma nova senha para o acesso deste aluno.",
+                        fontSize = 13.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = novaSenhaAluno,
+                        onValueChange = { novaSenhaAluno = it },
+                        label = { Text("Nova senha") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = confirmarNovaSenhaAluno,
+                        onValueChange = { confirmarNovaSenhaAluno = it },
+                        label = { Text("Confirmar nova senha") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    if (erroRedefinicaoSenha.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = erroRedefinicaoSenha,
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (sucessoRedefinicaoSenha.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = sucessoRedefinicaoSenha,
+                            color = Color(0xFF2E7D32),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !carregandoRedefinicaoSenha,
+                    onClick = {
+                        erroRedefinicaoSenha = ""
+
+                        if (novaSenhaAluno.length < 8) {
+                            erroRedefinicaoSenha =
+                                "A senha deve ter pelo menos 8 caracteres."
+                            return@TextButton
+                        }
+
+                        if (novaSenhaAluno != confirmarNovaSenhaAluno) {
+                            erroRedefinicaoSenha =
+                                "As senhas não coincidem."
+                            return@TextButton
+                        }
+
+                        carregandoRedefinicaoSenha = true
+
+                        scope.launch {
+                            try {
+                                usuarioRepository.redefinirSenhaDoAluno(
+                                    alunoId = alunoId,
+                                    novaSenha = novaSenhaAluno
+                                )
+
+                                sucessoRedefinicaoSenha =
+                                    "Senha redefinida com sucesso."
+
+                                novaSenhaAluno = ""
+                                confirmarNovaSenhaAluno = ""
+
+                                android.widget.Toast.makeText(
+                                    contextoEventosPerfil,
+                                    "Senha do aluno atualizada.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+
+                                mostrarDialogoRedefinirSenha = false
+
+                            } catch (e: Exception) {
+                                erroRedefinicaoSenha = e.message
+                                    ?: "Não foi possível redefinir a senha."
+                            } finally {
+                                carregandoRedefinicaoSenha = false
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        if (carregandoRedefinicaoSenha) {
+                            "Salvando..."
+                        } else {
+                            "Salvar nova senha"
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !carregandoRedefinicaoSenha,
+                    onClick = {
+                        mostrarDialogoRedefinirSenha = false
                     }
                 ) {
                     Text("Cancelar")

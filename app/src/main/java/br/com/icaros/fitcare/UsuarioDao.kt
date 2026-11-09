@@ -64,4 +64,7 @@ interface UsuarioDao {
 """)
     suspend fun buscarPorProfessorId(professorId: Long): UsuarioEntity?
 
+    @Query("UPDATE usuarios SET senhaHash = :senhaHash WHERE id = :id")
+    suspend fun atualizarSenha(id: Long, senhaHash: String)
+
 }
