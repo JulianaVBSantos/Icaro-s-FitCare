@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        UsuarioEntity::class,
         AlunoEntity::class,
         TreinoEntity::class,
         ExercicioEntity::class,
@@ -21,10 +22,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PerguntaAnamneseAtribuidaEntity::class,
         RespostaAnamneseEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
+
+    abstract fun usuarioDao(): UsuarioDao
 
     abstract fun alunoDao(): AlunoDao
 
@@ -49,15 +52,12 @@ abstract class FitCareDatabase : RoomDatabase() {
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
-
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN observacoesProfissionais TEXT NOT NULL DEFAULT ''"
                 )
-
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN condicoes TEXT NOT NULL DEFAULT ''"
                 )
-
                 database.execSQL(
                     "ALTER TABLE alunos ADD COLUMN restricoes TEXT NOT NULL DEFAULT ''"
                 )
@@ -195,11 +195,8 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
-        // MIGRAÇÃO DA VERSÃO 4 PARA A VERSÃO 5
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
-
-                // 1. MODELOS DE ANAMNESE
 
                 database.execSQL(
                     """
@@ -214,8 +211,6 @@ abstract class FitCareDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
-
-                // 2. PERGUNTAS DOS MODELOS
 
                 database.execSQL(
                     """
@@ -241,8 +236,6 @@ abstract class FitCareDatabase : RoomDatabase() {
                     ON perguntas_modelo_anamnese(modeloId)
                     """.trimIndent()
                 )
-
-                // 3. ANAMNESES ATRIBUÍDAS AOS ALUNOS
 
                 database.execSQL(
                     """
@@ -292,8 +285,6 @@ abstract class FitCareDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
 
-                // 4. PERGUNTAS COPIADAS PARA CADA ANAMNESE
-
                 database.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS perguntas_anamnese_atribuidas (
@@ -320,8 +311,6 @@ abstract class FitCareDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
 
-                // 5. RESPOSTAS DOS ALUNOS
-
                 database.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS respostas_anamnese (
@@ -346,6 +335,35 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS usuarios (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        nome TEXT NOT NULL,
+                        email TEXT NOT NULL,
+                        senhaHash TEXT NOT NULL,
+                        perfil TEXT NOT NULL,
+                        alunoId INTEGER,
+                        professorId INTEGER,
+                        ativo INTEGER NOT NULL,
+                        dataCriacao INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                database.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS
+                    index_usuarios_email
+                    ON usuarios(email)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
 
             return INSTANCE ?: synchronized(this) {
@@ -359,7 +377,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_1_2,
                         MIGRATION_2_3,
                         MIGRATION_3_4,
-                        MIGRATION_4_5
+                        MIGRATION_4_5,
+                        MIGRATION_5_6
                     )
                     .build()
 

@@ -128,4 +128,43 @@ class RespostaAnamneseRepository(
             anamneseId
         )
     }
+
+    suspend fun buscarRespostasDaAnamnese(
+        anamneseId: Long
+    ): List<RespostaAnamneseEntity> {
+        return respostaDao.buscarTodasPorAnamnese(anamneseId)
+    }
+
+    suspend fun salvarRespostaDoAluno(
+        alunoId: Long,
+        perguntaId: Long,
+        resposta: String
+    ) {
+        require(alunoId > 0) {
+            "Aluno inválido."
+        }
+
+        require(perguntaDao.pertenceAoAluno(perguntaId, alunoId)) {
+            "Esta pergunta não pertence ao aluno autenticado."
+        }
+
+        salvarResposta(perguntaId, resposta)
+    }
+
+    suspend fun concluirDoAluno(
+        alunoId: Long,
+        anamneseId: Long
+    ) {
+        require(alunoId > 0) {
+            "Aluno inválido."
+        }
+
+        require(
+            anamneseDao.buscarPorIdDoAluno(anamneseId, alunoId) != null
+        ) {
+            "Esta anamnese não pertence ao aluno autenticado."
+        }
+
+        concluir(anamneseId)
+    }
 }

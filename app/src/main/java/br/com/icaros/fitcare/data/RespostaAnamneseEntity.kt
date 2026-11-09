@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.Entity

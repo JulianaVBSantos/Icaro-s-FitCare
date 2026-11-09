@@ -21,6 +21,7 @@ interface PerguntaAnamneseAtribuidaDao {
         perguntas: List<PerguntaAnamneseAtribuidaEntity>
     ): List<Long>
 
+
     @Update
     suspend fun atualizar(
         pergunta: PerguntaAnamneseAtribuidaEntity
@@ -65,4 +66,19 @@ interface PerguntaAnamneseAtribuidaDao {
     suspend fun excluirTodasDaAnamnese(
         anamneseId: Long
     )
+
+    @Query("""
+    SELECT EXISTS(
+        SELECT 1
+        FROM perguntas_anamnese_atribuidas p
+        INNER JOIN anamneses_atribuidas a
+            ON a.id = p.anamneseAtribuidaId
+        WHERE p.id = :perguntaId
+        AND a.alunoId = :alunoId
+    )
+""")
+    suspend fun pertenceAoAluno(
+        perguntaId: Long,
+        alunoId: Long
+    ): Boolean
 }

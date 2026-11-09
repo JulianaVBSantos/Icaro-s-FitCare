@@ -71,4 +71,16 @@ interface RespostaAnamneseDao {
     suspend fun excluirPorPergunta(
         perguntaId: Long
     )
+
+    @Query("""
+    SELECT respostas_anamnese.*
+    FROM respostas_anamnese
+    INNER JOIN perguntas_anamnese_atribuidas
+        ON respostas_anamnese.perguntaAtribuidaId =
+           perguntas_anamnese_atribuidas.id
+    WHERE perguntas_anamnese_atribuidas.anamneseAtribuidaId = :anamneseId
+""")
+    suspend fun buscarTodasPorAnamnese(
+        anamneseId: Long
+    ): List<RespostaAnamneseEntity>
 }

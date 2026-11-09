@@ -88,4 +88,15 @@ interface AnamneseAtribuidaDao {
         status: String,
         dataResposta: String
     )
+
+    @Query("""
+    SELECT * FROM anamneses_atribuidas
+    WHERE id = :anamneseId
+    AND alunoId = :alunoId
+    LIMIT 1
+""")
+    suspend fun buscarPorIdDoAluno(
+        anamneseId: Long,
+        alunoId: Long
+    ): AnamneseAtribuidaEntity?
 }

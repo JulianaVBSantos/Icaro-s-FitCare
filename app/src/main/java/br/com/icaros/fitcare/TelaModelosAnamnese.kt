@@ -1,7 +1,18 @@
 
 package br.com.icaros.fitcare
 
+import android.content.Intent
+import android.content.ClipData
+import androidx.core.content.FileProvider
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
 import br.com.icaros.fitcare.data.AlunoRepository
+import br.com.icaros.fitcare.data.ModeloAnamneseEntity
+import br.com.icaros.fitcare.data.ModeloAnamneseRepository
+import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
+
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -23,10 +34,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import br.com.icaros.fitcare.data.ModeloAnamneseEntity
-import br.com.icaros.fitcare.data.ModeloAnamneseRepository
-import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
-import kotlinx.coroutines.launch
 
 @Composable
 fun TelaModelosAnamnese(
@@ -37,13 +44,19 @@ fun TelaModelosAnamnese(
     onVoltar: () -> Unit,
     onNovoModelo: () -> Unit,
     onEditarModelo: (ModeloAnamneseEntity) -> Unit,
-    onPerguntas: (ModeloAnamneseEntity) -> Unit
+    onPerguntas: (ModeloAnamneseEntity) -> Unit,
+    onAbrirAnamnese: (Long) -> Unit
 ) {
 
     val modelos by repository.listarTodos()
         .collectAsState(initial = emptyList())
 
     var modeloEmEnvioId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    // Controla a criação da avaliação digital.
+    var modeloEmPreenchimentoId by remember {
         mutableStateOf<Long?>(null)
     }
 
@@ -60,6 +73,7 @@ fun TelaModelosAnamnese(
     }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -117,7 +131,7 @@ fun TelaModelosAnamnese(
             color = Color(0xFF757575)
         )
 
-        // Mensagem de resultado da atribuição
+        // Mensagem de resultado
         mensagemEnvio?.let { mensagem ->
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -256,7 +270,6 @@ fun TelaModelosAnamnese(
                             modifier = Modifier.padding(16.dp)
                         ) {
 
-                            // Nome do modelo
                             Text(
                                 text = modelo.nome,
                                 fontSize = 17.sp,
@@ -266,11 +279,8 @@ fun TelaModelosAnamnese(
 
                             Spacer(modifier = Modifier.height(5.dp))
 
-                            // Categoria
                             Text(
-                                text = if (
-                                    modelo.categoria == "PADRAO"
-                                ) {
+                                text = if (modelo.categoria == "PADRAO") {
                                     "Modelo padrão"
                                 } else {
                                     "Modelo personalizado"
@@ -280,7 +290,6 @@ fun TelaModelosAnamnese(
                                 fontWeight = FontWeight.SemiBold
                             )
 
-                            // Descrição
                             if (modelo.descricao.isNotBlank()) {
 
                                 Spacer(modifier = Modifier.height(7.dp))
@@ -294,13 +303,8 @@ fun TelaModelosAnamnese(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Status do modelo
                             Text(
-                                text = if (modelo.ativo) {
-                                    "Ativo"
-                                } else {
-                                    "Inativo"
-                                },
+                                text = if (modelo.ativo) "Ativo" else "Inativo",
                                 fontSize = 12.sp,
                                 color = if (modelo.ativo) {
                                     Color(0xFF002B5C)
@@ -333,9 +337,7 @@ fun TelaModelosAnamnese(
                                         contentDescription = null
                                     )
 
-                                    Spacer(
-                                        modifier = Modifier.width(4.dp)
-                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
 
                                     Text("Perguntas")
                                 }
@@ -364,19 +366,115 @@ fun TelaModelosAnamnese(
                                         Icon(
                                             imageVector = Icons.Default.Delete,
                                             contentDescription = "Excluir modelo",
-                                            tint = MaterialTheme
-                                                .colorScheme.error
+                                            tint = MaterialTheme.colorScheme.error
                                         )
                                     }
                                 }
                             }
 
-                            // Atribuição ao aluno selecionado
+                            // Ações de avaliação para um aluno
                             if (alunoId != null) {
 
-                                Spacer(
-                                    modifier = Modifier.height(6.dp)
-                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // =====================================
+                                // BOTÃO 1 - PREENCHER ANAMNESE DIGITAL
+                                // =====================================
+
+                                OutlinedButton(
+                                    onClick = {
+
+                                        val idAluno = alunoId
+
+                                        if (
+                                            modeloEmPreenchimentoId == null &&
+                                            modeloEmEnvioId == null &&
+                                            modelo.ativo
+                                        ) {
+
+                                            modeloEmPreenchimentoId = modelo.id
+                                            mensagemEnvio = null
+                                            envioSucesso = false
+
+                                            scope.launch {
+
+                                                try {
+
+                                                    // Cria uma nova avaliação independente.
+                                                    val novaAnamneseId =
+                                                        anamneseAtribuidaRepository.atribuir(
+                                                            alunoId = idAluno,
+                                                            modeloId = modelo.id
+                                                        )
+
+                                                    // Libera a avaliação para preenchimento.
+                                                    anamneseAtribuidaRepository.enviar(
+                                                        novaAnamneseId
+                                                    )
+
+                                                    // Abre a tela de preenchimento.
+                                                    onAbrirAnamnese(
+                                                        novaAnamneseId
+                                                    )
+
+                                                } catch (e: Exception) {
+
+                                                    mensagemEnvio =
+                                                        e.message
+                                                            ?: "Não foi possível criar a avaliação digital."
+
+                                                    envioSucesso = false
+
+                                                } finally {
+
+                                                    modeloEmPreenchimentoId = null
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = modeloEmPreenchimentoId == null &&
+                                            modeloEmEnvioId == null &&
+                                            modelo.ativo,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = Color(0xFF002B5C)
+                                    )
+                                ) {
+
+                                    if (modeloEmPreenchimentoId == modelo.id) {
+
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFF002B5C)
+                                        )
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        Text("Abrindo formulário...")
+
+                                    } else {
+
+                                        Text(
+                                            text = if (modelo.ativo) {
+                                                "Preencher anamnese digital"
+                                            } else {
+                                                "Modelo indisponível"
+                                            },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // =====================================
+                                // BOTÃO 2 - EXPORTAR / COMPARTILHAR PDF
+                                // =====================================
 
                                 Button(
                                     onClick = {
@@ -385,6 +483,7 @@ fun TelaModelosAnamnese(
 
                                         if (
                                             modeloEmEnvioId == null &&
+                                            modeloEmPreenchimentoId == null &&
                                             modelo.ativo
                                         ) {
 
@@ -394,26 +493,119 @@ fun TelaModelosAnamnese(
 
                                             scope.launch {
 
+                                                var compartilhamentoIniciado = false
+
                                                 try {
 
+                                                    // 1. Buscar aluno
+                                                    val aluno = alunoRepository
+                                                        .buscarPorId(idAluno)
+                                                        .first()
+                                                        ?: throw IllegalArgumentException(
+                                                            "Aluno não encontrado."
+                                                        )
+
+                                                    // 2. Criar avaliação independente
                                                     val novaAnamneseId =
                                                         anamneseAtribuidaRepository.atribuir(
                                                             alunoId = idAluno,
                                                             modeloId = modelo.id
                                                         )
 
+                                                    // 3. Buscar avaliação
+                                                    val anamnese =
+                                                        anamneseAtribuidaRepository
+                                                            .buscarPorId(novaAnamneseId)
+                                                            ?: throw IllegalStateException(
+                                                                "Não foi possível recuperar a avaliação criada."
+                                                            )
+
+                                                    // 4. Buscar perguntas
+                                                    val perguntas =
+                                                        anamneseAtribuidaRepository
+                                                            .buscarPerguntas(novaAnamneseId)
+
+                                                    // 5. Gerar PDF
+                                                    val arquivo =
+                                                        AnamnesePdfGenerator.gerar(
+                                                            context = context,
+                                                            aluno = aluno,
+                                                            anamnese = anamnese,
+                                                            perguntas = perguntas
+                                                        )
+
+                                                    // 6. Criar URI seguro
+                                                    val uri = FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        arquivo
+                                                    )
+
+                                                    // 7. Preparar compartilhamento
+                                                    val intent = Intent(
+                                                        Intent.ACTION_SEND
+                                                    ).apply {
+
+                                                        type = "application/pdf"
+
+                                                        putExtra(
+                                                            Intent.EXTRA_STREAM,
+                                                            uri
+                                                        )
+
+                                                        putExtra(
+                                                            Intent.EXTRA_SUBJECT,
+                                                            "Anamnese - ${aluno.nome}"
+                                                        )
+
+                                                        putExtra(
+                                                            Intent.EXTRA_TEXT,
+                                                            "Olá! Segue o documento de anamnese."
+                                                        )
+
+                                                        addFlags(
+                                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                        )
+
+                                                        clipData = ClipData.newUri(
+                                                            context.contentResolver,
+                                                            "Anamnese",
+                                                            uri
+                                                        )
+                                                    }
+
+                                                    // 8. Abrir seletor
+                                                    context.startActivity(
+                                                        Intent.createChooser(
+                                                            intent,
+                                                            "Compartilhar anamnese em PDF"
+                                                        )
+                                                    )
+
+                                                    compartilhamentoIniciado = true
+
+                                                    // 9. Atualizar status
+                                                    anamneseAtribuidaRepository
+                                                        .enviar(novaAnamneseId)
+
                                                     mensagemEnvio =
-                                                        "Avaliação criada com sucesso! " +
-                                                                "Código: $novaAnamneseId. " +
-                                                                "Agora ela está aguardando o envio do PDF."
+                                                        "PDF gerado e seletor de compartilhamento aberto! " +
+                                                                "Avaliação nº $novaAnamneseId. " +
+                                                                "O status PENDENTE indica que o compartilhamento foi iniciado, não que o documento foi recebido."
 
                                                     envioSucesso = true
 
                                                 } catch (e: Exception) {
 
-                                                    mensagemEnvio =
+                                                    mensagemEnvio = if (
+                                                        compartilhamentoIniciado
+                                                    ) {
+                                                        "O seletor de compartilhamento foi aberto, mas não foi possível atualizar o status da avaliação: " +
+                                                                (e.message ?: "Erro desconhecido.")
+                                                    } else {
                                                         e.message
-                                                            ?: "Não foi possível criar a avaliação."
+                                                            ?: "Não foi possível gerar ou compartilhar a anamnese."
+                                                    }
 
                                                     envioSucesso = false
 
@@ -425,17 +617,17 @@ fun TelaModelosAnamnese(
                                         }
                                     },
                                     enabled = modeloEmEnvioId == null &&
+                                            modeloEmPreenchimentoId == null &&
                                             modelo.ativo,
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(9.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF002B5C)
+                                        containerColor = Color(0xFF002B5C),
+                                        contentColor = Color.White
                                     )
                                 ) {
 
-                                    if (
-                                        modeloEmEnvioId == modelo.id
-                                    ) {
+                                    if (modeloEmEnvioId == modelo.id) {
 
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
@@ -443,17 +635,15 @@ fun TelaModelosAnamnese(
                                             color = Color.White
                                         )
 
-                                        Spacer(
-                                            modifier = Modifier.width(8.dp)
-                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
 
-                                        Text("Preparando avaliação...")
+                                        Text("Preparando PDF...")
 
                                     } else {
 
                                         Text(
                                             text = if (modelo.ativo) {
-                                                "Criar avaliação para este aluno"
+                                                "Exportar / compartilhar PDF"
                                             } else {
                                                 "Modelo indisponível"
                                             },
@@ -472,7 +662,10 @@ fun TelaModelosAnamnese(
         }
     }
 
-    // Confirmação de exclusão
+    // =====================================
+    // CONFIRMAÇÃO DE EXCLUSÃO
+    // =====================================
+
     modeloParaExcluir?.let { modelo ->
 
         AlertDialog(

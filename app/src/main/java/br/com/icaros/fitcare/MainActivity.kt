@@ -1,5 +1,8 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.material.icons.filled.Lock
+import br.com.icaros.fitcare.data.SessaoUsuario
+import br.com.icaros.fitcare.data.UsuarioRepository
 import androidx.compose.runtime.rememberCoroutineScope
 import br.com.icaros.fitcare.data.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,6 +50,8 @@ import androidx.compose.foundation.layout.Spacer
 import kotlinx.coroutines.launch
 import java.util.Date
 import java.util.Locale
+import br.com.icaros.fitcare.data.UsuarioEntity
+
 import android.database.sqlite.SQLiteConstraintException
 import br.com.icaros.fitcare.data.AlunoRepository
 import br.com.icaros.fitcare.data.FitCareDatabase
@@ -127,6 +132,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val database = FitCareDatabase.getDatabase(applicationContext)
+        val usuarioRepository = UsuarioRepository(database.usuarioDao())
 
         // Repositórios existentes
         val repository = AlunoRepository(database.alunoDao())
@@ -165,21 +171,19 @@ class MainActivity : ComponentActivity() {
                 treinoRepository = treinoRepository,
                 anamneseRepository = anamneseRepository,
                 modeloAnamneseRepository = modeloAnamneseRepository,
-                perguntaModeloAnamneseRepository =
-                    perguntaModeloAnamneseRepository,
-                anamneseAtribuidaRepository =
-                    anamneseAtribuidaRepository,
-                respostaAnamneseRepository =
-                    respostaAnamneseRepository
+                perguntaModeloAnamneseRepository = perguntaModeloAnamneseRepository,
+                anamneseAtribuidaRepository = anamneseAtribuidaRepository,
+                respostaAnamneseRepository = respostaAnamneseRepository,
+                usuarioRepository = usuarioRepository
             )
         }
     }
 }
 
-
 // Mapeamento das telas do aplicativo
 enum class AppScreen {
     Login,
+    CadastroProfessor,
     Dashboard,
     Alunos,
     CadastroAluno,
@@ -205,7 +209,8 @@ fun FitCareApp(
     modeloAnamneseRepository: ModeloAnamneseRepository,
     perguntaModeloAnamneseRepository: PerguntaModeloAnamneseRepository,
     anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
-    respostaAnamneseRepository: RespostaAnamneseRepository
+    respostaAnamneseRepository: RespostaAnamneseRepository,
+    usuarioRepository: UsuarioRepository
 ) {
 
 // Mantém a tela atual quando a Activity é recriada.
@@ -244,6 +249,18 @@ fun FitCareApp(
         mutableStateOf(false)
     }
 
+    var anamneseAtribuidaSelecionadaId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+// Perfil escolhido na tela inicial: PROFESSOR ou ALUNO.
+    var perfilSelecionado by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+
+// Indica que um aluno autenticado está na tela provisória de acesso.
+    var alunoAutenticado by rememberSaveable {
+        mutableStateOf(false)
+    }
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = AzulPrincipal,
@@ -265,7 +282,64 @@ fun FitCareApp(
             ) {
                 when (tela) {
                     AppScreen.Login -> {
-                        TelaLogin(onEntrar = { tela = AppScreen.Dashboard })
+
+                        if (alunoAutenticado) {
+                            TelaAreaAluno(
+                                alunoId = SessaoUsuario.usuarioAtual?.alunoId,
+                                anamneseRepository = anamneseAtribuidaRepository,
+                                respostaRepository = respostaAnamneseRepository,
+                                onSair = {
+                                    SessaoUsuario.encerrar()
+                                    alunoAutenticado = false
+                                    perfilSelecionado = null
+                                    tela = AppScreen.Login
+                                }
+                            )
+                        } else if (perfilSelecionado == null) {
+
+                            TelaEscolherPerfil(
+                                onSelecionarPerfil = { perfil ->
+                                    perfilSelecionado = perfil
+                                },
+                                onCadastrarProfessor = {
+                                    tela = AppScreen.CadastroProfessor
+                                }
+                            )
+
+                        } else {
+
+                            TelaLogin(
+                                usuarioRepository = usuarioRepository,
+                                perfil = perfilSelecionado!!,
+                                onVoltar = {
+                                    perfilSelecionado = null
+                                },
+                                onEntrar = { usuario ->
+
+                                    SessaoUsuario.iniciar(usuario)
+
+                                    if (usuario.perfil == "PROFESSOR") {
+                                        tela = AppScreen.Dashboard
+                                    } else {
+                                        alunoAutenticado = true
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    AppScreen.CadastroProfessor -> {
+                        TelaCadastroProfessor(
+                            usuarioRepository = usuarioRepository,
+                            onVoltar = {
+                                tela = AppScreen.Login
+                                perfilSelecionado = null
+                            },
+                            onCadastroConcluido = {
+                                perfilSelecionado = "PROFESSOR"
+                                tela = AppScreen.Login
+                            }
+                        )
                     }
 
                     AppScreen.Dashboard -> {
@@ -293,6 +367,9 @@ fun FitCareApp(
                                 tela = AppScreen.PerfilAluno
                             },
                             onSair = {
+                                SessaoUsuario.encerrar()
+                                perfilSelecionado = null
+                                alunoAutenticado = false
                                 tela = AppScreen.Login
                             }
                         )
@@ -339,11 +416,15 @@ fun FitCareApp(
 
                             TelaPerfilAluno(
 
+                                usuarioRepository = usuarioRepository,
+
                                 alunoId = id,
 
                                 repository = repository,
 
                                 anamneseRepository = anamneseRepository,
+
+                                anamneseAtribuidaRepository = anamneseAtribuidaRepository,
 
                                 onVoltar = {
                                     tela = AppScreen.Alunos
@@ -532,6 +613,11 @@ fun FitCareApp(
                             alunoRepository = repository,
                             alunoId = alunoSelecionadoId,
                             anamneseAtribuidaRepository = anamneseAtribuidaRepository,
+
+                            onAbrirAnamnese = { anamneseId ->
+                                anamneseAtribuidaSelecionadaId = anamneseId
+                                tela = AppScreen.VisualizarAnamnese
+                            },
 
                             onVoltar = {
                                 if (voltarModelosParaPerfil) {
@@ -1221,21 +1307,27 @@ private fun Cartao(
     }
 }
 
-// Tela de Login
 @Composable
-fun TelaLogin(onEntrar: () -> Unit) {
+fun TelaLogin(
+    usuarioRepository: UsuarioRepository,
+    perfil: String,
+    onVoltar: () -> Unit,
+    onEntrar: (UsuarioEntity) -> Unit
+) {
     var email by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     var senhaVisivel by remember { mutableStateOf(false) }
+    var mensagemErro by remember { mutableStateOf<String?>(null) }
+    var carregando by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        LoginTopo,
-                        LoginBase
-                    )
+                Brush.verticalGradient(
+                    colors = listOf(LoginTopo, LoginBase)
                 )
             )
     ) {
@@ -1247,98 +1339,128 @@ fun TelaLogin(onEntrar: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+
             Image(
-                painter = painterResource(id = R.drawable.logo_fitcare),
-                contentDescription = "Logo Ícaro's FitCare",
+                painter = painterResource(R.drawable.logo_fitcare),
+                contentDescription = "Logo Ícaros FitCare",
                 modifier = Modifier
                     .width(220.dp)
                     .height(145.dp)
             )
-            Spacer(modifier = Modifier.height(34.dp))
+
             Text(
                 text = "Bem-vindo de volta",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = LoginTexto
+                style = MaterialTheme.typography.headlineSmall
             )
+
             Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                text = "Acesse sua conta para gerenciar seus alunos.",
-                fontSize = 14.sp,
-                color = LoginTextoSecundario
+                text = if (perfil == "PROFESSOR") {
+                    "Acesse sua conta profissional."
+                } else {
+                    "Acesse sua conta de aluno."
+                }
             )
-            Spacer(modifier = Modifier.height(30.dp))
+
+            Spacer(modifier = Modifier.height(28.dp))
+
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp),
-                singleLine = true,
-                placeholder = { Text(text = "E-mail", color = LoginPlaceholder) },
-                shape = RoundedCornerShape(17.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = LoginCampo,
-                    unfocusedContainerColor = LoginCampo,
-                    focusedBorderColor = LoginAzul,
-                    unfocusedBorderColor = LoginCampoBorda,
-                    focusedTextColor = LoginTexto,
-                    unfocusedTextColor = LoginTexto
-                )
+                onValueChange = {
+                    email = it
+                    mensagemErro = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("E-mail") },
+                singleLine = true
             )
-            Spacer(modifier = Modifier.height(14.dp))
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = senha,
-                onValueChange = { senha = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp),
-                singleLine = true,
-                placeholder = { Text(text = "Senha", color = LoginPlaceholder) },
-                trailingIcon = {
-                    IconButton(onClick = { senhaVisivel = !senhaVisivel }) {
-                        Icon(
-                            imageVector = if (senhaVisivel) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = if (senhaVisivel) "Esconder senha" else "Mostrar senha",
-                            tint = LoginPlaceholder,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                onValueChange = {
+                    senha = it
+                    mensagemErro = null
                 },
-                visualTransformation = if (senhaVisivel) VisualTransformation.None else PasswordVisualTransformation(),
-                shape = RoundedCornerShape(17.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = LoginCampo,
-                    unfocusedContainerColor = LoginCampo,
-                    focusedBorderColor = LoginAzul,
-                    unfocusedBorderColor = LoginCampoBorda,
-                    focusedTextColor = LoginTexto,
-                    unfocusedTextColor = LoginTexto
-                )
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Senha") },
+                singleLine = true,
+                visualTransformation = if (senhaVisivel) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    TextButton(
+                        onClick = {
+                            senhaVisivel = !senhaVisivel
+                        }
+                    ) {
+                        Text(if (senhaVisivel) "Ocultar" else "Mostrar")
+                    }
+                }
             )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = onEntrar,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = LoginAzul)
-            ) {
+
+            if (mensagemErro != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
-                    text = "ENTRAR",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    text = mensagemErro!!,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
-            Spacer(modifier = Modifier.height(22.dp))
-            Text(
-                text = "Esqueci minha senha",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = LoginAzulClaro,
-                modifier = Modifier.clickable {})
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    if (email.isBlank() || senha.isBlank()) {
+                        mensagemErro = "Informe seu e-mail e sua senha."
+                        return@Button
+                    }
+
+                    scope.launch {
+                        carregando = true
+                        mensagemErro = null
+
+                        try {
+                            val usuario = usuarioRepository.autenticar(
+                                email = email,
+                                senha = senha,
+                                perfilEsperado = perfil
+                            )
+
+                            if (usuario == null) {
+                                mensagemErro =
+                                    "E-mail, senha ou perfil incorreto."
+                            } else {
+                                onEntrar(usuario)
+                            }
+
+                        } catch (e: Exception) {
+                            mensagemErro =
+                                e.message ?: "Não foi possível realizar o login."
+                        } finally {
+                            carregando = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !carregando
+            ) {
+                Text(
+                    if (carregando) "AGUARDE..."
+                    else "ENTRAR"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            TextButton(onClick = onVoltar) {
+                Text("Voltar")
+            }
         }
     }
 }
@@ -2384,11 +2506,14 @@ class EventoAlunoStorage(context: Context) {
     }
 }
 
+// Tela perfil aluno
 @Composable
 fun TelaPerfilAluno(
     alunoId: Long,
     repository: AlunoRepository,
     anamneseRepository: AnamneseRepository,
+    anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
+    usuarioRepository: br.com.icaros.fitcare.data.UsuarioRepository,
     onVoltar: () -> Unit,
     onDashboard: () -> Unit,
     onTreinos: () -> Unit,
@@ -2411,7 +2536,9 @@ fun TelaPerfilAluno(
     val documentosAnamnese by anamneseRepository
         .listarDocumentos(alunoId)
         .collectAsState(initial = emptyList())
-
+    val avaliacoesAnamnese by anamneseAtribuidaRepository
+        .listarPorAluno(alunoId)
+        .collectAsState(initial = emptyList())
     val storageEventosPerfil = remember(contextoEventosPerfil) {
         EventoAlunoStorage(contextoEventosPerfil)
     }
@@ -2429,6 +2556,38 @@ fun TelaPerfilAluno(
     }
 
     var erroExclusaoDocumento by remember {
+        mutableStateOf("")
+    }
+
+    var mostrarCadastroAcessoAluno by remember {
+        mutableStateOf(false)
+    }
+
+    var nomeAcessoAluno by remember {
+        mutableStateOf("")
+    }
+
+    var emailAcessoAluno by remember {
+        mutableStateOf("")
+    }
+
+    var senhaAcessoAluno by remember {
+        mutableStateOf("")
+    }
+
+    var confirmarSenhaAcessoAluno by remember {
+        mutableStateOf("")
+    }
+
+    var carregandoCadastroAcesso by remember {
+        mutableStateOf(false)
+    }
+
+    var erroCadastroAcesso by remember {
+        mutableStateOf("")
+    }
+
+    var sucessoCadastroAcesso by remember {
         mutableStateOf("")
     }
 
@@ -2702,6 +2861,33 @@ fun TelaPerfilAluno(
                     }
                 }
 
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        nomeAcessoAluno = alunoAtual!!.nome
+                        emailAcessoAluno = alunoAtual!!.email
+                        senhaAcessoAluno = ""
+                        confirmarSenhaAcessoAluno = ""
+                        erroCadastroAcesso = ""
+                        sucessoCadastroAcesso = ""
+                        mostrarCadastroAcessoAluno = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text("Criar acesso do aluno")
+                }
+
                 // EXCLUIR ALUNO
                 OutlinedButton(
                     onClick = {
@@ -2842,6 +3028,114 @@ fun TelaPerfilAluno(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // AVALIAÇÕES DE ANAMNESE ATRIBUÍDAS
+                    Text(
+                        text = "Avaliações de anamnese criadas",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextoPrincipal
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (avaliacoesAnamnese.isEmpty()) {
+                        Text(
+                            text = "Nenhuma avaliação de anamnese foi criada para este aluno.",
+                            color = TextoSecundario,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        avaliacoesAnamnese.forEach { avaliacao ->
+
+                            val (rotuloStatus, fundoStatus, textoStatus) =
+                                when (avaliacao.status) {
+                                    "NAO_ENVIADA" -> Triple(
+                                        "Não enviada",
+                                        Color(0xFFFFF3E0),
+                                        Color(0xFF8D5A00)
+                                    )
+
+                                    "PENDENTE" -> Triple(
+                                        "Pendente",
+                                        Color(0xFFFFF3E0),
+                                        Color(0xFF8D5A00)
+                                    )
+
+                                    "EM_ANDAMENTO" -> Triple(
+                                        "Em andamento",
+                                        Color(0xFFE3F2FD),
+                                        Color(0xFF1565C0)
+                                    )
+
+                                    "RESPONDIDA" -> Triple(
+                                        "Respondida",
+                                        Color(0xFFE8F5E9),
+                                        Color(0xFF2E7D32)
+                                    )
+
+                                    else -> Triple(
+                                        avaliacao.status,
+                                        Color.LightGray,
+                                        Color.DarkGray
+                                    )
+                                }
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = AzulMuitoClaro
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = avaliacao.nomeModelo,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextoPrincipal
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = fundoStatus,
+                                                shape = RoundedCornerShape(20.dp)
+                                            )
+                                            .padding(
+                                                horizontal = 10.dp,
+                                                vertical = 5.dp
+                                            )
+                                    ) {
+                                        Text(
+                                            text = rotuloStatus,
+                                            color = textoStatus,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    if (avaliacao.dataCriacao.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        Text(
+                                            text = "Criada em: ${avaliacao.dataCriacao}",
+                                            fontSize = 11.sp,
+                                            color = TextoSecundario
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -3289,6 +3583,164 @@ fun TelaPerfilAluno(
                     enabled = !excluindo,
                     onClick = {
                         mostrarDialogoExclusao = false
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (mostrarCadastroAcessoAluno) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!carregandoCadastroAcesso) {
+                    mostrarCadastroAcessoAluno = false
+                }
+            },
+            title = {
+                Text("Criar acesso do aluno")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(
+                        rememberScrollState()
+                    )
+                ) {
+                    Text(
+                        text = "Crie os dados de acesso para que este aluno possa entrar no Ícaros FitCare.",
+                        fontSize = 13.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = nomeAcessoAluno,
+                        onValueChange = {
+                            nomeAcessoAluno = it
+                        },
+                        label = { Text("Nome") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = emailAcessoAluno,
+                        onValueChange = {
+                            emailAcessoAluno = it
+                        },
+                        label = { Text("E-mail de acesso") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = senhaAcessoAluno,
+                        onValueChange = {
+                            senhaAcessoAluno = it
+                        },
+                        label = { Text("Senha") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = confirmarSenhaAcessoAluno,
+                        onValueChange = {
+                            confirmarSenhaAcessoAluno = it
+                        },
+                        label = { Text("Confirmar senha") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    if (erroCadastroAcesso.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = erroCadastroAcesso,
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (sucessoCadastroAcesso.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = sucessoCadastroAcesso,
+                            color = Color(0xFF2E7D32),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !carregandoCadastroAcesso,
+                    onClick = {
+                        if (senhaAcessoAluno != confirmarSenhaAcessoAluno) {
+                            erroCadastroAcesso = "As senhas não coincidem."
+                            return@TextButton
+                        }
+
+                        carregandoCadastroAcesso = true
+                        erroCadastroAcesso = ""
+
+                        scope.launch {
+                            try {
+                                usuarioRepository.cadastrarAluno(
+                                    nome = nomeAcessoAluno,
+                                    email = emailAcessoAluno,
+                                    senha = senhaAcessoAluno,
+                                    alunoId = alunoId
+                                )
+
+                                sucessoCadastroAcesso =
+                                    "Acesso do aluno criado com sucesso."
+
+                                senhaAcessoAluno = ""
+                                confirmarSenhaAcessoAluno = ""
+
+                                android.widget.Toast.makeText(
+                                    contextoEventosPerfil,
+                                    "Conta do aluno criada com sucesso.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+
+                                mostrarCadastroAcessoAluno = false
+
+                            } catch (e: Exception) {
+                                erroCadastroAcesso = e.message
+                                    ?: "Não foi possível criar o acesso."
+                            } finally {
+                                carregandoCadastroAcesso = false
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        if (carregandoCadastroAcesso) {
+                            "Criando..."
+                        } else {
+                            "Criar acesso"
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !carregandoCadastroAcesso,
+                    onClick = {
+                        mostrarCadastroAcessoAluno = false
                     }
                 ) {
                     Text("Cancelar")
