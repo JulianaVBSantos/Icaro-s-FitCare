@@ -50,6 +50,7 @@ class AnamneseRepository(
         return anamneseDao.inserirAnamnese(novaVersao)
     }
 
+
     suspend fun importarDocumento(
         documento: DocumentoAnamneseEntity
     ): Long {
@@ -66,11 +67,27 @@ class AnamneseRepository(
             "O caminho do arquivo é obrigatório."
         }
 
-        require(
-            documento.tipoArquivo.lowercase() in
-                    listOf("pdf", "jpg", "jpeg", "png")
-        ) {
-            "Formato de arquivo não permitido."
+        val tipoArquivo = documento.tipoArquivo
+            .lowercase()
+            .removePrefix("comparacao_")
+
+        val formatosPermitidos = listOf(
+            "pdf",
+            "doc",
+            "docx",
+            "jpg",
+            "jpeg",
+            "png",
+            "webp",
+            "gif",
+            "bmp",
+            "heic",
+            "heif",
+            "avif"
+        )
+
+        require(tipoArquivo in formatosPermitidos) {
+            "Formato de arquivo não permitido: ${documento.tipoArquivo}"
         }
 
         return anamneseDao.inserirDocumento(documento)

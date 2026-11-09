@@ -460,6 +460,7 @@ fun FitCareApp(
                     AppScreen.CadastroAluno -> {
                         TelaCadastroAluno(
                             repository = repository,
+                            usuarioRepository = usuarioRepository,
                             onVoltar = {
                                 tela = AppScreen.Alunos
                             },
@@ -882,6 +883,7 @@ fun BotaoSairPadrao(
 @Composable
 fun TelaCadastroAluno(
     repository: AlunoRepository,
+    usuarioRepository: UsuarioRepository,
     onVoltar: () -> Unit,
     onCadastroConcluido: () -> Unit,
     onTreinos: () -> Unit
@@ -889,7 +891,12 @@ fun TelaCadastroAluno(
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
+    var senha by remember { mutableStateOf("") }
+    var confirmarSenha by remember { mutableStateOf("") }
     var observacoesProfissionais by remember { mutableStateOf("") }
+
+    var mostrarSenha by remember { mutableStateOf(false) }
+    var mostrarConfirmarSenha by remember { mutableStateOf(false) }
 
     val opcoesCondicoes = listOf(
         "Hipertensão",
@@ -916,13 +923,8 @@ fun TelaCadastroAluno(
         mutableStateOf(setOf<String>())
     }
 
-    var outraCondicao by remember {
-        mutableStateOf("")
-    }
-
-    var outraRestricao by remember {
-        mutableStateOf("")
-    }
+    var outraCondicao by remember { mutableStateOf("") }
+    var outraRestricao by remember { mutableStateOf("") }
 
     var erro by remember { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) }
@@ -947,7 +949,6 @@ fun TelaCadastroAluno(
             .background(FundoApp)
     ) {
 
-// Cabeçalho padrão da tela
         CabecalhoPadrao(
             titulo = "Cadastrar aluno",
             onVoltar = onVoltar
@@ -965,6 +966,7 @@ fun TelaCadastroAluno(
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+
             Text(
                 text = "Dados do aluno",
                 fontSize = 18.sp,
@@ -988,6 +990,76 @@ fun TelaCadastroAluno(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
+            )
+
+            // Senha de acesso do aluno
+            Text(
+                text = "Acesso do aluno",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+
+            Text(
+                text = "Cadastre uma senha para que o aluno possa acessar o aplicativo.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+
+            OutlinedTextField(
+                value = senha,
+                onValueChange = { senha = it },
+                label = { Text("Senha de acesso") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                visualTransformation = if (mostrarSenha) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    TextButton(
+                        onClick = {
+                            mostrarSenha = !mostrarSenha
+                        }
+                    ) {
+                        Text(
+                            if (mostrarSenha) "Ocultar" else "Mostrar"
+                        )
+                    }
+                }
+            )
+
+            OutlinedTextField(
+                value = confirmarSenha,
+                onValueChange = { confirmarSenha = it },
+                label = { Text("Confirmar senha") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                visualTransformation = if (mostrarConfirmarSenha) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    TextButton(
+                        onClick = {
+                            mostrarConfirmarSenha = !mostrarConfirmarSenha
+                        }
+                    ) {
+                        Text(
+                            if (mostrarConfirmarSenha) "Ocultar" else "Mostrar"
+                        )
+                    }
+                }
+            )
+
+            Text(
+                text = "A senha deve possuir pelo menos 8 caracteres.",
+                fontSize = 12.sp,
+                color = TextoSecundario
             )
 
             OutlinedTextField(
@@ -1028,8 +1100,7 @@ fun TelaCadastroAluno(
                                 } else {
                                     condicoesSelecionadas + condicao
                                 }
-                        }
-                        .padding(vertical = 0.dp),
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
@@ -1063,8 +1134,7 @@ fun TelaCadastroAluno(
                             } else {
                                 condicoesSelecionadas + "Outro"
                             }
-                    }
-                    .padding(vertical = 0.dp),
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
@@ -1087,7 +1157,6 @@ fun TelaCadastroAluno(
             }
 
             if (condicoesSelecionadas.contains("Outro")) {
-
                 OutlinedTextField(
                     value = outraCondicao,
                     onValueChange = {
@@ -1098,14 +1167,11 @@ fun TelaCadastroAluno(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewRequester(
-                            requesterOutraCondicao
-                        )
+                        .bringIntoViewRequester(requesterOutraCondicao)
                         .onFocusChanged { estado ->
                             if (estado.isFocused) {
                                 scope.launch {
-                                    requesterOutraCondicao
-                                        .bringIntoView()
+                                    requesterOutraCondicao.bringIntoView()
                                 }
                             }
                         },
@@ -1143,8 +1209,7 @@ fun TelaCadastroAluno(
                                 } else {
                                     restricoesSelecionadas + restricao
                                 }
-                        }
-                        .padding(vertical = 0.dp),
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
@@ -1178,8 +1243,7 @@ fun TelaCadastroAluno(
                             } else {
                                 restricoesSelecionadas + "Outro"
                             }
-                    }
-                    .padding(vertical = 0.dp),
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
@@ -1202,7 +1266,6 @@ fun TelaCadastroAluno(
             }
 
             if (restricoesSelecionadas.contains("Outro")) {
-
                 OutlinedTextField(
                     value = outraRestricao,
                     onValueChange = {
@@ -1213,14 +1276,11 @@ fun TelaCadastroAluno(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewRequester(
-                            requesterOutraRestricao
-                        )
+                        .bringIntoViewRequester(requesterOutraRestricao)
                         .onFocusChanged { estado ->
                             if (estado.isFocused) {
                                 scope.launch {
-                                    requesterOutraRestricao
-                                        .bringIntoView()
+                                    requesterOutraRestricao.bringIntoView()
                                 }
                             }
                         },
@@ -1240,14 +1300,11 @@ fun TelaCadastroAluno(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .bringIntoViewRequester(
-                        requesterObservacoes
-                    )
+                    .bringIntoViewRequester(requesterObservacoes)
                     .onFocusChanged { estado ->
                         if (estado.isFocused) {
                             scope.launch {
-                                requesterObservacoes
-                                    .bringIntoView()
+                                requesterObservacoes.bringIntoView()
                             }
                         }
                     },
@@ -1272,6 +1329,27 @@ fun TelaCadastroAluno(
                         erro = "Informe o nome do aluno."
                         return@Button
                     }
+
+                    if (email.isBlank()) {
+                        erro = "Informe o e-mail do aluno."
+                        return@Button
+                    }
+
+                    if (objective.isBlank()) {
+                        erro = "Informe o objetivo do aluno."
+                        return@Button
+                    }
+
+                    if (senha.length < 8) {
+                        erro = "A senha deve possuir pelo menos 8 caracteres."
+                        return@Button
+                    }
+
+                    if (senha != confirmarSenha) {
+                        erro = "As senhas não coincidem."
+                        return@Button
+                    }
+
                     if (
                         condicoesSelecionadas.contains("Outro") &&
                         outraCondicao.isBlank()
@@ -1287,10 +1365,13 @@ fun TelaCadastroAluno(
                         erro = "Descreva a outra restrição selecionada."
                         return@Button
                     }
+
                     erro = ""
 
                     scope.launch {
                         salvando = true
+
+                        var alunoCriado: AlunoEntity? = null
 
                         try {
 
@@ -1338,20 +1419,39 @@ fun TelaCadastroAluno(
                                 restricoes = restricoesTexto
                             )
 
-                            val aluno =
-                                br.com.icaros.fitcare.data.AlunoEntity(
+                            val aluno = AlunoEntity(
+                                nome = nome.trim(),
+                                email = email.trim(),
+                                dataCadastro = dataAtual,
+                                objetivo = objective.trim(),
+                                observacoesProfissionais =
+                                    observacoesProfissionais.trim(),
+                                condicoes = condicoesTexto,
+                                restricoes = restricoesTexto,
+                                status = status
+                            )
+
+                            // Primeiro salva o cadastro do aluno.
+                            val alunoId = repository.inserir(aluno)
+
+                            alunoCriado = aluno.copy(id = alunoId)
+
+                            // Depois cria a conta de acesso vinculada ao aluno.
+                            try {
+                                usuarioRepository.cadastrarAluno(
                                     nome = nome.trim(),
                                     email = email.trim(),
-                                    dataCadastro = dataAtual,
-                                    objetivo = objective.trim(),
-                                    observacoesProfissionais =
-                                        observacoesProfissionais.trim(),
-                                    condicoes = condicoesTexto,
-                                    restricoes = restricoesTexto,
-                                    status = status
+                                    senha = senha,
+                                    alunoId = alunoId
                                 )
-
-                            repository.inserir(aluno)
+                            } catch (e: Exception) {
+                                // Se a conta não puder ser criada,
+                                // remove o cadastro de aluno recém-criado.
+                                repository.excluir(
+                                    aluno.copy(id = alunoId)
+                                )
+                                throw e
+                            }
 
                             onCadastroConcluido()
 
@@ -1359,8 +1459,7 @@ fun TelaCadastroAluno(
 
                             erro =
                                 "Não foi possível cadastrar o aluno: " +
-                                        (e.message
-                                            ?: "erro desconhecido")
+                                        (e.message ?: "erro desconhecido")
 
                         } finally {
                             salvando = false
@@ -1465,6 +1564,10 @@ fun TelaLogin(
         mutableStateOf<String?>(null)
     }
 
+    var mostrarAjudaSenha by remember {
+        mutableStateOf(false)
+    }
+
     val scope = rememberCoroutineScope()
 
     val azulClaro = Color(0xFFEAF5FF)
@@ -1489,6 +1592,7 @@ fun TelaLogin(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+
             Image(
                 painter = painterResource(R.drawable.logo_fitcare),
                 contentDescription = "Logo Ícaros FitCare",
@@ -1524,7 +1628,9 @@ fun TelaLogin(
                     mensagemErro = null
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("E-mail") },
+                label = {
+                    Text("E-mail")
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
@@ -1538,7 +1644,9 @@ fun TelaLogin(
                     mensagemErro = null
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Senha") },
+                label = {
+                    Text("Senha")
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
                 visualTransformation = if (senhaVisivel) {
@@ -1558,6 +1666,25 @@ fun TelaLogin(
                     }
                 }
             )
+
+            // Opção de ajuda para recuperação de senha do aluno.
+            if (perfil == "ALUNO") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = {
+                            mostrarAjudaSenha = true
+                        }
+                    ) {
+                        Text(
+                            text = "Esqueci minha senha",
+                            color = Color(0xFF174F80)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1637,6 +1764,7 @@ fun TelaLogin(
                                             CHAVE_USUARIO_ID,
                                             usuario.id
                                         )
+
                                         putString(
                                             CHAVE_PERFIL,
                                             usuario.perfil
@@ -1651,6 +1779,7 @@ fun TelaLogin(
 
                                 onEntrar(usuario)
                             }
+
                         } catch (e: Exception) {
                             mensagemErro =
                                 e.message
@@ -1673,13 +1802,50 @@ fun TelaLogin(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            TextButton(onClick = onVoltar) {
+            TextButton(
+                onClick = onVoltar
+            ) {
                 Text(
                     "Voltar",
                     color = Color(0xFF174F80)
                 )
             }
         }
+    }
+
+    // Diálogo de orientação para recuperação de senha.
+    if (mostrarAjudaSenha && perfil == "ALUNO") {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarAjudaSenha = false
+            },
+            title = {
+                Text(
+                    text = "Recuperar acesso",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF173B5E)
+                )
+            },
+            text = {
+                Text(
+                    text = "Para redefinir sua senha, entre em contato " +
+                            "com seu professor e solicite a recuperação " +
+                            "do acesso à sua conta.\n\n" +
+                            "Após a redefinição, você poderá entrar " +
+                            "normalmente utilizando sua nova senha."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarAjudaSenha = false
+                    }
+                ) {
+                    Text("ENTENDI")
+                }
+            },
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 
@@ -1768,8 +1934,28 @@ fun TelaDashboard(
                     }
                 }
             }
+            val primeiroNomeProfessor = SessaoUsuario.usuarioAtual
+                ?.nome
+                ?.trim()
+                ?.substringBefore(" ")
+                .orEmpty()
 
-// Área clara de conteúdo do Dashboard
+            Text(
+                text = if (primeiroNomeProfessor.isNotBlank()) {
+                    "Bem-vindo de volta, $primeiroNomeProfessor!"
+                } else {
+                    "Bem-vindo de volta!"
+                },
+                style = MaterialTheme.typography.titleLarge,
+                color = TextoPrincipal,
+                modifier = Modifier.padding(
+                    start = 22.dp,
+                    end = 22.dp,
+                    top = 16.dp,
+                    bottom = 6.dp
+                )
+            )
+            // Área clara de conteúdo do Dashboard
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2830,6 +3016,10 @@ fun TelaPerfilAluno(
         mutableStateOf("")
     }
 
+    var verificandoAcessoAluno by remember {
+        mutableStateOf(false)
+    }
+
     LaunchedEffect(alunoId) {
         repository.buscarPorId(alunoId).collect { resultado ->
             alunoAtual = resultado
@@ -3081,66 +3271,51 @@ fun TelaPerfilAluno(
                     }
                 }
 
-                // CRIAR ACESSO DO ALUNO
-                Spacer(modifier = Modifier.height(10.dp))
-
+                // GERENCIAR ACESSO DO ALUNO
                 Button(
                     onClick = {
-                        nomeAcessoAluno = alunoAtual!!.nome
-                        emailAcessoAluno = alunoAtual!!.email
-                        senhaAcessoAluno = ""
-                        confirmarSenhaAcessoAluno = ""
-                        erroCadastroAcesso = ""
-                        sucessoCadastroAcesso = ""
-                        mostrarCadastroAcessoAluno = true
+                        scope.launch {
+                            verificandoAcessoAluno = true
+                            erroCadastroAcesso = ""
+
+                            try {
+                                val possuiAcesso =
+                                    usuarioRepository.alunoPossuiAcesso(alunoId)
+
+                                if (possuiAcesso) {
+                                    mostrarDialogoRedefinirSenha = true
+                                } else {
+                                    mostrarCadastroAcessoAluno = true
+                                }
+                            } catch (e: Exception) {
+                                erroCadastroAcesso = e.message
+                                    ?: "Não foi possível verificar o acesso do aluno."
+                            } finally {
+                                verificandoAcessoAluno = false
+                            }
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 18.dp)
                         .height(48.dp),
-                    shape = RectangleShape,
+                    enabled = !verificandoAcessoAluno,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFF2BF),
-                        contentColor = Color(0xFF665000)
+                        containerColor = Color(0xFF36844A),
+                        contentColor = Color.White
                     )
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Lock,
-                        contentDescription = null
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
                     Text(
-                        text = "Criar acesso do aluno",
-                        fontWeight = FontWeight.Bold
+                        if (verificandoAcessoAluno) {
+                            "VERIFICANDO ACESSO..."
+                        } else {
+                            "Gerenciar acesso do aluno"
+                        }
                     )
                 }
 
-                // REDEFINIR SENHA
+                // PEQUENO ESPAÇAMENTO ENTRE OS BOTÕES
                 Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        novaSenhaAluno = ""
-                        confirmarNovaSenhaAluno = ""
-                        erroRedefinicaoSenha = ""
-                        sucessoRedefinicaoSenha = ""
-                        mostrarDialogoRedefinirSenha = true
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RectangleShape
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Lock,
-                        contentDescription = null
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text("Redefinir senha do aluno")
-                }
 
                 // EXCLUIR ALUNO
                 OutlinedButton(
@@ -3150,9 +3325,14 @@ fun TelaPerfilAluno(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp),
+                        .padding(horizontal = 18.dp)
+                        .height(48.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Vermelho
+                    ),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = Vermelho
                     )
                 ) {
                     Text("Excluir aluno")
@@ -3277,7 +3457,7 @@ fun TelaPerfilAluno(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = "Atribuir anamnese",
+                            text = "Gerenciar anamnese",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3583,7 +3763,6 @@ fun TelaPerfilAluno(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
-                                    ) {
                                     ) {
                                         Text("ABRIR IMAGEM")
                                     }

@@ -313,6 +313,32 @@ class UsuarioRepository(
             spec.clearPassword()
         }
     }
+
+    suspend fun alunoPossuiAcesso(alunoId: Long): Boolean {
+        if (alunoId <= 0L) return false
+
+        val professorAtual = SessaoUsuario.usuarioAtual
+            ?: throw IllegalStateException(
+                "Nenhum professor está conectado."
+            )
+
+        require(professorAtual.perfil == PERFIL_PROFESSOR) {
+            "Somente o professor pode consultar o acesso do aluno."
+        }
+
+        val usuarioAluno = usuarioDao.buscarPorAlunoId(alunoId)
+
+        if (usuarioAluno != null &&
+            usuarioAluno.professorId != professorAtual.id
+        ) {
+            throw IllegalStateException(
+                "Você não tem permissão para gerenciar o acesso deste aluno."
+            )
+        }
+
+        return usuarioAluno != null
+    }
+
     suspend fun redefinirSenhaDoAluno(
         alunoId: Long,
         novaSenha: String

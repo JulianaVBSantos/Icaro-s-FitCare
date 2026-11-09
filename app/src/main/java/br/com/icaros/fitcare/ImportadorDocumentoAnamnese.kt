@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,19 +19,28 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import br.com.icaros.fitcare.data.AlunoRepository
 import br.com.icaros.fitcare.data.AnamneseRepository
 import br.com.icaros.fitcare.data.DocumentoAnamneseEntity
 import kotlinx.coroutines.launch
+import java.io.BufferedInputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val formatosDocumentoMedico = setOf("pdf", "doc", "docx")
-private val formatosImagemComparacao = setOf("jpg", "jpeg", "png")
+private val formatosDocumentoMedico =
+    setOf("pdf", "doc", "docx")
+
+private val formatosImagemComparacao =
+    setOf(
+        "jpg", "jpeg", "png",
+        "webp", "gif", "bmp",
+        "heic", "heif", "avif"
+    )
 
 private fun obterNomeArquivo(
     context: Context,
@@ -62,6 +72,141 @@ private fun obterNomeArquivo(
 private fun obterExtensao(nome: String): String {
     return nome.substringAfterLast(".", "")
         .lowercase(Locale.ROOT)
+}
+
+private fun obterExtensaoMime(mimeType: String?): String {
+    return when (mimeType?.lowercase(Locale.ROOT)) {
+        "image/jpeg", "image/jpg" -> "jpg"
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        "image/bmp", "image/x-ms-bmp" -> "bmp"
+        "image/heic" -> "heic"
+        "image/heif" -> "heif"
+        "image/avif" -> "avif"
+
+        "application/pdf" -> "pdf"
+        "application/msword" -> "doc"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
+
+        else -> {
+            mimeType?.let {
+                MimeTypeMap.getSingleton()
+                    .getExtensionFromMimeType(it)
+                    ?.lowercase(Locale.ROOT)
+            }.orEmpty()
+        }
+    }
+}
+
+/*
+ * Identifica o formato real da imagem pelos primeiros bytes.
+ * Isso evita depender exclusivamente do nome ou do MIME
+ * fornecido pelo aplicativo que disponibilizou o arquivo.
+ */
+private fun detectarExtensaoImagem(
+    entrada: BufferedInputStream
+): String {
+    entrada.mark(32)
+
+    val cabecalho = ByteArray(32)
+    val quantidade = entrada.read(cabecalho)
+
+    entrada.reset()
+
+    if (quantidade < 12) return ""
+
+    // JPEG
+    if (
+        cabecalho[0] == 0xFF.toByte() &&
+        cabecalho[1] == 0xD8.toByte() &&
+        cabecalho[2] == 0xFF.toByte()
+    ) {
+        return "jpg"
+    }
+
+    // PNG
+    if (
+        cabecalho.copyOfRange(0, 8).contentEquals(
+            byteArrayOf(
+                0x89.toByte(), 0x50, 0x4E, 0x47,
+                0x0D, 0x0A, 0x1A, 0x0A
+            )
+        )
+    ) {
+        return "png"
+    }
+
+    // GIF
+    val assinaturaGif = String(
+        cabecalho,
+        0,
+        6,
+        Charsets.US_ASCII
+    )
+
+    if (
+        assinaturaGif == "GIF87a" ||
+        assinaturaGif == "GIF89a"
+    ) {
+        return "gif"
+    }
+
+    // WEBP
+    val assinaturaWebp = String(
+        cabecalho,
+        0,
+        4,
+        Charsets.US_ASCII
+    )
+
+    val formatoWebp = String(
+        cabecalho,
+        8,
+        4,
+        Charsets.US_ASCII
+    )
+
+    if (
+        assinaturaWebp == "RIFF" &&
+        formatoWebp == "WEBP"
+    ) {
+        return "webp"
+    }
+
+    // BMP
+    if (
+        cabecalho[0] == 0x42.toByte() &&
+        cabecalho[1] == 0x4D.toByte()
+    ) {
+        return "bmp"
+    }
+
+    // HEIC, HEIF e AVIF
+    val assinaturaFtyp = String(
+        cabecalho,
+        4,
+        4,
+        Charsets.US_ASCII
+    )
+
+    if (assinaturaFtyp == "ftyp") {
+        val marca = String(
+            cabecalho,
+            8,
+            4,
+            Charsets.US_ASCII
+        )
+
+        return when (marca) {
+            "heic", "heix", "hevc", "hevx" -> "heic"
+            "mif1", "msf1" -> "heif"
+            "avif", "avis" -> "avif"
+            else -> ""
+        }
+    }
+
+    return ""
 }
 
 @Composable
@@ -102,86 +247,125 @@ fun BotaoImportarDocumentoAnamnese(
                         uri
                     )
 
-                    val extensao = obterExtensao(nomeOriginal)
+                    val extensaoNome = obterExtensao(nomeOriginal)
 
-                    val formatosPermitidos = when (tipoImportacao) {
-                        "MEDICO" -> formatosDocumentoMedico
-                        "COMPARACAO" -> formatosImagemComparacao
-                        else -> emptySet()
-                    }
+                    val mimeType = context.contentResolver.getType(uri)
 
-                    if (extensao !in formatosPermitidos) {
-                        val formatosEsperados = if (
-                            tipoImportacao == "COMPARACAO"
-                        ) {
-                            "JPG, JPEG ou PNG"
-                        } else {
-                            "DOC, DOCX ou PDF"
-                        }
+                    val extensaoMime = obterExtensaoMime(mimeType)
 
-                        throw IllegalArgumentException(
-                            "Formato de arquivo não suportado. Selecione um arquivo $formatosEsperados."
-                        )
-                    }
+                    val ehComparacao =
+                        tipoImportacao == "COMPARACAO"
 
-                    val pasta = File(
-                        context.filesDir,
-                        "anamneses/aluno_$alunoId"
+                    val entrada = BufferedInputStream(
+                        context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalArgumentException(
+                                "Não foi possível acessar o arquivo selecionado."
+                            )
                     )
-
-                    if (!pasta.exists() && !pasta.mkdirs()) {
-                        throw IllegalStateException(
-                            "Não foi possível criar a pasta do aluno."
-                        )
-                    }
-
-                    val nomeSeguro = nomeOriginal.replace(
-                        Regex("[^a-zA-Z0-9._-]"),
-                        "_"
-                    )
-
-                    val destino = File(
-                        pasta,
-                        "${System.currentTimeMillis()}_$nomeSeguro"
-                    )
-
-                    arquivoSalvo = destino
-
-                    val entrada = context.contentResolver
-                        .openInputStream(uri)
-                        ?: throw IllegalArgumentException(
-                            "Não foi possível acessar o arquivo selecionado."
-                        )
 
                     entrada.use { fluxoEntrada ->
+
+                        // Detecta a extensão real da imagem.
+                        val extensaoDetectada =
+                            if (ehComparacao) {
+                                detectarExtensaoImagem(fluxoEntrada)
+                            } else {
+                                ""
+                            }
+
+                        val extensao = if (ehComparacao) {
+                            when {
+                                extensaoDetectada in formatosImagemComparacao ->
+                                    extensaoDetectada
+
+                                extensaoNome in formatosImagemComparacao ->
+                                    extensaoNome
+
+                                extensaoMime in formatosImagemComparacao ->
+                                    extensaoMime
+
+                                else -> ""
+                            }
+                        } else {
+                            when {
+                                extensaoNome in formatosDocumentoMedico ->
+                                    extensaoNome
+
+                                extensaoMime in formatosDocumentoMedico ->
+                                    extensaoMime
+
+                                else -> ""
+                            }
+                        }
+
+                        val formatosPermitidos = if (ehComparacao) {
+                            formatosImagemComparacao
+                        } else {
+                            formatosDocumentoMedico
+                        }
+
+                        if (extensao !in formatosPermitidos) {
+                            val formatosEsperados =
+                                if (ehComparacao) {
+                                    "JPG, JPEG, PNG, WEBP, GIF, BMP, HEIC, HEIF ou AVIF"
+                                } else {
+                                    "DOC, DOCX ou PDF"
+                                }
+
+                            throw IllegalArgumentException(
+                                "Formato de arquivo não suportado. Selecione um arquivo $formatosEsperados."
+                            )
+                        }
+
+                        val pasta = File(
+                            context.filesDir,
+                            "anamneses/aluno_$alunoId"
+                        )
+
+                        if (!pasta.exists() && !pasta.mkdirs()) {
+                            throw IllegalStateException(
+                                "Não foi possível criar a pasta do aluno."
+                            )
+                        }
+
+                        val nomeSeguro = nomeOriginal.replace(
+                            Regex("[^a-zA-Z0-9._-]"),
+                            "_"
+                        )
+
+                        val destino = File(
+                            pasta,
+                            "${System.currentTimeMillis()}_$nomeSeguro"
+                        )
+
+                        arquivoSalvo = destino
+
                         destino.outputStream().use { fluxoSaida ->
                             fluxoEntrada.copyTo(fluxoSaida)
                         }
+
+                        val documento = DocumentoAnamneseEntity(
+                            alunoId = alunoId,
+                            nomeArquivo = if (ehComparacao) {
+                                "comparacao_$nomeOriginal"
+                            } else {
+                                nomeOriginal
+                            },
+                            caminhoArquivo = destino.absolutePath,
+                            tipoArquivo = if (ehComparacao) {
+                                "comparacao_$extensao"
+                            } else {
+                                extensao
+                            },
+                            tamanhoArquivo = destino.length(),
+                            dataImportacao = SimpleDateFormat(
+                                "dd/MM/yyyy HH:mm",
+                                Locale.getDefault()
+                            ).format(Date())
+                        )
+
+                        anamneseRepository.importarDocumento(documento)
                     }
-
-                    val ehComparacao = tipoImportacao == "COMPARACAO"
-
-                    val documento = DocumentoAnamneseEntity(
-                        alunoId = alunoId,
-                        nomeArquivo = if (ehComparacao) {
-                            "comparacao_$nomeOriginal"
-                        } else {
-                            nomeOriginal
-                        },
-                        caminhoArquivo = destino.absolutePath,
-                        tipoArquivo = if (ehComparacao) {
-                            "comparacao_$extensao"
-                        } else {
-                            extensao
-                        },
-                        tamanhoArquivo = destino.length(),
-                        dataImportacao = SimpleDateFormat(
-                            "dd/MM/yyyy HH:mm",
-                            Locale.getDefault()
-                        ).format(Date())
-                    )
-
-                    anamneseRepository.importarDocumento(documento)
 
                     onDocumentoImportado()
 
@@ -196,6 +380,7 @@ fun BotaoImportarDocumentoAnamnese(
 
                     mensagem = erro.message
                         ?: "Não foi possível importar o arquivo."
+
                 } finally {
                     processando = false
                     tipoImportacao = ""
@@ -245,14 +430,17 @@ fun BotaoImportarDocumentoAnamnese(
                 onDismissRequest = {
                     mostrarOpcoes = false
                 },
+
                 title = {
                     Text("O que deseja importar?")
                 },
+
                 text = {
                     Text(
                         "Escolha o tipo de arquivo. Cada opção aceita formatos diferentes."
                     )
                 },
+
                 confirmButton = {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -263,8 +451,9 @@ fun BotaoImportarDocumentoAnamnese(
                                 mostrarOpcoes = false
                                 tipoImportacao = "MEDICO"
 
-                                // A validação da extensão acontece após a seleção.
-                                seletorArquivo.launch(arrayOf("*/*"))
+                                seletorArquivo.launch(
+                                    arrayOf("*/*")
+                                )
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -276,15 +465,22 @@ fun BotaoImportarDocumentoAnamnese(
                                 mostrarOpcoes = false
                                 tipoImportacao = "COMPARACAO"
 
-                                // A validação da extensão acontece após a seleção.
-                                seletorArquivo.launch(arrayOf("*/*"))
+                                seletorArquivo.launch(
+                                    arrayOf("image/*")
+                                )
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Importar imagem para fins de comparação")
+                            Text(
+                                text = "Importar imagem para fins de comparação",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
-                }
+                },
+
+                dismissButton = {}
             )
         }
     }
@@ -314,8 +510,16 @@ fun abrirDocumentoAnamnese(
         "pdf" -> "application/pdf"
         "doc" -> "application/msword"
         "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
         "jpg", "jpeg" -> "image/jpeg"
         "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "heic" -> "image/heic"
+        "heif" -> "image/heif"
+        "avif" -> "image/avif"
+
         else -> "*/*"
     }
 
