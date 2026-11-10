@@ -1618,18 +1618,9 @@ fun TelaLogin(
         )
     }
 
-    var email by rememberSaveable {
-        mutableStateOf("")
-    }
-
-    var senha by rememberSaveable {
-        mutableStateOf("")
-    }
-
-    var senhaVisivel by remember {
-        mutableStateOf(false)
-    }
-
+    var email by rememberSaveable { mutableStateOf("") }
+    var senha by rememberSaveable { mutableStateOf("") }
+    var senhaVisivel by remember { mutableStateOf(false) }
     var manterConectado by remember {
         mutableStateOf(
             preferencias.getBoolean(
@@ -1638,23 +1629,21 @@ fun TelaLogin(
             )
         )
     }
-
-    var carregando by remember {
-        mutableStateOf(false)
-    }
-
-    var mensagemErro by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    var mostrarAjudaSenha by remember {
-        mutableStateOf(false)
-    }
+    var carregando by remember { mutableStateOf(false) }
+    var mensagemErro by remember { mutableStateOf<String?>(null) }
+    var mostrarAjudaSenha by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
     val azulClaro = Color(0xFFEAF5FF)
     val azulFundo = Color(0xFFD8ECFF)
+
+    val descricaoPerfil = when (perfil) {
+        "PROFESSOR" -> "Acesse sua conta profissional."
+        "ALUNO" -> "Acesse sua conta de aluno."
+        "ADMIN" -> "Acesse sua conta administrativa."
+        else -> "Informe seus dados de acesso."
+    }
 
     Box(
         modifier = Modifier
@@ -1675,7 +1664,6 @@ fun TelaLogin(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-
             Image(
                 painter = painterResource(R.drawable.logo_fitcare),
                 contentDescription = "Logo Ícaros FitCare",
@@ -1694,11 +1682,7 @@ fun TelaLogin(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = if (perfil == "PROFESSOR") {
-                    "Acesse sua conta profissional."
-                } else {
-                    "Acesse sua conta de aluno."
-                },
+                text = descricaoPerfil,
                 color = Color(0xFF38566F)
             )
 
@@ -1711,9 +1695,7 @@ fun TelaLogin(
                     mensagemErro = null
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = {
-                    Text("E-mail")
-                },
+                label = { Text("E-mail") },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
@@ -1727,9 +1709,7 @@ fun TelaLogin(
                     mensagemErro = null
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = {
-                    Text("Senha")
-                },
+                label = { Text("Senha") },
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
                 visualTransformation = if (senhaVisivel) {
@@ -1750,7 +1730,6 @@ fun TelaLogin(
                 }
             )
 
-            // Opção de ajuda para recuperação de senha do aluno.
             if (perfil == "ALUNO") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1835,6 +1814,9 @@ fun TelaLogin(
                             if (usuario == null) {
                                 mensagemErro =
                                     "E-mail, senha ou perfil incorreto."
+                            } else if (usuario.perfil != perfil) {
+                                mensagemErro =
+                                    "Esta conta não pertence ao perfil selecionado."
                             } else {
                                 preferencias.edit().apply {
                                     putBoolean(
@@ -1862,7 +1844,6 @@ fun TelaLogin(
 
                                 onEntrar(usuario)
                             }
-
                         } catch (e: Exception) {
                             mensagemErro =
                                 e.message
@@ -1896,7 +1877,6 @@ fun TelaLogin(
         }
     }
 
-    // Diálogo de orientação para recuperação de senha.
     if (mostrarAjudaSenha && perfil == "ALUNO") {
         AlertDialog(
             onDismissRequest = {

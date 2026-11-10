@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -40,33 +41,26 @@ fun TelaAdminDashboard(
         mutableStateOf<List<UsuarioEntity>>(emptyList())
     }
 
-    var carregando by remember {
-        mutableStateOf(true)
-    }
-
-    var mensagemErro by remember {
-        mutableStateOf<String?>(null)
-    }
+    var carregando by remember { mutableStateOf(true) }
+    var mensagemErro by remember { mutableStateOf<String?>(null) }
 
     var profissionalSelecionado by remember {
         mutableStateOf<UsuarioEntity?>(null)
     }
 
-    var mostrarDialogoExclusao by remember {
-        mutableStateOf(false)
-    }
+    var mostrarDialogoExclusao by remember { mutableStateOf(false) }
+    var mostrarDialogoSenha by remember { mutableStateOf(false) }
+    var mostrarDialogoCadastro by remember { mutableStateOf(false) }
 
-    var mostrarDialogoSenha by remember {
-        mutableStateOf(false)
-    }
+    var novaSenha by remember { mutableStateOf("") }
+    var confirmarSenha by remember { mutableStateOf("") }
 
-    var novaSenha by remember {
-        mutableStateOf("")
-    }
-
-    var confirmarSenha by remember {
-        mutableStateOf("")
-    }
+    var nomeNovoProfessor by remember { mutableStateOf("") }
+    var emailNovoProfessor by remember { mutableStateOf("") }
+    var senhaNovoProfessor by remember { mutableStateOf("") }
+    var confirmarSenhaNovoProfessor by remember { mutableStateOf("") }
+    var mensagemCadastro by remember { mutableStateOf<String?>(null) }
+    var cadastrandoProfessor by remember { mutableStateOf(false) }
 
     fun carregarProfissionais() {
         scope.launch {
@@ -74,8 +68,7 @@ fun TelaAdminDashboard(
             mensagemErro = null
 
             try {
-                profissionais =
-                    usuarioRepository.listarProfissionaisParaAdmin()
+                profissionais = usuarioRepository.listarProfissionaisParaAdmin()
             } catch (e: Exception) {
                 mensagemErro = e.message
                     ?: "Não foi possível carregar os profissionais."
@@ -113,27 +106,41 @@ fun TelaAdminDashboard(
                     .statusBarsPadding()
                     .padding(top = 4.dp, bottom = 12.dp)
             ) {
-                Box(
+                Image(
+                    painter = painterResource(id = R.drawable.logo_fitcare),
+                    contentDescription = "Logo Ícaros FitCare",
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 22.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(
-                            id = R.drawable.logo_fitcare
-                        ),
-                        contentDescription = "Logo Ícaros FitCare",
-                        modifier = Modifier
-                            .width(160.dp)
-                            .height(80.dp)
-                    )
+                        .width(160.dp)
+                        .height(80.dp)
+                        .align(Alignment.Center)
+                )
 
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterEnd)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            nomeNovoProfessor = ""
+                            emailNovoProfessor = ""
+                            senhaNovoProfessor = ""
+                            confirmarSenhaNovoProfessor = ""
+                            mensagemCadastro = null
+                            mostrarDialogoCadastro = true
+                        }
                     ) {
-                        BotaoSairPadrao(onSair = onSair)
+                        Text(
+                            text = "+",
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = azulPrincipalAdmin
+                        )
                     }
+
+                    BotaoSairPadrao(onSair = onSair)
                 }
             }
 
@@ -244,9 +251,7 @@ fun TelaAdminDashboard(
                                             color = textoSecundarioAdmin
                                         )
 
-                                        Spacer(
-                                            modifier = Modifier.height(8.dp)
-                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
 
                                         Text(
                                             text = if (profissional.ativo)
@@ -261,9 +266,7 @@ fun TelaAdminDashboard(
                                             fontWeight = FontWeight.Bold
                                         )
 
-                                        Spacer(
-                                            modifier = Modifier.height(10.dp)
-                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
 
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -354,6 +357,134 @@ fun TelaAdminDashboard(
         }
     }
 
+    if (mostrarDialogoCadastro) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!cadastrandoProfessor) {
+                    mostrarDialogoCadastro = false
+                }
+            },
+            title = {
+                Text("Adicionar professor")
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "O novo professor ficará aguardando autorização.",
+                        fontSize = 13.sp,
+                        color = textoSecundarioAdmin
+                    )
+
+                    OutlinedTextField(
+                        value = nomeNovoProfessor,
+                        onValueChange = { nomeNovoProfessor = it },
+                        label = { Text("Nome completo") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = emailNovoProfessor,
+                        onValueChange = { emailNovoProfessor = it },
+                        label = { Text("E-mail") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = senhaNovoProfessor,
+                        onValueChange = { senhaNovoProfessor = it },
+                        label = { Text("Senha") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = confirmarSenhaNovoProfessor,
+                        onValueChange = { confirmarSenhaNovoProfessor = it },
+                        label = { Text("Confirmar senha") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    mensagemCadastro?.let {
+                        Text(
+                            text = it,
+                            color = Color(0xFFD32F2F),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !cadastrandoProfessor,
+                    onClick = {
+                        when {
+                            nomeNovoProfessor.trim().length < 2 -> {
+                                mensagemCadastro = "Informe o nome completo."
+                            }
+
+                            emailNovoProfessor.isBlank() -> {
+                                mensagemCadastro = "Informe o e-mail."
+                            }
+
+                            senhaNovoProfessor.length < 8 -> {
+                                mensagemCadastro = "A senha deve ter pelo menos 8 caracteres."
+                            }
+
+                            senhaNovoProfessor != confirmarSenhaNovoProfessor -> {
+                                mensagemCadastro = "As senhas não coincidem."
+                            }
+
+                            else -> {
+                                scope.launch {
+                                    cadastrandoProfessor = true
+                                    mensagemCadastro = null
+
+                                    try {
+                                        usuarioRepository.cadastrarProfessor(
+                                            nome = nomeNovoProfessor.trim(),
+                                            email = emailNovoProfessor.trim(),
+                                            senha = senhaNovoProfessor
+                                        )
+
+                                        mostrarDialogoCadastro = false
+                                        carregarProfissionais()
+                                    } catch (e: Exception) {
+                                        mensagemCadastro = e.message
+                                            ?: "Não foi possível cadastrar o professor."
+                                    } finally {
+                                        cadastrandoProfessor = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        if (cadastrandoProfessor) "CADASTRANDO..."
+                        else "CADASTRAR"
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !cadastrandoProfessor,
+                    onClick = {
+                        mostrarDialogoCadastro = false
+                    }
+                ) {
+                    Text("CANCELAR")
+                }
+            }
+        )
+    }
+
     if (mostrarDialogoExclusao) {
         AlertDialog(
             onDismissRequest = {
@@ -429,7 +560,8 @@ fun TelaAdminDashboard(
                         value = novaSenha,
                         onValueChange = { novaSenha = it },
                         label = { Text("Nova senha") },
-                        singleLine = true
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -438,7 +570,8 @@ fun TelaAdminDashboard(
                         value = confirmarSenha,
                         onValueChange = { confirmarSenha = it },
                         label = { Text("Confirmar nova senha") },
-                        singleLine = true
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
                     )
                 }
             },
