@@ -1912,7 +1912,7 @@ fun TelaLogin(
     }
 }
 
-// Tela de Dashboard principal
+// Tela de Dashboard principal tela do professor
 @Composable
 fun TelaDashboard(
     repository: AlunoRepository,
@@ -1997,6 +1997,30 @@ fun TelaDashboard(
                     }
                 }
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = AzulPrincipal.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "PERFIL: PROFESSOR",
+                        modifier = Modifier.padding(
+                            horizontal = 16.dp,
+                            vertical = 7.dp
+                        ),
+                        color = AzulPrincipal,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             val primeiroNomeProfessor = SessaoUsuario.usuarioAtual
                 ?.nome
                 ?.trim()
@@ -2015,15 +2039,14 @@ fun TelaDashboard(
                     start = 22.dp,
                     end = 22.dp,
                     top = 16.dp,
-                    bottom = 6.dp
+                    bottom = 0.dp
                 )
             )
             // Área clara de conteúdo do Dashboard
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 18.dp)
-            ) {
+                    .padding(horizontal = 18.dp, vertical = 4.dp)            ) {
                 Text(
                     text = "Acompanhe seus alunos e seus progressos.",
                     color = TextoPrincipal,
@@ -3218,7 +3241,28 @@ fun TelaPerfilAluno(
                 }
             }
         }
-
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = AzulPrincipal.copy(alpha = 0.12f)
+            ) {
+                Text(
+                    text = "PERFIL: PROFESSOR",
+                    modifier = Modifier.padding(
+                        horizontal = 16.dp,
+                        vertical = 7.dp
+                    ),
+                    color = AzulPrincipal,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
         // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier

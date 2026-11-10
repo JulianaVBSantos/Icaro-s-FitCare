@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -24,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.AlunoRepository
 import br.com.icaros.fitcare.data.AnamneseAtribuidaEntity
 import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
@@ -51,7 +53,6 @@ fun TelaAreaAluno(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Recupera o identificador diretamente da sessão, se necessário.
     val idAluno = alunoId
 
     val anamnesesFlow = remember(idAluno) {
@@ -151,12 +152,12 @@ fun TelaAreaAluno(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F9FC))
+            .background(Color(0xFFEAF3F9))
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
     ) {
 
-        // CABEÇALHO COM LOGO E SAIR
+        // CABEÇALHO PADRÃO DO FITCARE
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -206,12 +207,25 @@ fun TelaAreaAluno(
                 }
             }
 
-            Text(
-                text = "ÁREA DO ALUNO",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF002B5C)
-            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF002B5C).copy(alpha = 0.10f)
+            ) {
+                Text(
+                    text = "PERFIL: ALUNO",
+                    modifier = Modifier.padding(
+                        horizontal = 16.dp,
+                        vertical = 7.dp
+                    ),
+                    color = Color(0xFF002B5C),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = "Acompanhe suas anamneses e documentos.",
@@ -221,7 +235,14 @@ fun TelaAreaAluno(
         }
 
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 6.dp,
+                    bottom = 16.dp
+                )
         ) {
 
             if (idAluno == null || idAluno <= 0L) {
