@@ -735,10 +735,7 @@ fun TelaAreaAluno(
     }
 }
 
-// ====================================================
 // CAMPO DE RESPOSTA DA ANAMNESE
-// ====================================================
-
 @Composable
 private fun CampoRespostaAnamnese(
     pergunta: PerguntaAnamneseAtribuidaEntity,

@@ -7,20 +7,20 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "alunos",
     indices = [
-        Index(value = ["email"], unique = true)
+        Index(value = ["email"], unique = true),
+        Index(value = ["professorId"])
     ]
 )
 data class AlunoEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-
     val nome: String,
     val email: String,
     val dataCadastro: String,
     val objetivo: String,
     val status: String = "Normal",
-
     val observacoesProfissionais: String = "",
     val condicoes: String = "",
     val restricoes: String = "",
+    val professorId: Long? = null
 )

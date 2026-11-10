@@ -22,29 +22,20 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PerguntaAnamneseAtribuidaEntity::class,
         RespostaAnamneseEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
 
     abstract fun usuarioDao(): UsuarioDao
-
     abstract fun alunoDao(): AlunoDao
-
     abstract fun documentoAnamneseDao(): DocumentoAnamneseDao
-
     abstract fun treinoDao(): TreinoDao
-
     abstract fun anamneseDao(): AnamneseDao
-
     abstract fun modeloAnamneseDao(): ModeloAnamneseDao
-
     abstract fun perguntaModeloAnamneseDao(): PerguntaModeloAnamneseDao
-
     abstract fun anamneseAtribuidaDao(): AnamneseAtribuidaDao
-
     abstract fun perguntaAnamneseAtribuidaDao(): PerguntaAnamneseAtribuidaDao
-
     abstract fun respostaAnamneseDao(): RespostaAnamneseDao
 
     companion object {
@@ -366,10 +357,70 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                db.execSQL(
+                    "ALTER TABLE alunos ADD COLUMN professorId INTEGER"
+                )
+
+                db.execSQL(
+                    """
+                    UPDATE alunos SET professorId = (
+                        SELECT id
+                        FROM usuarios
+                        WHERE LOWER(email) = 'icaroalvesdasilva2005@gmail.com'
+                          AND perfil = 'PROFESSOR'
+                        LIMIT 1
+                    )
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_alunos_professorId
+                    ON alunos(professorId)
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    "ALTER TABLE modelos_anamnese ADD COLUMN professorId INTEGER"
+                )
+
+                db.execSQL(
+                    """
+                    UPDATE modelos_anamnese
+                    SET professorId = (
+                        SELECT id
+                        FROM usuarios
+                        WHERE LOWER(email) = 'icaroalvesdasilva2005@gmail.com'
+                          AND perfil = 'PROFESSOR'
+                        LIMIT 1
+                    )
+                    WHERE categoria = 'PERSONALIZADO'
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_modelos_anamnese_professorId
+                    ON modelos_anamnese(professorId)
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    index_modelos_anamnese_categoria
+                    ON modelos_anamnese(categoria)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
-
             return INSTANCE ?: synchronized(this) {
-
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     FitCareDatabase::class.java,
@@ -380,12 +431,12 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                     )
                     .build()
 
                 INSTANCE = instance
-
                 instance
             }
         }

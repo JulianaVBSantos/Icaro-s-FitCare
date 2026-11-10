@@ -1,3 +1,4 @@
+
 package br.com.icaros.fitcare.data
 
 import androidx.room.withTransaction
@@ -19,17 +20,124 @@ class AnamneseAtribuidaRepository(
             Locale.getDefault()
         ).format(Date())
 
-    fun listarPorAluno(alunoId: Long) =
-        anamneseDao.listarPorAluno(alunoId)
+    fun listarPorAluno(alunoId: Long) = when {
+        SessaoUsuario.ehProfessor() -> {
+            require(alunoId > 0) {
+                "Aluno inválido."
+            }
 
-    fun listarPorStatus(status: String) =
-        anamneseDao.listarPorStatus(status)
+            anamneseDao.listarPorAlunoDoProfessor(
+                alunoId,
+                SessaoUsuario.exigirProfessorId()
+            )
+        }
 
-    suspend fun buscarPorId(id: Long) =
-        anamneseDao.buscarPorId(id)
+        SessaoUsuario.ehAluno() -> {
+            val idAluno = obterAlunoDaSessao()
 
-    suspend fun buscarPerguntas(anamneseId: Long) =
-        perguntaAtribuidaDao.buscarPorAnamnese(anamneseId)
+            require(idAluno == alunoId) {
+                "Você não tem permissão para consultar as anamneses deste aluno."
+            }
+
+            anamneseDao.listarPorAluno(idAluno)
+        }
+
+        else -> throw IllegalStateException(
+            "Usuário sem permissão para consultar anamneses."
+        )
+    }
+
+    fun listarPorStatus(status: String) = when {
+        SessaoUsuario.ehProfessor() -> {
+            require(status.isNotBlank()) {
+                "Informe um status válido."
+            }
+
+            anamneseDao.listarPorStatusDoProfessor(
+                status,
+                SessaoUsuario.exigirProfessorId()
+            )
+        }
+
+        SessaoUsuario.ehAluno() -> {
+            require(status.isNotBlank()) {
+                "Informe um status válido."
+            }
+
+            anamneseDao.listarPorStatusDoAluno(
+                status,
+                obterAlunoDaSessao()
+            )
+        }
+
+        else -> throw IllegalStateException(
+            "Usuário sem permissão para consultar anamneses."
+        )
+    }
+
+    suspend fun buscarPorId(
+        id: Long
+    ) = when {
+        SessaoUsuario.ehProfessor() -> {
+            require(id > 0) {
+                "Anamnese inválida."
+            }
+
+            anamneseDao.buscarPorIdDoProfessor(
+                id,
+                SessaoUsuario.exigirProfessorId()
+            )
+        }
+
+        SessaoUsuario.ehAluno() -> {
+            require(id > 0) {
+                "Anamnese inválida."
+            }
+
+            anamneseDao.buscarPorIdDoAluno(
+                id,
+                obterAlunoDaSessao()
+            )
+        }
+
+        else -> throw IllegalStateException(
+            "Usuário sem permissão para consultar esta anamnese."
+        )
+    }
+
+    suspend fun buscarPerguntas(
+        anamneseId: Long
+    ): List<PerguntaAnamneseAtribuidaEntity> {
+
+        require(anamneseId > 0) {
+            "Anamnese inválida."
+        }
+
+        val anamnese = buscarPorId(anamneseId)
+            ?: throw IllegalArgumentException(
+                "Anamnese não encontrada ou sem permissão de acesso."
+            )
+
+        return when {
+            SessaoUsuario.ehProfessor() -> {
+                perguntaAtribuidaDao.buscarPorAnamneseDoProfessor(
+                    anamnese.id,
+                    SessaoUsuario.exigirProfessorId()
+                )
+            }
+
+            SessaoUsuario.ehAluno() -> {
+                perguntaAtribuidaDao.buscarPorAnamneseDoAluno(
+                    anamnese.id,
+                    obterAlunoDaSessao()
+                )
+            }
+
+            else -> throw IllegalStateException(
+                "Usuário sem permissão para consultar estas perguntas."
+            )
+        }
+    }
 
     suspend fun atribuir(
         alunoId: Long,
@@ -37,23 +145,41 @@ class AnamneseAtribuidaRepository(
         profissionalResponsavel: String = ""
     ): Long {
 
+        val professorId = SessaoUsuario.exigirProfessorId()
+
         require(alunoId > 0) {
             "Aluno inválido."
         }
 
-        return database.withTransaction {
+        require(modeloId > 0) {
+            "Modelo de anamnese inválido."
+        }
 
-            val modelo = modeloDao.buscarPorId(modeloId)
-                ?: throw IllegalArgumentException(
-                    "Modelo de anamnese não encontrado."
+        return database.withTransaction {
+            require(
+                anamneseDao.alunoPertenceAoProfessor(
+                    alunoId,
+                    professorId
                 )
+            ) {
+                "Este aluno não pertence ao seu cadastro."
+            }
+
+            val modelo = modeloDao.buscarPorIdDoProfessor(
+                modeloId,
+                professorId
+            ) ?: throw IllegalArgumentException(
+                "Modelo não encontrado ou sem permissão de acesso."
+            )
 
             require(modelo.ativo) {
                 "Este modelo está desativado."
             }
 
-            val perguntas =
-                perguntaModeloDao.buscarPorModelo(modeloId)
+            val perguntas = perguntaModeloDao.buscarPorModeloDoProfessor(
+                modeloId,
+                professorId
+            )
 
             require(perguntas.isNotEmpty()) {
                 "Adicione perguntas ao modelo antes de atribuí-lo."
@@ -67,12 +193,13 @@ class AnamneseAtribuidaRepository(
                 nomeModelo = modelo.nome,
                 status = "NAO_ENVIADA",
                 dataCriacao = data,
-                profissionalResponsavel =
-                    profissionalResponsavel
+                profissionalResponsavel = profissionalResponsavel
             )
 
-            val anamneseId =
-                anamneseDao.inserir(anamnese)
+            val anamneseId = anamneseDao.inserirDoProfessor(
+                anamnese,
+                professorId
+            )
 
             val perguntasCopiadas = perguntas.map { pergunta ->
                 PerguntaAnamneseAtribuidaEntity(
@@ -86,8 +213,9 @@ class AnamneseAtribuidaRepository(
                 )
             }
 
-            perguntaAtribuidaDao.inserirTodas(
-                perguntasCopiadas
+            perguntaAtribuidaDao.inserirTodasDoProfessor(
+                perguntasCopiadas,
+                professorId
             )
 
             anamneseId
@@ -95,28 +223,65 @@ class AnamneseAtribuidaRepository(
     }
 
     suspend fun enviar(id: Long) {
-        val anamnese = buscarPorId(id)
-            ?: throw IllegalArgumentException(
-                "Anamnese não encontrada."
-            )
+
+        val professorId = SessaoUsuario.exigirProfessorId()
+
+        require(id > 0) {
+            "Anamnese inválida."
+        }
+
+        val anamnese = anamneseDao.buscarPorIdDoProfessor(
+            id,
+            professorId
+        ) ?: throw IllegalArgumentException(
+            "Anamnese não encontrada ou sem permissão para enviá-la."
+        )
 
         require(anamnese.status == "NAO_ENVIADA") {
             "Somente anamneses ainda não enviadas podem ser enviadas."
         }
 
-        anamneseDao.atualizarEnvio(
+        val linhasAfetadas = anamneseDao.atualizarEnvioDoProfessor(
             id = id,
             status = "PENDENTE",
-            dataEnvio = agora()
+            dataEnvio = agora(),
+            professorId = professorId
         )
+
+        check(linhasAfetadas == 1) {
+            "Não foi possível enviar a anamnese. Verifique se ela ainda não foi enviada."
+        }
     }
 
-    suspend fun excluir(
-        id: Long
-    ) {
-        val anamnese = buscarPorId(id)
-            ?: return
+    suspend fun excluir(id: Long) {
 
-        anamneseDao.excluir(anamnese)
+        val professorId = SessaoUsuario.exigirProfessorId()
+
+        require(id > 0) {
+            "Anamnese inválida."
+        }
+
+        val anamnese = anamneseDao.buscarPorIdDoProfessor(
+            id,
+            professorId
+        ) ?: throw IllegalArgumentException(
+            "Anamnese não encontrada ou sem permissão para excluí-la."
+        )
+
+        val linhasAfetadas = anamneseDao.excluirDoProfessor(
+            anamnese.id,
+            professorId
+        )
+
+        check(linhasAfetadas == 1) {
+            "Não foi possível excluir a anamnese."
+        }
+    }
+
+    private fun obterAlunoDaSessao(): Long {
+        return SessaoUsuario.usuarioAtual?.alunoId
+            ?: throw IllegalStateException(
+                "Conta de aluno sem cadastro vinculado."
+            )
     }
 }

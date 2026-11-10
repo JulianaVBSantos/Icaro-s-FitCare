@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
     ]
 )
 data class UsuarioEntity(
+
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
 
@@ -19,14 +20,13 @@ data class UsuarioEntity(
 
     val email: String,
 
-    // Armazene somente o hash da senha, nunca a senha original.
     val senhaHash: String,
 
-    // PROFESSOR ou ALUNO
+    // PROFESSOR, ALUNO ou ADMIN
     val perfil: String,
 
-    // Identificador do aluno ou professor relacionado, quando aplicável.
     val alunoId: Long? = null,
+
     val professorId: Long? = null,
 
     val ativo: Boolean = true,

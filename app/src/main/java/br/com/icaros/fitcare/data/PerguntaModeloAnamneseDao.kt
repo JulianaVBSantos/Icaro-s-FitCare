@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PerguntaModeloAnamneseDao {
 
+    // =====================================================
+    // INSERIR
+    // =====================================================
+
     @Insert
     suspend fun inserir(
         pergunta: PerguntaModeloAnamneseEntity
@@ -20,6 +24,10 @@ interface PerguntaModeloAnamneseDao {
     suspend fun inserirTodas(
         perguntas: List<PerguntaModeloAnamneseEntity>
     ): List<Long>
+
+    // =====================================================
+    // ATUALIZAR
+    // =====================================================
 
     @Update
     suspend fun atualizar(
@@ -31,41 +39,110 @@ interface PerguntaModeloAnamneseDao {
         perguntas: List<PerguntaModeloAnamneseEntity>
     )
 
+    // =====================================================
+    // EXCLUIR
+    // =====================================================
+
     @Delete
     suspend fun excluir(
         pergunta: PerguntaModeloAnamneseEntity
     )
 
     @Query("""
-        SELECT * FROM perguntas_modelo_anamnese
+        DELETE FROM perguntas_modelo_anamnese
         WHERE modeloId = :modeloId
-        ORDER BY ordem ASC, id ASC
+        AND EXISTS (
+            SELECT 1
+            FROM modelos_anamnese
+            WHERE modelos_anamnese.id = :modeloId
+            AND modelos_anamnese.categoria = 'PERSONALIZADO'
+            AND modelos_anamnese.professorId = :professorId
+        )
     """)
-    fun listarPorModelo(
-        modeloId: Long
+    suspend fun excluirTodasDoModeloDoProfessor(
+        modeloId: Long,
+        professorId: Long
+    )
+
+    // =====================================================
+    // LISTAR PERGUNTAS
+    // =====================================================
+
+    @Query("""
+        SELECT perguntas_modelo_anamnese.*
+        FROM perguntas_modelo_anamnese
+        INNER JOIN modelos_anamnese
+            ON modelos_anamnese.id = perguntas_modelo_anamnese.modeloId
+        WHERE perguntas_modelo_anamnese.modeloId = :modeloId
+        AND (
+            modelos_anamnese.categoria = 'PADRAO'
+            OR (
+                modelos_anamnese.categoria = 'PERSONALIZADO'
+                AND modelos_anamnese.professorId = :professorId
+            )
+        )
+        ORDER BY perguntas_modelo_anamnese.ordem ASC,
+                 perguntas_modelo_anamnese.id ASC
+    """)
+    fun listarPorModeloDoProfessor(
+        modeloId: Long,
+        professorId: Long
     ): Flow<List<PerguntaModeloAnamneseEntity>>
 
     @Query("""
-        SELECT * FROM perguntas_modelo_anamnese
-        WHERE modeloId = :modeloId
-        ORDER BY ordem ASC, id ASC
+        SELECT perguntas_modelo_anamnese.*
+        FROM perguntas_modelo_anamnese
+        INNER JOIN modelos_anamnese
+            ON modelos_anamnese.id = perguntas_modelo_anamnese.modeloId
+        WHERE perguntas_modelo_anamnese.modeloId = :modeloId
+        AND (
+            modelos_anamnese.categoria = 'PADRAO'
+            OR (
+                modelos_anamnese.categoria = 'PERSONALIZADO'
+                AND modelos_anamnese.professorId = :professorId
+            )
+        )
+        ORDER BY perguntas_modelo_anamnese.ordem ASC,
+                 perguntas_modelo_anamnese.id ASC
     """)
-    suspend fun buscarPorModelo(
-        modeloId: Long
+    suspend fun buscarPorModeloDoProfessor(
+        modeloId: Long,
+        professorId: Long
     ): List<PerguntaModeloAnamneseEntity>
 
+    // =====================================================
+    // BUSCAR PERGUNTA POR ID
+    // =====================================================
+
     @Query("""
-        SELECT * FROM perguntas_modelo_anamnese
-        WHERE id = :id
+        SELECT perguntas_modelo_anamnese.*
+        FROM perguntas_modelo_anamnese
+        INNER JOIN modelos_anamnese
+            ON modelos_anamnese.id = perguntas_modelo_anamnese.modeloId
+        WHERE perguntas_modelo_anamnese.id = :id
+        AND (
+            modelos_anamnese.categoria = 'PADRAO'
+            OR (
+                modelos_anamnese.categoria = 'PERSONALIZADO'
+                AND modelos_anamnese.professorId = :professorId
+            )
+        )
         LIMIT 1
     """)
-    suspend fun buscarPorId(
-        id: Long
+    suspend fun buscarPorIdDoProfessor(
+        id: Long,
+        professorId: Long
     ): PerguntaModeloAnamneseEntity?
+
+    // =====================================================
+    // OPERAÇÕES INTERNAS
+    // =====================================================
 
     @Query("""
         DELETE FROM perguntas_modelo_anamnese
         WHERE modeloId = :modeloId
     """)
-    suspend fun excluirTodasDoModelo(modeloId: Long)
+    suspend fun excluirTodasDoModelo(
+        modeloId: Long
+    )
 }

@@ -202,7 +202,9 @@ enum class AppScreen {
     ModelosAnamnese,
     CriarModeloAnamnese,
     FormularioAnamnese,
-    VisualizarAnamnese
+    VisualizarAnamnese,
+    AdminDashboard,
+    CadastroAdminInicial
 }
 
 // Fluxo de navegação principal da aplicação
@@ -217,6 +219,7 @@ fun FitCareApp(
     respostaAnamneseRepository: RespostaAnamneseRepository,
     usuarioRepository: UsuarioRepository
 ) {
+    val scope = rememberCoroutineScope()
 
 // Mantém a tela atual quando a Activity é recriada.
     var tela by rememberSaveable {
@@ -296,13 +299,28 @@ fun FitCareApp(
                 SessaoUsuario.iniciar(usuario)
                 perfilSelecionado = usuario.perfil
 
-                if (usuario.perfil == "PROFESSOR") {
-                    alunoAutenticado = false
-                    tela = AppScreen.Dashboard
-                } else {
-                    alunoAutenticado = true
-                    tela = AppScreen.Login
+                when (usuario.perfil) {
+                    "PROFESSOR" -> {
+                        alunoAutenticado = false
+                        tela = AppScreen.Dashboard
+                    }
+
+                    "ALUNO" -> {
+                        alunoAutenticado = true
+                        tela = AppScreen.Login
+                    }
+
+                    "ADMIN" -> {
+                        alunoAutenticado = false
+                        tela = AppScreen.AdminDashboard
+                    }
+
+                    else -> {
+                        SessaoUsuario.encerrar()
+                        tela = AppScreen.Login
+                    }
                 }
+
             } else {
                 preferenciasSessao.edit()
                     .remove(CHAVE_USUARIO_ID)
@@ -332,6 +350,39 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
+
+                    AppScreen.CadastroAdminInicial -> {
+                        TelaCadastroAdminInicial(
+                            usuarioRepository = usuarioRepository,
+                            onVoltar = {
+                                perfilSelecionado = null
+                                tela = AppScreen.Login
+                            },
+                            onCadastroConcluido = {
+                                alunoAutenticado = false
+                                perfilSelecionado = "ADMIN"
+                                tela = AppScreen.AdminDashboard
+                            }
+                        )
+                    }
+
+                    AppScreen.AdminDashboard -> {
+                        TelaAdminDashboard(
+                            usuarioRepository = usuarioRepository,
+                            onSair = {
+                                preferenciasSessao.edit()
+                                    .remove(CHAVE_USUARIO_ID)
+                                    .remove(CHAVE_PERFIL)
+                                    .apply()
+
+                                SessaoUsuario.encerrar()
+                                alunoAutenticado = false
+                                perfilSelecionado = null
+                                tela = AppScreen.Login
+                            }
+                        )
+                    }
+
                     AppScreen.Login -> {
 
                         if (alunoAutenticado) {
@@ -357,10 +408,27 @@ fun FitCareApp(
 
                             TelaEscolherPerfil(
                                 onSelecionarPerfil = { perfil ->
-                                    perfilSelecionado = perfil
-                                },
-                                onCadastrarProfessor = {
-                                    tela = AppScreen.CadastroProfessor
+                                    if (perfil == "ADMIN") {
+                                        scope.launch {
+                                            try {
+                                                val existeAdmin =
+                                                    usuarioRepository.existeAdministrador()
+
+                                                if (existeAdmin) {
+                                                    perfilSelecionado = "ADMIN"
+                                                    tela = AppScreen.Login
+                                                } else {
+                                                    perfilSelecionado = null
+                                                    tela = AppScreen.CadastroAdminInicial
+                                                }
+                                            } catch (e: Exception) {
+                                                perfilSelecionado = null
+                                                tela = AppScreen.Login
+                                            }
+                                        }
+                                    } else {
+                                        perfilSelecionado = perfil
+                                    }
                                 }
                             )
 
@@ -394,11 +462,26 @@ fun FitCareApp(
 
                                     perfilSelecionado = usuario.perfil
 
-                                    if (usuario.perfil == "PROFESSOR") {
-                                        alunoAutenticado = false
-                                        tela = AppScreen.Dashboard
-                                    } else {
-                                        alunoAutenticado = true
+                                    when (usuario.perfil) {
+                                        "PROFESSOR" -> {
+                                            alunoAutenticado = false
+                                            tela = AppScreen.Dashboard
+                                        }
+
+                                        "ALUNO" -> {
+                                            alunoAutenticado = true
+                                        }
+
+                                        "ADMIN" -> {
+                                            alunoAutenticado = false
+                                            tela = AppScreen.AdminDashboard
+                                        }
+
+                                        else -> {
+                                            SessaoUsuario.encerrar()
+                                            perfilSelecionado = null
+                                            tela = AppScreen.Login
+                                        }
                                     }
                                 }
                             )

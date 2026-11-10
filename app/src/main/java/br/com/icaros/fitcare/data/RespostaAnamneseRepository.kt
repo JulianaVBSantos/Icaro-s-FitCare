@@ -17,25 +17,82 @@ class RespostaAnamneseRepository(
             Locale.getDefault()
         ).format(Date())
 
+    private fun exigirAlunoId(): Long {
+        return SessaoUsuario.exigirAlunoId()
+    }
+
     fun listarPorAnamnese(anamneseId: Long) =
-        respostaDao.listarPorAnamnese(anamneseId)
+        when {
+            SessaoUsuario.ehProfessor() ->
+                respostaDao.listarPorAnamneseDoProfessor(
+                    anamneseId,
+                    SessaoUsuario.exigirProfessorId()
+                )
+
+            SessaoUsuario.ehAluno() ->
+                respostaDao.listarPorAnamneseDoAluno(
+                    anamneseId,
+                    exigirAlunoId()
+                )
+
+            else -> throw IllegalStateException(
+                "Perfil sem permissão para consultar respostas."
+            )
+        }
 
     suspend fun buscarPorPergunta(perguntaId: Long) =
-        respostaDao.buscarPorPergunta(perguntaId)
+        when {
+            SessaoUsuario.ehProfessor() ->
+                respostaDao.buscarPorPerguntaDoProfessor(
+                    perguntaId,
+                    SessaoUsuario.exigirProfessorId()
+                )
+
+            SessaoUsuario.ehAluno() ->
+                respostaDao.buscarPorPerguntaDoAluno(
+                    perguntaId,
+                    exigirAlunoId()
+                )
+
+            else -> throw IllegalStateException(
+                "Perfil sem permissão para consultar respostas."
+            )
+        }
 
     suspend fun salvarResposta(
         perguntaId: Long,
         resposta: String
     ) {
-        val pergunta = perguntaDao.buscarPorId(perguntaId)
-            ?: throw IllegalArgumentException(
-                "Pergunta não encontrada."
-            )
+        salvarRespostaDoAluno(
+            alunoId = exigirAlunoId(),
+            perguntaId = perguntaId,
+            resposta = resposta
+        )
+    }
 
-        val anamnese = anamneseDao.buscarPorId(
-            pergunta.anamneseAtribuidaId
+    suspend fun salvarRespostaDoAluno(
+        alunoId: Long,
+        perguntaId: Long,
+        resposta: String
+    ) {
+        val alunoAutenticado = exigirAlunoId()
+
+        require(alunoId == alunoAutenticado) {
+            "Não é permitido responder por outro aluno."
+        }
+
+        val pergunta = perguntaDao.buscarPorIdDoAluno(
+            perguntaId,
+            alunoAutenticado
         ) ?: throw IllegalArgumentException(
-            "Anamnese não encontrada."
+            "Pergunta não encontrada ou sem permissão de acesso."
+        )
+
+        val anamnese = anamneseDao.buscarPorIdDoAluno(
+            pergunta.anamneseAtribuidaId,
+            alunoAutenticado
+        ) ?: throw IllegalArgumentException(
+            "Anamnese não encontrada ou sem permissão de acesso."
         )
 
         require(
@@ -45,40 +102,50 @@ class RespostaAnamneseRepository(
             "Esta anamnese não está disponível para respostas."
         }
 
-        val data = agora()
+        val resultado = respostaDao.salvarRespostaDoAluno(
+            perguntaId = perguntaId,
+            alunoId = alunoAutenticado,
+            resposta = resposta,
+            dataAtualizacao = agora()
+        )
 
-        val respostaExistente =
-            respostaDao.buscarPorPergunta(perguntaId)
-
-        val registro = if (respostaExistente == null) {
-            RespostaAnamneseEntity(
-                perguntaAtribuidaId = perguntaId,
-                resposta = resposta,
-                dataAtualizacao = data
-            )
-        } else {
-            respostaExistente.copy(
-                resposta = resposta,
-                dataAtualizacao = data
-            )
+        require(resultado > 0) {
+            "Não foi possível salvar a resposta. Verifique se a anamnese ainda está disponível."
         }
 
-        respostaDao.inserir(registro)
-
         if (anamnese.status == "PENDENTE") {
-            anamneseDao.atualizarInicioResposta(
+            anamneseDao.atualizarInicioRespostaDoAluno(
                 id = anamnese.id,
                 status = "EM_ANDAMENTO",
-                dataInicioResposta = data
+                dataInicioResposta = agora(),
+                alunoId = alunoAutenticado
             )
         }
     }
 
     suspend fun concluir(anamneseId: Long) {
-        val anamnese = anamneseDao.buscarPorId(anamneseId)
-            ?: throw IllegalArgumentException(
-                "Anamnese não encontrada."
-            )
+        concluirDoAluno(
+            alunoId = exigirAlunoId(),
+            anamneseId = anamneseId
+        )
+    }
+
+    suspend fun concluirDoAluno(
+        alunoId: Long,
+        anamneseId: Long
+    ) {
+        val alunoAutenticado = exigirAlunoId()
+
+        require(alunoId == alunoAutenticado) {
+            "Não é permitido concluir a anamnese de outro aluno."
+        }
+
+        val anamnese = anamneseDao.buscarPorIdDoAluno(
+            anamneseId,
+            alunoAutenticado
+        ) ?: throw IllegalArgumentException(
+            "Anamnese não encontrada ou sem permissão de acesso."
+        )
 
         require(
             anamnese.status == "PENDENTE" ||
@@ -87,8 +154,10 @@ class RespostaAnamneseRepository(
             "Esta anamnese não pode ser concluída."
         }
 
-        val perguntas =
-            perguntaDao.buscarPorAnamnese(anamneseId)
+        val perguntas = perguntaDao.buscarPorAnamneseDoAluno(
+            anamneseId,
+            alunoAutenticado
+        )
 
         require(perguntas.isNotEmpty()) {
             "Esta anamnese não possui perguntas."
@@ -97,7 +166,10 @@ class RespostaAnamneseRepository(
         for (pergunta in perguntas) {
             if (pergunta.obrigatoria) {
                 val resposta =
-                    respostaDao.buscarPorPergunta(pergunta.id)
+                    respostaDao.buscarPorPerguntaDoAluno(
+                        pergunta.id,
+                        alunoAutenticado
+                    )
 
                 require(
                     resposta != null &&
@@ -108,57 +180,55 @@ class RespostaAnamneseRepository(
             }
         }
 
-        anamneseDao.atualizarConclusao(
+        anamneseDao.atualizarConclusaoDoAluno(
             id = anamneseId,
             status = "RESPONDIDA",
-            dataResposta = agora()
+            dataResposta = agora(),
+            alunoId = alunoAutenticado
         )
     }
 
     suspend fun contarRespostasPreenchidas(
         anamneseId: Long
     ): Int {
-        return respostaDao.contarRespostasPreenchidas(
-            anamneseId
-        )
+        return when {
+            SessaoUsuario.ehProfessor() ->
+                respostaDao.contarRespostasPreenchidasDoProfessor(
+                    anamneseId,
+                    SessaoUsuario.exigirProfessorId()
+                )
+
+            SessaoUsuario.ehAluno() ->
+                respostaDao.contarRespostasPreenchidasDoAluno(
+                    anamneseId,
+                    exigirAlunoId()
+                )
+
+            else -> throw IllegalStateException(
+                "Perfil sem permissão para consultar respostas."
+            )
+        }
     }
 
     suspend fun buscarRespostasDaAnamnese(
         anamneseId: Long
     ): List<RespostaAnamneseEntity> {
-        return respostaDao.buscarTodasPorAnamnese(anamneseId)
-    }
+        return when {
+            SessaoUsuario.ehProfessor() ->
+                respostaDao.buscarTodasPorAnamneseDoProfessor(
+                    anamneseId,
+                    SessaoUsuario.exigirProfessorId()
+                )
 
-    suspend fun salvarRespostaDoAluno(
-        alunoId: Long,
-        perguntaId: Long,
-        resposta: String
-    ) {
-        require(alunoId > 0) {
-            "Aluno inválido."
+            SessaoUsuario.ehAluno() ->
+                respostaDao.buscarTodasPorAnamneseDoAluno(
+                    anamneseId,
+                    exigirAlunoId()
+                )
+
+            else -> throw IllegalStateException(
+                "Perfil sem permissão para consultar respostas."
+            )
         }
-
-        require(perguntaDao.pertenceAoAluno(perguntaId, alunoId)) {
-            "Esta pergunta não pertence ao aluno autenticado."
-        }
-
-        salvarResposta(perguntaId, resposta)
-    }
-
-    suspend fun concluirDoAluno(
-        alunoId: Long,
-        anamneseId: Long
-    ) {
-        require(alunoId > 0) {
-            "Aluno inválido."
-        }
-
-        require(
-            anamneseDao.buscarPorIdDoAluno(anamneseId, alunoId) != null
-        ) {
-            "Esta anamnese não pertence ao aluno autenticado."
-        }
-
-        concluir(anamneseId)
     }
 }

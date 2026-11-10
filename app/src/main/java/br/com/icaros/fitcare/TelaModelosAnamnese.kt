@@ -377,10 +377,7 @@ fun TelaModelosAnamnese(
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // =====================================
                                 // BOTÃO 1 - PREENCHER ANAMNESE DIGITAL
-                                // =====================================
-
                                 OutlinedButton(
                                     onClick = {
 
@@ -472,10 +469,7 @@ fun TelaModelosAnamnese(
 
                                 Spacer(modifier = Modifier.height(6.dp))
 
-                                // =====================================
                                 // BOTÃO 2 - EXPORTAR / COMPARTILHAR PDF
-                                // =====================================
-
                                 Button(
                                     onClick = {
 
@@ -662,10 +656,7 @@ fun TelaModelosAnamnese(
         }
     }
 
-    // =====================================
     // CONFIRMAÇÃO DE EXCLUSÃO
-    // =====================================
-
     modeloParaExcluir?.let { modelo ->
 
         AlertDialog(
