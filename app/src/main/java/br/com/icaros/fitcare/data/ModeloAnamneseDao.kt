@@ -31,15 +31,24 @@ interface ModeloAnamneseDao {
     )
 
     @Query("""
-        DELETE FROM modelos_anamnese
-        WHERE id = :id
-        AND professorId = :professorId
-        AND categoria = 'PERSONALIZADO'
-    """)
+    DELETE FROM modelos_anamnese
+    WHERE id = :id
+    AND professorId = :professorId
+    AND categoria = 'PERSONALIZADO'
+""")
     suspend fun excluirPersonalizado(
         id: Long,
         professorId: Long
-    )
+    ): Int
+
+    @Query("""
+    DELETE FROM modelos_anamnese
+    WHERE id = :id
+    AND categoria = 'PADRAO'
+""")
+    suspend fun excluirModeloPadrao(
+        id: Long
+    ): Int
 
     // LISTAR TODOS OS MODELOS VISÍVEIS AO PROFESSOR
 

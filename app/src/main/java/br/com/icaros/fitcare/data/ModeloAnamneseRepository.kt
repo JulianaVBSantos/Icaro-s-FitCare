@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import java.text.SimpleDateFormat
@@ -16,9 +15,7 @@ class ModeloAnamneseRepository(
             Locale.getDefault()
         ).format(Date())
 
-    // =====================================================
     // LISTAR MODELOS
-    // =====================================================
 
     fun listarTodos(): Flow<List<ModeloAnamneseEntity>> {
         return dao.listarTodosDoProfessor(
@@ -38,9 +35,7 @@ class ModeloAnamneseRepository(
         )
     }
 
-    // =====================================================
     // BUSCAR MODELO
-    // =====================================================
 
     suspend fun buscarPorId(
         id: Long
@@ -56,9 +51,7 @@ class ModeloAnamneseRepository(
         )
     }
 
-    // =====================================================
     // SALVAR MODELO
-    // =====================================================
 
     suspend fun salvar(
         modelo: ModeloAnamneseEntity
@@ -70,18 +63,22 @@ class ModeloAnamneseRepository(
             "Informe o nome do modelo."
         }
 
-        require(modelo.categoria == "PERSONALIZADO") {
-            "Não é permitido criar ou modificar modelos padrão."
+        require(
+            modelo.categoria == "PADRAO" ||
+                    modelo.categoria == "PERSONALIZADO"
+        ) {
+            "Categoria de modelo inválida."
         }
 
         val data = agora()
 
         return if (modelo.id == 0L) {
 
+            // Permite criar vários modelos padrão ou personalizados.
             val novoModelo = modelo.copy(
-                id = 0,
+                id = 0L,
                 nome = modelo.nome.trim(),
-                categoria = "PERSONALIZADO",
+                categoria = modelo.categoria,
                 professorId = professorId,
                 dataCriacao = data,
                 dataAtualizacao = data
@@ -91,6 +88,7 @@ class ModeloAnamneseRepository(
 
         } else {
 
+            // Somente modelos personalizados podem ser editados.
             val modeloExistente =
                 dao.buscarPersonalizadoDoProfessor(
                     modelo.id,
@@ -108,13 +106,11 @@ class ModeloAnamneseRepository(
 
             dao.atualizar(modeloAtualizado)
 
-            modelo.id
+            modeloExistente.id
         }
     }
 
-    // =====================================================
-    // EXCLUIR MODELO
-    // =====================================================
+    // EXCLUIR MODELO PADRÃO OU PERSONALIZADO
 
     suspend fun excluir(
         modelo: ModeloAnamneseEntity
@@ -126,21 +122,45 @@ class ModeloAnamneseRepository(
             "Modelo inválido."
         }
 
+        // Confere se o modelo está disponível para este professor.
         val modeloExistente =
-            dao.buscarPersonalizadoDoProfessor(
+            dao.buscarPorIdDoProfessor(
                 modelo.id,
                 professorId
             ) ?: throw IllegalArgumentException(
-                "Modelo não encontrado ou você não tem permissão para excluí-lo."
+                "Modelo não encontrado ou indisponível."
             )
 
-        dao.excluirPersonalizado(
-            id = modeloExistente.id,
-            professorId = professorId
-        )
+        // Exclui conforme a categoria.
+        val linhasAfetadas = when (modeloExistente.categoria) {
+
+            "PADRAO" -> {
+                dao.excluirModeloPadrao(
+                    modeloExistente.id
+                )
+            }
+
+            "PERSONALIZADO" -> {
+                dao.excluirPersonalizado(
+                    modeloExistente.id,
+                    professorId
+                )
+            }
+
+            else -> {
+                throw IllegalArgumentException(
+                    "Categoria de modelo inválida."
+                )
+            }
+        }
+
+        check(linhasAfetadas > 0) {
+            "Não foi possível excluir o modelo."
+        }
     }
 
-    // ATIVAR OU DESATIVAR MODELO
+    // ATIVAR OU DESATIVAR MODELO PERSONALIZADO
+
     suspend fun alterarAtivo(
         id: Long,
         ativo: Boolean

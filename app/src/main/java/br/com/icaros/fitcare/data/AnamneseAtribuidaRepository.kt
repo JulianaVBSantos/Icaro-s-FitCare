@@ -268,13 +268,17 @@ class AnamneseAtribuidaRepository(
             "Anamnese não encontrada ou sem permissão para excluí-la."
         )
 
+        require(anamnese.status == "PENDENTE") {
+            "Somente anamneses pendentes podem ser excluídas."
+        }
+
         val linhasAfetadas = anamneseDao.excluirDoProfessor(
             anamnese.id,
             professorId
         )
 
         check(linhasAfetadas == 1) {
-            "Não foi possível excluir a anamnese."
+            "Não foi possível excluir a anamnese. Verifique se ela ainda está pendente."
         }
     }
 

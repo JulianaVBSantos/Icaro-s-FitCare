@@ -54,14 +54,15 @@ abstract class AnamneseAtribuidaDao {
     }
 
     @Query("""
-        DELETE FROM anamneses_atribuidas
-        WHERE id = :id
-        AND alunoId IN (
-            SELECT id
-            FROM alunos
-            WHERE professorId = :professorId
-        )
-    """)
+    DELETE FROM anamneses_atribuidas
+    WHERE id = :id
+    AND status = 'PENDENTE'
+    AND alunoId IN (
+        SELECT id
+        FROM alunos
+        WHERE professorId = :professorId
+    )
+""")
     abstract suspend fun excluirDoProfessor(
         id: Long,
         professorId: Long

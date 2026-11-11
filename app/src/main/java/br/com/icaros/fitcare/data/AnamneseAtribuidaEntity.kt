@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.Entity
@@ -14,12 +13,6 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["alunoId"],
             onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = ModeloAnamneseEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["modeloId"],
-            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [
@@ -31,23 +24,14 @@ import androidx.room.PrimaryKey
 data class AnamneseAtribuidaEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-
     val alunoId: Long,
     val modeloId: Long,
-
     val nomeModelo: String,
-
-    // NAO_ENVIADA, PENDENTE,
-    // EM_ANDAMENTO ou RESPONDIDA
     val status: String = "NAO_ENVIADA",
-
     val dataCriacao: String = "",
     val dataEnvio: String = "",
     val dataInicioResposta: String = "",
     val dataResposta: String = "",
-
     val profissionalResponsavel: String = "",
-
-    // Reservado para integração futura com backend.
     val identificadorExterno: String = ""
 )

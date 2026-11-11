@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PerguntaAnamneseAtribuidaEntity::class,
         RespostaAnamneseEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -419,6 +419,211 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                // 1. Fazer backup das três tabelas antes de qualquer alteração.
+                db.execSQL(
+                    """
+            CREATE TABLE respostas_anamnese_backup AS
+            SELECT * FROM respostas_anamnese
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE TABLE perguntas_anamnese_atribuidas_backup AS
+            SELECT * FROM perguntas_anamnese_atribuidas
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE TABLE anamneses_atribuidas_backup AS
+            SELECT * FROM anamneses_atribuidas
+            """.trimIndent()
+                )
+
+                // 2. Excluir primeiro as tabelas dependentes.
+                db.execSQL("DROP TABLE respostas_anamnese")
+                db.execSQL("DROP TABLE perguntas_anamnese_atribuidas")
+                db.execSQL("DROP TABLE anamneses_atribuidas")
+
+                // 3. Recriar anamneses_atribuidas sem FK para modelos_anamnese.
+                db.execSQL(
+                    """
+            CREATE TABLE anamneses_atribuidas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                alunoId INTEGER NOT NULL,
+                modeloId INTEGER NOT NULL,
+                nomeModelo TEXT NOT NULL,
+                status TEXT NOT NULL,
+                dataCriacao TEXT NOT NULL,
+                dataEnvio TEXT NOT NULL,
+                dataInicioResposta TEXT NOT NULL,
+                dataResposta TEXT NOT NULL,
+                profissionalResponsavel TEXT NOT NULL,
+                identificadorExterno TEXT NOT NULL,
+                FOREIGN KEY(alunoId)
+                    REFERENCES alunos(id)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+                )
+
+                // 4. Recriar perguntas das anamneses atribuídas.
+                db.execSQL(
+                    """
+            CREATE TABLE perguntas_anamnese_atribuidas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                anamneseAtribuidaId INTEGER NOT NULL,
+                perguntaModeloId INTEGER,
+                texto TEXT NOT NULL,
+                tipoResposta TEXT NOT NULL,
+                opcoes TEXT NOT NULL,
+                obrigatoria INTEGER NOT NULL,
+                ordem INTEGER NOT NULL,
+                FOREIGN KEY(anamneseAtribuidaId)
+                    REFERENCES anamneses_atribuidas(id)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+                )
+
+                // 5. Recriar respostas.
+                db.execSQL(
+                    """
+            CREATE TABLE respostas_anamnese (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                perguntaAtribuidaId INTEGER NOT NULL,
+                resposta TEXT NOT NULL,
+                dataAtualizacao TEXT NOT NULL,
+                FOREIGN KEY(perguntaAtribuidaId)
+                    REFERENCES perguntas_anamnese_atribuidas(id)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+                )
+
+                // 6. Restaurar primeiro as anamneses atribuídas.
+                db.execSQL(
+                    """
+            INSERT INTO anamneses_atribuidas (
+                id,
+                alunoId,
+                modeloId,
+                nomeModelo,
+                status,
+                dataCriacao,
+                dataEnvio,
+                dataInicioResposta,
+                dataResposta,
+                profissionalResponsavel,
+                identificadorExterno
+            )
+            SELECT
+                id,
+                alunoId,
+                modeloId,
+                nomeModelo,
+                status,
+                dataCriacao,
+                dataEnvio,
+                dataInicioResposta,
+                dataResposta,
+                profissionalResponsavel,
+                identificadorExterno
+            FROM anamneses_atribuidas_backup
+            """.trimIndent()
+                )
+
+                // 7. Restaurar as perguntas atribuídas.
+                db.execSQL(
+                    """
+            INSERT INTO perguntas_anamnese_atribuidas (
+                id,
+                anamneseAtribuidaId,
+                perguntaModeloId,
+                texto,
+                tipoResposta,
+                opcoes,
+                obrigatoria,
+                ordem
+            )
+            SELECT
+                id,
+                anamneseAtribuidaId,
+                perguntaModeloId,
+                texto,
+                tipoResposta,
+                opcoes,
+                obrigatoria,
+                ordem
+            FROM perguntas_anamnese_atribuidas_backup
+            """.trimIndent()
+                )
+
+                // 8. Restaurar as respostas.
+                db.execSQL(
+                    """
+            INSERT INTO respostas_anamnese (
+                id,
+                perguntaAtribuidaId,
+                resposta,
+                dataAtualizacao
+            )
+            SELECT
+                id,
+                perguntaAtribuidaId,
+                resposta,
+                dataAtualizacao
+            FROM respostas_anamnese_backup
+            """.trimIndent()
+                )
+
+                // 9. Remover as tabelas temporárias.
+                db.execSQL("DROP TABLE respostas_anamnese_backup")
+                db.execSQL("DROP TABLE perguntas_anamnese_atribuidas_backup")
+                db.execSQL("DROP TABLE anamneses_atribuidas_backup")
+
+                // 10. Recriar os índices.
+                db.execSQL(
+                    """
+            CREATE INDEX index_anamneses_atribuidas_alunoId
+            ON anamneses_atribuidas(alunoId)
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE INDEX index_anamneses_atribuidas_modeloId
+            ON anamneses_atribuidas(modeloId)
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE INDEX index_anamneses_atribuidas_status
+            ON anamneses_atribuidas(status)
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE INDEX index_perguntas_anamnese_atribuidas_anamneseAtribuidaId
+            ON perguntas_anamnese_atribuidas(anamneseAtribuidaId)
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX index_respostas_anamnese_perguntaAtribuidaId
+            ON respostas_anamnese(perguntaAtribuidaId)
+            """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -432,7 +637,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                     )
                     .build()
 

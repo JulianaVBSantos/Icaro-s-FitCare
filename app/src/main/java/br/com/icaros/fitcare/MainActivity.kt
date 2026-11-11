@@ -1,5 +1,8 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import android.widget.Toast
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material.icons.filled.Lock
 import br.com.icaros.fitcare.data.SessaoUsuario
@@ -3106,6 +3109,18 @@ fun TelaPerfilAluno(
         mutableStateOf(false)
     }
 
+    var anamneseParaExcluirId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var excluindoAnamnese by remember {
+        mutableStateOf(false)
+    }
+
+    var erroExclusaoAnamnese by remember {
+        mutableStateOf("")
+    }
+
     LaunchedEffect(alunoId) {
         repository.buscarPorId(alunoId).collect { resultado ->
             alunoAtual = resultado
@@ -3564,7 +3579,7 @@ fun TelaPerfilAluno(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = "Gerenciar anamnese",
+                            text = "Visualizar anamnese(s)",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3671,6 +3686,35 @@ fun TelaPerfilAluno(
                                             fontSize = 11.sp,
                                             color = TextoSecundario
                                         )
+                                    }
+                                    if (avaliacao.status == "PENDENTE") {
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                anamneseParaExcluirId = avaliacao.id
+                                                erroExclusaoAnamnese = ""
+                                            },
+                                            enabled = !excluindoAnamnese,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = Vermelho
+                                            ),
+                                            border = BorderStroke(
+                                                width = 1.dp,
+                                                color = Vermelho
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+
+                                            Spacer(modifier = Modifier.width(6.dp))
+
+                                            Text("Excluir anamnese pendente")
+                                        }
                                     }
                                 }
                             }
@@ -4014,6 +4058,91 @@ fun TelaPerfilAluno(
             onTreinos = onTreinos,
             onRegistros = {},
             onMais = {}
+        )
+    }
+    // Dialógo exclusão de anamnese
+    anamneseParaExcluirId?.let { idAnamnese ->
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!excluindoAnamnese) {
+                    anamneseParaExcluirId = null
+                    erroExclusaoAnamnese = ""
+                }
+            },
+            title = {
+                Text("Excluir anamnese?")
+            },
+            text = {
+                Column {
+                    Text(
+                        "Deseja realmente excluir esta anamnese pendente? " +
+                                "Esta ação não poderá ser desfeita."
+                    )
+
+                    if (erroExclusaoAnamnese.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = erroExclusaoAnamnese,
+                            color = Vermelho,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !excluindoAnamnese,
+                    onClick = {
+                        if (!excluindoAnamnese) {
+                            excluindoAnamnese = true
+
+                            scope.launch {
+                                try {
+                                    anamneseAtribuidaRepository.excluir(
+                                        idAnamnese
+                                    )
+
+                                    anamneseParaExcluirId = null
+
+                                    android.widget.Toast.makeText(
+                                        contextoEventosPerfil,
+                                        "Anamnese excluída com sucesso.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+
+                                } catch (e: Exception) {
+                                    erroExclusaoAnamnese = e.message
+                                        ?: "Não foi possível excluir a anamnese."
+                                } finally {
+                                    excluindoAnamnese = false
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = if (excluindoAnamnese) {
+                            "Excluindo..."
+                        } else {
+                            "Excluir"
+                        },
+                        color = Vermelho
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !excluindoAnamnese,
+                    onClick = {
+                        anamneseParaExcluirId = null
+                        erroExclusaoAnamnese = ""
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
         )
     }
 
@@ -6249,7 +6378,6 @@ private data class ExercicioFormulario(
     val observacoes: String = ""
 )
 
-
 // TELA DE TREINOS
 @Composable
 fun TelaTreinos(
@@ -6781,7 +6909,6 @@ fun TelaTreinos(
         )
     }
 }
-
 
 // TELA FORMULÁRIO DE TREINO
 @Composable
