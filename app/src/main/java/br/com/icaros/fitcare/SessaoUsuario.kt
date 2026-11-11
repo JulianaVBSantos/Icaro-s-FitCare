@@ -6,6 +6,9 @@ object SessaoUsuario {
     var usuarioAtual: UsuarioEntity? = null
         private set
 
+    val firebaseUid: String?
+        get() = usuarioAtual?.firebaseUid
+
     fun iniciar(usuario: UsuarioEntity) {
         usuarioAtual = usuario
     }

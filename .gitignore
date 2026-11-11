@@ -1,17 +1,24 @@
-*.iml
+# Arquivos locais do Android Studio e Gradle
 .gradle/
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+build/
+**/build/
 local.properties
 .idea/
-app/build/
+*.iml
+
+# Configurações locais
+.DS_Store
+Thumbs.db
+
+# Chaves e arquivos de assinatura
+*.jks
+*.keystore
+keystore.properties
+
+# Credenciais e arquivos sensíveis
+.env
+.env.*
+
+# Firebase - credenciais privadas
+*service-account*.json
+*firebase-adminsdk*.json

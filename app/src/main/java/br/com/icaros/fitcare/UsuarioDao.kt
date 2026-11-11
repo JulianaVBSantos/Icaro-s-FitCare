@@ -177,4 +177,13 @@ interface UsuarioDao {
 
         return inserir(usuario)
     }
+    @Query("""
+    UPDATE usuarios
+    SET firebaseUid = :firebaseUid
+    WHERE id = :usuarioId
+""")
+    suspend fun atualizarFirebaseUid(
+        usuarioId: Long,
+        firebaseUid: String
+    ): Int
 }

@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "usuarios",
     indices = [
-        Index(value = ["email"], unique = true)
+        Index(value = ["email"], unique = true),
+        Index(value = ["firebaseUid"], unique = true)
     ]
 )
 data class UsuarioEntity(
@@ -31,5 +32,8 @@ data class UsuarioEntity(
 
     val ativo: Boolean = true,
 
-    val dataCriacao: Long = System.currentTimeMillis()
+    val dataCriacao: Long = System.currentTimeMillis(),
+
+    // UID do usuário no Firebase Authentication.
+    val firebaseUid: String? = null
 )

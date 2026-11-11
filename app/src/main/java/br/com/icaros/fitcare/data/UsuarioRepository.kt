@@ -2,6 +2,9 @@
 package br.com.icaros.fitcare.data
 
 import android.util.Base64
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
@@ -23,6 +26,95 @@ class UsuarioRepository(
             "julianavieirabsantos@gmail.com"
     }
 
+    // FIREBASE AUTHENTICATION
+    /**
+     * Autentica uma conta já migrada ou migra uma conta antiga
+     * do Room para o Firebase Authentication.
+     *
+     * A senha nunca é enviada como hash PBKDF2 ao Firebase.
+     * O Firebase recebe somente a senha digitada pelo usuário.
+     */
+    private suspend fun autenticarFirebase(
+        usuario: UsuarioEntity,
+        senha: String
+    ): UsuarioEntity {
+
+        val auth = FirebaseAuth.getInstance()
+
+        val firebaseUser = if (usuario.firebaseUid.isNullOrBlank()) {
+
+            // Conta ainda não migrada.
+            // A validação PBKDF2 precisa ter sido feita antes
+            // de chamar este método.
+
+            try {
+                auth.createUserWithEmailAndPassword(
+                    usuario.email,
+                    senha
+                ).await().user
+
+            } catch (e: FirebaseAuthUserCollisionException) {
+
+                // O e-mail já existe no Firebase.
+                // Só associamos a conta se a senha também
+                // autenticar com sucesso no Firebase.
+
+                auth.signInWithEmailAndPassword(
+                    usuario.email,
+                    senha
+                ).await().user
+            }
+
+        } else {
+
+            // Conta já migrada: autenticação diretamente
+            // pelo Firebase.
+            auth.signInWithEmailAndPassword(
+                usuario.email,
+                senha
+            ).await().user
+        } ?: throw IllegalStateException(
+            "O Firebase não retornou os dados da conta."
+        )
+
+        val uid = firebaseUser.uid
+
+        // Se já existia UID local, ele deve corresponder
+        // exatamente à conta autenticada.
+        if (
+            !usuario.firebaseUid.isNullOrBlank() &&
+            usuario.firebaseUid != uid
+        ) {
+            auth.signOut()
+
+            throw IllegalStateException(
+                "A identificação da conta no Firebase não corresponde ao cadastro local."
+            )
+        }
+
+        // Primeira migração: grava o UID no Room.
+        if (usuario.firebaseUid.isNullOrBlank()) {
+
+            val alterados = usuarioDao.atualizarFirebaseUid(
+                usuarioId = usuario.id,
+                firebaseUid = uid
+            )
+
+            if (alterados != 1) {
+                auth.signOut()
+
+                throw IllegalStateException(
+                    "Não foi possível associar a conta ao Firebase no banco local."
+                )
+            }
+
+            return usuario.copy(firebaseUid = uid)
+        }
+
+        return usuario
+    }
+
+    // CRIAÇÃO DO ADMINISTRADOR INICIAL
     suspend fun criarAdminInicial(
         nome: String,
         email: String,
@@ -34,6 +126,7 @@ class UsuarioRepository(
         validarCadastro(nome, email, senha)
 
         val emailNormalizado = email.trim().lowercase()
+
         val emailProfessorNormalizado =
             emailProfessorInicial.trim().lowercase()
 
@@ -90,22 +183,35 @@ class UsuarioRepository(
         val id = usuarioDao.inserirAdminInicial(admin)
         val adminCriado = admin.copy(id = id)
 
-        SessaoUsuario.iniciar(adminCriado)
+        // Cria ou autentica a conta administrativa no Firebase.
+        val adminAutenticado = autenticarFirebase(
+            usuario = adminCriado,
+            senha = senha
+        )
 
-        return adminCriado
+        SessaoUsuario.iniciar(adminAutenticado)
+
+        return adminAutenticado
     }
 
+    // CADASTRO DE PROFESSOR
     suspend fun cadastrarProfessor(
         nome: String,
         email: String,
         senha: String
     ): UsuarioEntity {
 
+        // Somente um administrador ativo pode cadastrar
+        // novos professores.
+        exigirAdminAtivo()
+
         validarCadastro(nome, email, senha)
 
         val emailNormalizado = email.trim().lowercase()
 
-        require(usuarioDao.buscarPorEmail(emailNormalizado) == null) {
+        require(
+            usuarioDao.buscarPorEmail(emailNormalizado) == null
+        ) {
             "Este e-mail já está cadastrado."
         }
 
@@ -119,9 +225,13 @@ class UsuarioRepository(
 
         val id = usuarioDao.inserir(usuario)
 
+        // O professor ainda não é criado no Firebase.
+        // A migração ocorrerá quando ele fizer o primeiro login,
+        // depois de ser autorizado pelo administrador.
         return usuario.copy(id = id)
     }
 
+    // CADASTRO DE ALUNO
     suspend fun cadastrarAluno(
         nome: String,
         email: String,
@@ -148,11 +258,15 @@ class UsuarioRepository(
 
         val emailNormalizado = email.trim().lowercase()
 
-        require(usuarioDao.buscarPorEmail(emailNormalizado) == null) {
+        require(
+            usuarioDao.buscarPorEmail(emailNormalizado) == null
+        ) {
             "Este e-mail já está cadastrado."
         }
 
-        require(usuarioDao.buscarPorAlunoId(alunoId) == null) {
+        require(
+            usuarioDao.buscarPorAlunoId(alunoId) == null
+        ) {
             "Este aluno já possui uma conta."
         }
 
@@ -167,9 +281,15 @@ class UsuarioRepository(
 
         val id = usuarioDao.inserir(usuario)
 
+        // Não criar a conta Firebase aqui.
+        // O FirebaseAuth compartilhado poderia trocar a sessão
+        // do professor pela sessão do aluno.
+        // O aluno fará a própria migração no primeiro login.
+
         return usuario.copy(id = id)
     }
 
+    // LOGIN
     suspend fun entrar(
         email: String,
         senha: String,
@@ -211,14 +331,23 @@ class UsuarioRepository(
             )
         }
 
-        if (!verificarSenha(senha, usuario.senhaHash)) {
+        // Antes da migração, valida a senha pelo PBKDF2 local.
+        // Depois da migração, o Firebase será responsável
+        // pela validação da senha.
+        if (
+            usuario.firebaseUid.isNullOrBlank() &&
+            !verificarSenha(senha, usuario.senhaHash)
+        ) {
             throw IllegalArgumentException(
                 "E-mail ou senha incorretos."
             )
         }
 
+        // Mantém as verificações locais de vínculo.
         when (usuario.perfil) {
+
             PERFIL_ALUNO -> {
+
                 val alunoId = usuario.alunoId
                     ?: throw IllegalArgumentException(
                         "Esta conta de aluno não possui cadastro vinculado."
@@ -240,7 +369,8 @@ class UsuarioRepository(
                     )
                 }
 
-                val professor = usuarioDao.buscarPorId(professorId)
+                val professor =
+                    usuarioDao.buscarPorId(professorId)
 
                 if (
                     professor == null ||
@@ -254,6 +384,7 @@ class UsuarioRepository(
             }
 
             PERFIL_PROFESSOR -> {
+
                 if (
                     usuario.email == EMAIL_PROFESSOR_INICIAL &&
                     !usuario.ativo
@@ -265,6 +396,7 @@ class UsuarioRepository(
             }
 
             PERFIL_ADMIN -> {
+
                 if (usuario.email != EMAIL_ADMIN_INICIAL) {
                     throw IllegalArgumentException(
                         "Conta administrativa inválida."
@@ -273,9 +405,16 @@ class UsuarioRepository(
             }
         }
 
-        SessaoUsuario.iniciar(usuario)
+        // Depois de validar o usuário local, autentica no Firebase
+        // ou realiza a primeira migração.
+        val usuarioAutenticado = autenticarFirebase(
+            usuario = usuario,
+            senha = senha
+        )
 
-        return usuario
+        SessaoUsuario.iniciar(usuarioAutenticado)
+
+        return usuarioAutenticado
     }
 
     suspend fun autenticar(
@@ -283,14 +422,19 @@ class UsuarioRepository(
         senha: String,
         perfilEsperado: String
     ): UsuarioEntity? {
+
         return try {
             entrar(email, senha, perfilEsperado)
         } catch (e: IllegalArgumentException) {
             null
         } catch (e: IllegalStateException) {
             null
+        } catch (e: Exception) {
+            null
         }
     }
+
+    // BUSCAS
 
     suspend fun buscarPorId(id: Long): UsuarioEntity? {
         if (id <= 0) return null
@@ -317,6 +461,7 @@ class UsuarioRepository(
         ) return null
 
         if (usuario.perfil == PERFIL_ALUNO) {
+
             val alunoId = usuario.alunoId ?: return null
             val professorId = usuario.professorId ?: return null
 
@@ -344,6 +489,7 @@ class UsuarioRepository(
         return usuario
     }
 
+    // ADMINISTRAÇÃO DE PROFESSORES
     suspend fun listarProfissionaisParaAdmin(): List<UsuarioEntity> {
         exigirAdminAtivo()
         return usuarioDao.listarProfissionaisParaAdmin()
@@ -361,7 +507,9 @@ class UsuarioRepository(
         }
 
         val professor = usuarioDao.buscarPorId(professorId)
-            ?: throw IllegalArgumentException("Professor não encontrado.")
+            ?: throw IllegalArgumentException(
+                "Professor não encontrado."
+            )
 
         require(professor.perfil == PERFIL_PROFESSOR) {
             "A conta informada não pertence a um professor."
@@ -399,12 +547,17 @@ class UsuarioRepository(
         }
 
         val professor = usuarioDao.buscarPorId(professorId)
-            ?: throw IllegalArgumentException("Professor não encontrado.")
+            ?: throw IllegalArgumentException(
+                "Professor não encontrado."
+            )
 
         require(professor.perfil == PERFIL_PROFESSOR) {
             "A conta informada não pertence a um professor."
         }
 
+        // Atenção: por enquanto, altera somente o hash local.
+        // A atualização da senha Firebase será feita na etapa
+        // de integração com backend seguro.
         val alterados = usuarioDao.atualizarSenha(
             id = professorId,
             senhaHash = gerarHashSenha(novaSenha)
@@ -426,7 +579,9 @@ class UsuarioRepository(
         }
 
         val professor = usuarioDao.buscarPorId(professorId)
-            ?: throw IllegalArgumentException("Professor não encontrado.")
+            ?: throw IllegalArgumentException(
+                "Professor não encontrado."
+            )
 
         require(professor.perfil == PERFIL_PROFESSOR) {
             "Somente contas profissionais podem ser excluídas."
@@ -442,12 +597,16 @@ class UsuarioRepository(
             "Transfira os alunos deste professor antes de excluir sua conta."
         }
 
+        // A exclusão da conta Firebase deverá ser realizada
+        // posteriormente por uma operação segura de backend.
         val excluidos = usuarioDao.excluirProfessor(professorId)
 
         check(excluidos == 1) {
             "Não foi possível excluir a conta profissional."
         }
     }
+
+    // VÍNCULO ALUNO / PROFESSOR
 
     suspend fun vincularAlunoAoProfessor(
         alunoUsuarioId: Long,
@@ -461,10 +620,14 @@ class UsuarioRepository(
         }
 
         val aluno = usuarioDao.buscarPorId(alunoUsuarioId)
-            ?: throw IllegalArgumentException("Aluno não encontrado.")
+            ?: throw IllegalArgumentException(
+                "Aluno não encontrado."
+            )
 
         val professor = usuarioDao.buscarPorId(professorUsuarioId)
-            ?: throw IllegalArgumentException("Professor não encontrado.")
+            ?: throw IllegalArgumentException(
+                "Professor não encontrado."
+            )
 
         require(aluno.perfil == PERFIL_ALUNO) {
             "O usuário informado não é um aluno."
@@ -552,6 +715,9 @@ class UsuarioRepository(
             "Você não tem permissão para alterar a senha deste aluno."
         }
 
+        // Atenção: por enquanto, altera somente o hash local.
+        // A atualização da senha Firebase será feita na etapa
+        // de integração com backend seguro.
         val alterados = usuarioDao.atualizarSenha(
             id = usuarioAluno.id,
             senhaHash = gerarHashSenha(novaSenha)
@@ -562,6 +728,7 @@ class UsuarioRepository(
         }
     }
 
+    // VALIDAÇÃO DE SESSÃO
     private suspend fun exigirProfessorAtivo(): UsuarioEntity {
 
         val sessao = SessaoUsuario.usuarioAtual
@@ -615,10 +782,13 @@ class UsuarioRepository(
         return admin
     }
 
+    // ENCERRAR SESSÃO
     fun sair() {
+        FirebaseAuth.getInstance().signOut()
         SessaoUsuario.encerrar()
     }
 
+    // VALIDAÇÃO DE CADASTRO
     private fun validarCadastro(
         nome: String,
         email: String,
@@ -642,6 +812,7 @@ class UsuarioRepository(
         }
     }
 
+    // HASH PBKDF2
     private fun gerarHashSenha(senha: String): String {
 
         val salt = ByteArray(16)
@@ -693,6 +864,7 @@ class UsuarioRepository(
                 hashOriginal,
                 hashInformado
             )
+
         } catch (e: Exception) {
             false
         }
@@ -719,6 +891,8 @@ class UsuarioRepository(
             spec.clearPassword()
         }
     }
+
+    // ADMINISTRADOR
     suspend fun existeAdministrador(): Boolean {
         return usuarioDao.contarAdmins() > 0
     }

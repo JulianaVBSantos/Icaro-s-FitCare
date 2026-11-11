@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PerguntaAnamneseAtribuidaEntity::class,
         RespostaAnamneseEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -624,6 +624,21 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE usuarios ADD COLUMN firebaseUid TEXT"
+                )
+
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_usuarios_firebaseUid
+            ON usuarios(firebaseUid)
+            """.trimIndent()
+                )
+            }
+        }
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -638,7 +653,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
-                        MIGRATION_7_8
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .build()
 

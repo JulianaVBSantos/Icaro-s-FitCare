@@ -14,7 +14,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -30,15 +35,37 @@ fun TelaCadastroAdminInicial(
     onVoltar: () -> Unit,
     onCadastroConcluido: () -> Unit
 ) {
-    var nome by remember { mutableStateOf("") }
-    var senha by remember { mutableStateOf("") }
-    var confirmarSenha by remember { mutableStateOf("") }
-    var emailProfessor by remember { mutableStateOf("") }
-    var senhaProfessor by remember { mutableStateOf("") }
-    var mensagemErro by remember { mutableStateOf<String?>(null) }
-    var carregando by remember { mutableStateOf(false) }
+
+    var nome by remember {
+        mutableStateOf("")
+    }
+
+    var senha by remember {
+        mutableStateOf("")
+    }
+
+    var confirmarSenha by remember {
+        mutableStateOf("")
+    }
+
+    var emailProfessor by remember {
+        mutableStateOf("")
+    }
+
+    var senhaProfessor by remember {
+        mutableStateOf("")
+    }
+
+    var mensagemErro by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var carregando by remember {
+        mutableStateOf(false)
+    }
 
     val scope = rememberCoroutineScope()
+
     val azul = Color(0xFF1769AA)
 
     Column(
@@ -47,101 +74,166 @@ fun TelaCadastroAdminInicial(
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+
         Text(
             text = "Criar administrador",
             fontWeight = FontWeight.Bold,
             color = azul
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(
+            modifier = Modifier.height(8.dp)
+        )
 
-        Text("Cadastre o administrador inicial do Ícaros FitCare.")
+        Text(
+            text = "Cadastre o administrador inicial do Ícaros FitCare."
+        )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
 
         OutlinedTextField(
             value = nome,
-            onValueChange = { nome = it },
-            label = { Text("Nome do administrador") },
+            onValueChange = {
+                nome = it
+            },
+            label = {
+                Text("Nome do administrador")
+            },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !carregando
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
 
         OutlinedTextField(
             value = "julianavieirabsantos@gmail.com",
             onValueChange = {},
             readOnly = true,
-            label = { Text("E-mail administrativo") },
+            label = {
+                Text("E-mail administrativo")
+            },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
 
         OutlinedTextField(
             value = senha,
-            onValueChange = { senha = it },
-            label = { Text("Senha do administrador") },
+            onValueChange = {
+                senha = it
+            },
+            label = {
+                Text("Senha do administrador")
+            },
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password
+            ),
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !carregando
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
 
         OutlinedTextField(
             value = confirmarSenha,
-            onValueChange = { confirmarSenha = it },
-            label = { Text("Confirmar senha do administrador") },
+            onValueChange = {
+                confirmarSenha = it
+            },
+            label = {
+                Text("Confirmar senha do administrador")
+            },
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password
+            ),
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !carregando
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
 
         Text(
             text = "Confirmação do professor inicial",
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(
+            modifier = Modifier.height(8.dp)
+        )
 
         OutlinedTextField(
             value = emailProfessor,
-            onValueChange = { emailProfessor = it },
-            label = { Text("E-mail do professor inicial") },
+            onValueChange = {
+                emailProfessor = it
+            },
+            label = {
+                Text("E-mail do professor inicial")
+            },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !carregando
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
 
         OutlinedTextField(
             value = senhaProfessor,
-            onValueChange = { senhaProfessor = it },
-            label = { Text("Senha do professor inicial") },
+            onValueChange = {
+                senhaProfessor = it
+            },
+            label = {
+                Text("Senha do professor inicial")
+            },
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password
+            ),
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !carregando
         )
 
-        mensagemErro?.let {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = it, color = Color.Red)
+        if (mensagemErro != null) {
+
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
+
+            Text(
+                text = mensagemErro!!,
+                color = Color.Red
+            )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
 
         Button(
             onClick = {
-                if (nome.isBlank() || senha.isBlank() ||
-                    confirmarSenha.isBlank() || emailProfessor.isBlank() ||
+
+                if (
+                    nome.isBlank() ||
+                    senha.isBlank() ||
+                    confirmarSenha.isBlank() ||
+                    emailProfessor.isBlank() ||
                     senhaProfessor.isBlank()
                 ) {
                     mensagemErro = "Preencha todos os campos."
@@ -149,7 +241,14 @@ fun TelaCadastroAdminInicial(
                 }
 
                 if (senha != confirmarSenha) {
-                    mensagemErro = "As senhas do administrador não coincidem."
+                    mensagemErro =
+                        "As senhas do administrador não coincidem."
+                    return@Button
+                }
+
+                if (senha.length < 8) {
+                    mensagemErro =
+                        "A senha do administrador deve possuir pelo menos 8 caracteres."
                     return@Button
                 }
 
@@ -157,7 +256,9 @@ fun TelaCadastroAdminInicial(
                 mensagemErro = null
 
                 scope.launch {
+
                     try {
+
                         usuarioRepository.criarAdminInicial(
                             nome = nome.trim(),
                             email = "julianavieirabsantos@gmail.com",
@@ -165,10 +266,14 @@ fun TelaCadastroAdminInicial(
                             emailProfessorInicial = emailProfessor.trim(),
                             senhaProfessorInicial = senhaProfessor
                         )
+
                         onCadastroConcluido()
+
                     } catch (e: Exception) {
+
                         mensagemErro = e.message
                             ?: "Não foi possível criar o administrador."
+
                     } finally {
                         carregando = false
                     }
@@ -176,9 +281,18 @@ fun TelaCadastroAdminInicial(
             },
             enabled = !carregando,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = azul)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = azul
+            )
         ) {
-            Text(if (carregando) "Criando..." else "Criar administrador")
+
+            Text(
+                text = if (carregando) {
+                    "Criando..."
+                } else {
+                    "Criar administrador"
+                }
+            )
         }
 
         TextButton(

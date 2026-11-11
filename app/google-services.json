@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "725356039024",
+    "project_id": "icaros-fitcare",
+    "storage_bucket": "icaros-fitcare.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:725356039024:android:2a7054103f72bb2400ddb5",
+        "android_client_info": {
+          "package_name": "br.com.icaros.fitcare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAtd9sB8N3nNqmEUoJPvmyWS7d1Ggbb9c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
