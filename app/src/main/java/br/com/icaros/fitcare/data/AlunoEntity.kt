@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
     tableName = "alunos",
     indices = [
         Index(value = ["email"], unique = true),
-        Index(value = ["professorId"])
+        Index(value = ["professorId"]),
+        Index(value = ["firebaseId"], unique = true)
     ]
 )
 data class AlunoEntity(
@@ -22,5 +23,6 @@ data class AlunoEntity(
     val observacoesProfissionais: String = "",
     val condicoes: String = "",
     val restricoes: String = "",
-    val professorId: Long? = null
+    val professorId: Long? = null,
+    val firebaseId: String? = null
 )

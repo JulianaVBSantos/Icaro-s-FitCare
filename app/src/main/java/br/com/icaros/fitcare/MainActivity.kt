@@ -143,7 +143,7 @@ class MainActivity : ComponentActivity() {
         val usuarioRepository = UsuarioRepository(database.usuarioDao())
 
         // Repositórios existentes
-        val repository = AlunoRepository(database.alunoDao())
+        val repository = AlunoRepository(database)
         val treinoRepository = TreinoRepository(database.treinoDao())
         val anamneseRepository = AnamneseRepository(database.anamneseDao())
 

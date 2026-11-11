@@ -20,13 +20,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PerguntaModeloAnamneseEntity::class,
         AnamneseAtribuidaEntity::class,
         PerguntaAnamneseAtribuidaEntity::class,
-        RespostaAnamneseEntity::class
+        RespostaAnamneseEntity::class,
+        SyncOperationEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
-
+    abstract fun syncOperationDao(): SyncOperationDao
     abstract fun usuarioDao(): UsuarioDao
     abstract fun alunoDao(): AlunoDao
     abstract fun documentoAnamneseDao(): DocumentoAnamneseDao
@@ -639,6 +640,59 @@ abstract class FitCareDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                // Adiciona o identificador remoto do aluno.
+                db.execSQL(
+                    "ALTER TABLE alunos ADD COLUMN firebaseId TEXT"
+                )
+
+                // Garante que cada aluno tenha um firebaseId único.
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_alunos_firebaseId
+            ON alunos(firebaseId)
+            """.trimIndent()
+                )
+
+                // Cria a fila de operações de sincronização.
+                db.execSQL(
+                    """
+            CREATE TABLE IF NOT EXISTS sync_operations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                entityType TEXT NOT NULL,
+                localEntityId INTEGER NOT NULL,
+                remoteDocumentId TEXT,
+                operationType TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                attempts INTEGER NOT NULL,
+                lastError TEXT
+            )
+            """.trimIndent()
+                )
+
+                // Índice para localizar operações de determinado registro.
+                db.execSQL(
+                    """
+            CREATE INDEX IF NOT EXISTS
+            index_sync_operations_entityType_localEntityId
+            ON sync_operations(entityType, localEntityId)
+            """.trimIndent()
+                )
+
+                // Índice para consultar operações em ordem cronológica.
+                db.execSQL(
+                    """
+            CREATE INDEX IF NOT EXISTS
+            index_sync_operations_createdAt
+            ON sync_operations(createdAt)
+            """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -654,7 +708,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9,
+                        MIGRATION_9_10
                     )
                     .build()
 

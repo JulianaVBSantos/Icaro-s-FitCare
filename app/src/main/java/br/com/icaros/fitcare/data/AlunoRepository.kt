@@ -1,13 +1,28 @@
 
 package br.com.icaros.fitcare.data
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 class AlunoRepository(
-    private val alunoDao: AlunoDao
+    private val database: FitCareDatabase
 ) {
+
+    private val alunoDao: AlunoDao
+        get() = database.alunoDao()
+
+    private val syncDao: SyncOperationDao
+        get() = database.syncOperationDao()
+
+    companion object {
+        private const val ENTITY_TYPE_ALUNO = "ALUNO"
+
+        private const val OPERATION_INSERT = "INSERT"
+        private const val OPERATION_UPDATE = "UPDATE"
+        private const val OPERATION_DELETE = "DELETE"
+    }
 
     fun listarAlunos(): Flow<List<AlunoEntity>> {
         return when {
@@ -99,10 +114,22 @@ class AlunoRepository(
         val alunoClassificado = aluno.copy(
             id = 0,
             professorId = professorId,
-            status = classificacao
+            status = classificacao,
+            firebaseId = UUID.randomUUID().toString()
         )
 
-        return alunoDao.inserir(alunoClassificado)
+        return database.withTransaction {
+
+            val novoId = alunoDao.inserir(alunoClassificado)
+
+            registrarOperacao(
+                localEntityId = novoId,
+                remoteDocumentId = alunoClassificado.firebaseId,
+                operationType = OPERATION_INSERT
+            )
+
+            novoId
+        }
     }
 
     suspend fun atualizar(aluno: AlunoEntity) {
@@ -115,26 +142,45 @@ class AlunoRepository(
             "O aluno precisa possuir um ID válido para ser atualizado."
         }
 
-        val alunoExistente =
-            alunoDao.buscarPorIdDoProfessorDireto(
-                aluno.id,
-                professorId
-            ) ?: throw IllegalArgumentException(
-                "Aluno não encontrado ou sem permissão para alterá-lo."
+        database.withTransaction {
+
+            val alunoExistente =
+                alunoDao.buscarPorIdDoProfessorDireto(
+                    aluno.id,
+                    professorId
+                ) ?: throw IllegalArgumentException(
+                    "Aluno não encontrado ou sem permissão para alterá-lo."
+                )
+
+            val classificacao = classificarAluno(
+                condicoes = aluno.condicoes,
+                restricoes = aluno.restricoes,
+                observacoes = aluno.observacoesProfissionais
             )
 
-        val classificacao = classificarAluno(
-            condicoes = aluno.condicoes,
-            restricoes = aluno.restricoes,
-            observacoes = aluno.observacoesProfissionais
-        )
+            // Alunos antigos ainda sem firebaseId recebem um UUID.
+            // Nesse caso, a primeira operação remota será INSERT.
+            val firebaseId = alunoExistente.firebaseId
+                ?: UUID.randomUUID().toString()
 
-        val alunoClassificado = aluno.copy(
-            professorId = alunoExistente.professorId,
-            status = classificacao
-        )
+            val alunoClassificado = aluno.copy(
+                professorId = alunoExistente.professorId,
+                status = classificacao,
+                firebaseId = firebaseId
+            )
 
-        alunoDao.atualizar(alunoClassificado)
+            alunoDao.atualizar(alunoClassificado)
+
+            registrarOperacao(
+                localEntityId = alunoClassificado.id,
+                remoteDocumentId = firebaseId,
+                operationType = if (alunoExistente.firebaseId == null) {
+                    OPERATION_INSERT
+                } else {
+                    OPERATION_UPDATE
+                }
+            )
+        }
     }
 
     suspend fun excluir(aluno: AlunoEntity) {
@@ -145,15 +191,100 @@ class AlunoRepository(
             "O aluno precisa possuir um ID válido para ser excluído."
         }
 
-        val alunoExistente =
-            alunoDao.buscarPorIdDoProfessorDireto(
-                aluno.id,
-                professorId
-            ) ?: throw IllegalArgumentException(
-                "Aluno não encontrado ou sem permissão para excluí-lo."
+        database.withTransaction {
+
+            val alunoExistente =
+                alunoDao.buscarPorIdDoProfessorDireto(
+                    aluno.id,
+                    professorId
+                ) ?: throw IllegalArgumentException(
+                    "Aluno não encontrado ou sem permissão para excluí-lo."
+                )
+
+            val operacoesPendentes = syncDao.buscarPorRegistro(
+                entityType = ENTITY_TYPE_ALUNO,
+                localEntityId = alunoExistente.id
             )
 
-        alunoDao.excluir(alunoExistente)
+            if (
+                alunoExistente.firebaseId != null &&
+                operacoesPendentes.none {
+                    it.operationType == OPERATION_INSERT
+                }
+            ) {
+                // O aluno já existe remotamente.
+                // Registrar DELETE para futura sincronização.
+                syncDao.removerPorRegistro(
+                    ENTITY_TYPE_ALUNO,
+                    alunoExistente.id
+                )
+
+                syncDao.inserir(
+                    SyncOperationEntity(
+                        entityType = ENTITY_TYPE_ALUNO,
+                        localEntityId = alunoExistente.id,
+                        remoteDocumentId = alunoExistente.firebaseId,
+                        operationType = OPERATION_DELETE
+                    )
+                )
+            } else {
+                // Aluno ainda não enviado ao Firebase.
+                // Não é necessário enviar DELETE.
+                syncDao.removerPorRegistro(
+                    ENTITY_TYPE_ALUNO,
+                    alunoExistente.id
+                )
+            }
+
+            alunoDao.excluir(alunoExistente)
+        }
+    }
+
+    /**
+     * Consolida as operações pendentes de um aluno.
+     *
+     * Se já existe INSERT, mantém INSERT.
+     * Se o aluno já existe remotamente, registra UPDATE.
+     *
+     * Esta função deve ser chamada dentro de uma transação Room.
+     */
+    private suspend fun registrarOperacao(
+        localEntityId: Long,
+        remoteDocumentId: String?,
+        operationType: String
+    ) {
+
+        val operacoesExistentes = syncDao.buscarPorRegistro(
+            entityType = ENTITY_TYPE_ALUNO,
+            localEntityId = localEntityId
+        )
+
+        val possuiInsertPendente = operacoesExistentes.any {
+            it.operationType == OPERATION_INSERT
+        }
+
+        val operacaoFinal = if (
+            operationType == OPERATION_INSERT ||
+            possuiInsertPendente
+        ) {
+            OPERATION_INSERT
+        } else {
+            operationType
+        }
+
+        syncDao.removerPorRegistro(
+            entityType = ENTITY_TYPE_ALUNO,
+            localEntityId = localEntityId
+        )
+
+        syncDao.inserir(
+            SyncOperationEntity(
+                entityType = ENTITY_TYPE_ALUNO,
+                localEntityId = localEntityId,
+                remoteDocumentId = remoteDocumentId,
+                operationType = operacaoFinal
+            )
+        )
     }
 
     suspend fun atualizarAcompanhamentoPorAnamnese(
@@ -192,6 +323,7 @@ class AlunoRepository(
             }
 
             else -> null
+
         } ?: throw IllegalArgumentException(
             "Aluno não encontrado ou sem permissão."
         )
@@ -214,6 +346,7 @@ class AlunoRepository(
             observacoes = alunoAtualizado.observacoesProfissionais
         )
 
+        // Dados de saúde permanecem somente no Room nesta etapa.
         alunoDao.atualizar(
             alunoAtualizado.copy(status = classificacao)
         )
