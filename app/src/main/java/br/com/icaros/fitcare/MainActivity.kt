@@ -92,7 +92,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
-
+import br.com.icaros.fitcare.data.AlunoSyncWorker
 
 // Nova Paleta de Cores baseada na Logo
 private val AzulPrincipal = Color(0xFF002B5C)
@@ -143,7 +143,10 @@ class MainActivity : ComponentActivity() {
         val usuarioRepository = UsuarioRepository(database.usuarioDao())
 
         // Repositórios existentes
-        val repository = AlunoRepository(database)
+        val repository = AlunoRepository(
+            database = database,
+            context = applicationContext
+        )
         val treinoRepository = TreinoRepository(database.treinoDao())
         val anamneseRepository = AnamneseRepository(database.anamneseDao())
 
@@ -302,6 +305,11 @@ fun FitCareApp(
                 SessaoUsuario.iniciar(usuario)
                 perfilSelecionado = usuario.perfil
 
+                // Retoma a sincronização ao restaurar a sessão do professor.
+                if (usuario.perfil == "PROFESSOR") {
+                    AlunoSyncWorker.agendar(context)
+                }
+
                 when (usuario.perfil) {
                     "PROFESSOR" -> {
                         alunoAutenticado = false
@@ -320,10 +328,15 @@ fun FitCareApp(
 
                     else -> {
                         SessaoUsuario.encerrar()
+                        preferenciasSessao.edit()
+                            .remove(CHAVE_USUARIO_ID)
+                            .remove(CHAVE_PERFIL)
+                            .apply()
+
+                        perfilSelecionado = null
                         tela = AppScreen.Login
                     }
                 }
-
             } else {
                 preferenciasSessao.edit()
                     .remove(CHAVE_USUARIO_ID)
@@ -445,6 +458,11 @@ fun FitCareApp(
                                 },
                                 onEntrar = { usuario ->
                                     SessaoUsuario.iniciar(usuario)
+
+                                    // Agenda a sincronização quando o professor entra.
+                                    if (usuario.perfil == "PROFESSOR") {
+                                        AlunoSyncWorker.agendar(context)
+                                    }
 
                                     if (
                                         preferenciasSessao.getBoolean(

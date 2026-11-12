@@ -82,4 +82,7 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.firebase.storage)
     implementation(libs.kotlinx.coroutines.play.services)
+
+    // WORKMANAGER
+    implementation(libs.androidx.work.runtime.ktx)
 }

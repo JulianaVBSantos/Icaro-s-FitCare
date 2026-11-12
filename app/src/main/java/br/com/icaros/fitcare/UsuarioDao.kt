@@ -27,6 +27,18 @@ interface UsuarioDao {
     """)
     suspend fun buscarPorId(id: Long): UsuarioEntity?
 
+    /**
+     * Localiza um usuário pelo UID vinculado ao Firebase.
+     */
+    @Query("""
+        SELECT * FROM usuarios
+        WHERE firebaseUid = :firebaseUid
+        LIMIT 1
+    """)
+    suspend fun buscarPorFirebaseUid(
+        firebaseUid: String
+    ): UsuarioEntity?
+
     @Query("""
         SELECT * FROM usuarios
         WHERE perfil = :perfil AND ativo = 1
@@ -167,6 +179,7 @@ interface UsuarioDao {
     suspend fun inserirAdminInicial(
         usuario: UsuarioEntity
     ): Long {
+
         check(usuario.perfil == "ADMIN") {
             "Perfil administrativo inválido."
         }
@@ -177,11 +190,22 @@ interface UsuarioDao {
 
         return inserir(usuario)
     }
+
+    /**
+     * Vincula o UID somente quando ainda não existe
+     * uma associação diferente para o usuário.
+     *
+     * Permite repetir a operação com o mesmo UID.
+     */
     @Query("""
-    UPDATE usuarios
-    SET firebaseUid = :firebaseUid
-    WHERE id = :usuarioId
-""")
+        UPDATE usuarios
+        SET firebaseUid = :firebaseUid
+        WHERE id = :usuarioId
+        AND (
+            firebaseUid IS NULL
+            OR firebaseUid = :firebaseUid
+        )
+    """)
     suspend fun atualizarFirebaseUid(
         usuarioId: Long,
         firebaseUid: String

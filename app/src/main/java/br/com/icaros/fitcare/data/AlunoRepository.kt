@@ -1,13 +1,15 @@
 
 package br.com.icaros.fitcare.data
 
+import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 class AlunoRepository(
-    private val database: FitCareDatabase
+    private val database: FitCareDatabase,
+    private val context: Context
 ) {
 
     private val alunoDao: AlunoDao
@@ -100,7 +102,6 @@ class AlunoRepository(
     }
 
     suspend fun inserir(aluno: AlunoEntity): Long {
-
         val professorId = SessaoUsuario.exigirProfessorId()
 
         validarAluno(aluno)
@@ -118,22 +119,25 @@ class AlunoRepository(
             firebaseId = UUID.randomUUID().toString()
         )
 
-        return database.withTransaction {
-
-            val novoId = alunoDao.inserir(alunoClassificado)
+        val novoId = database.withTransaction {
+            val id = alunoDao.inserir(alunoClassificado)
 
             registrarOperacao(
-                localEntityId = novoId,
+                localEntityId = id,
                 remoteDocumentId = alunoClassificado.firebaseId,
                 operationType = OPERATION_INSERT
             )
 
-            novoId
+            id
         }
+
+        // Agenda somente depois de confirmar a transação Room.
+        AlunoSyncWorker.agendar(context)
+
+        return novoId
     }
 
     suspend fun atualizar(aluno: AlunoEntity) {
-
         val professorId = SessaoUsuario.exigirProfessorId()
 
         validarAluno(aluno)
@@ -143,7 +147,6 @@ class AlunoRepository(
         }
 
         database.withTransaction {
-
             val alunoExistente =
                 alunoDao.buscarPorIdDoProfessorDireto(
                     aluno.id,
@@ -181,10 +184,12 @@ class AlunoRepository(
                 }
             )
         }
+
+        // Agenda somente depois de confirmar a transação Room.
+        AlunoSyncWorker.agendar(context)
     }
 
     suspend fun excluir(aluno: AlunoEntity) {
-
         val professorId = SessaoUsuario.exigirProfessorId()
 
         require(aluno.id > 0) {
@@ -192,7 +197,6 @@ class AlunoRepository(
         }
 
         database.withTransaction {
-
             val alunoExistente =
                 alunoDao.buscarPorIdDoProfessorDireto(
                     aluno.id,
@@ -238,6 +242,9 @@ class AlunoRepository(
 
             alunoDao.excluir(alunoExistente)
         }
+
+        // Agenda depois da exclusão e do registro da operação.
+        AlunoSyncWorker.agendar(context)
     }
 
     /**
@@ -253,7 +260,6 @@ class AlunoRepository(
         remoteDocumentId: String?,
         operationType: String
     ) {
-
         val operacoesExistentes = syncDao.buscarPorRegistro(
             entityType = ENTITY_TYPE_ALUNO,
             localEntityId = localEntityId
@@ -293,13 +299,11 @@ class AlunoRepository(
         restricoes: String,
         observacoes: String
     ) {
-
         require(alunoId > 0) {
             "Selecione um aluno válido."
         }
 
         val alunoAtual = when {
-
             SessaoUsuario.ehProfessor() -> {
                 alunoDao.buscarPorIdDoProfessorDireto(
                     alunoId,
@@ -353,7 +357,6 @@ class AlunoRepository(
     }
 
     private fun validarAluno(aluno: AlunoEntity) {
-
         require(aluno.nome.isNotBlank()) {
             "O nome do aluno é obrigatório."
         }
