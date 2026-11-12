@@ -22,3 +22,4 @@ keystore.properties
 # Firebase - credenciais privadas
 *service-account*.json
 *firebase-adminsdk*.json
+/.kotlin/errors/errors-1794483651433.log

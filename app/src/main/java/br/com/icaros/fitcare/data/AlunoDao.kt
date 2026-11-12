@@ -75,6 +75,9 @@ interface AlunoDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun inserir(aluno: AlunoEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun inserirDoFirestore(aluno: AlunoEntity): Long
+
     @Update
     suspend fun atualizar(aluno: AlunoEntity)
 
@@ -104,5 +107,14 @@ interface AlunoDao {
     suspend fun buscarPorIdDoProfessorDireto(
         id: Long,
         professorId: Long
+    ): AlunoEntity?
+
+    @Query("""
+        SELECT * FROM alunos
+        WHERE firebaseId = :firebaseId
+        LIMIT 1
+    """)
+    suspend fun buscarPorFirebaseId(
+        firebaseId: String
     ): AlunoEntity?
 }

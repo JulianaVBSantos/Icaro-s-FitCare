@@ -305,9 +305,10 @@ fun FitCareApp(
                 SessaoUsuario.iniciar(usuario)
                 perfilSelecionado = usuario.perfil
 
-                // Retoma a sincronização ao restaurar a sessão do professor.
+                // Retoma a sincronização imediata e periódica do professor.
                 if (usuario.perfil == "PROFESSOR") {
                     AlunoSyncWorker.agendar(context)
+                    AlunoSyncWorker.agendarPeriodica(context)
                 }
 
                 when (usuario.perfil) {
@@ -456,12 +457,14 @@ fun FitCareApp(
                                 onVoltar = {
                                     perfilSelecionado = null
                                 },
+
                                 onEntrar = { usuario ->
                                     SessaoUsuario.iniciar(usuario)
 
-                                    // Agenda a sincronização quando o professor entra.
+                                    // Agenda a sincronização imediata e periódica do professor.
                                     if (usuario.perfil == "PROFESSOR") {
                                         AlunoSyncWorker.agendar(context)
+                                        AlunoSyncWorker.agendarPeriodica(context)
                                     }
 
                                     if (
@@ -547,13 +550,20 @@ fun FitCareApp(
                                 alunoSelecionadoId = aluno.id
                                 tela = AppScreen.PerfilAluno
                             },
+
                             onSair = {
+                                // Cancela a sincronização periódica do professor.
+                                AlunoSyncWorker.cancelarPeriodica(context)
+
+                                // Remove os dados de restauração da sessão.
                                 preferenciasSessao.edit()
                                     .remove(CHAVE_USUARIO_ID)
                                     .remove(CHAVE_PERFIL)
                                     .apply()
 
+                                // Encerra a sessão atual.
                                 SessaoUsuario.encerrar()
+
                                 alunoAutenticado = false
                                 perfilSelecionado = "PROFESSOR"
                                 tela = AppScreen.Login
