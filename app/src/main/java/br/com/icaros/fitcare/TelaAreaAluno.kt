@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -13,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,19 +28,167 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.AlunoRepository
+import br.com.icaros.fitcare.data.AlunoSyncWorker
 import br.com.icaros.fitcare.data.AnamneseAtribuidaEntity
 import br.com.icaros.fitcare.data.AnamneseAtribuidaRepository
 import br.com.icaros.fitcare.data.AnamneseRepository
 import br.com.icaros.fitcare.data.DocumentoAnamneseEntity
+import br.com.icaros.fitcare.data.FirestoreSyncService
+import br.com.icaros.fitcare.data.FitCareDatabase
 import br.com.icaros.fitcare.data.PerguntaAnamneseAtribuidaEntity
 import br.com.icaros.fitcare.data.RespostaAnamneseRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
 import java.util.Locale
+
+private fun respostaEstaPreenchida(
+    tipoResposta: String,
+    resposta: String?
+): Boolean {
+    if (resposta.isNullOrBlank()) return false
+    if (tipoResposta == "CHECKBOX" && resposta.trim().startsWith("[")) {
+        return try {
+            val json = JSONArray(resposta)
+            (0 until json.length()).any { i ->
+                json.optString(i).isNotBlank()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+    return true
+}
+
+private fun formatarRespostaAluno(
+    tipoResposta: String,
+    respostaBruta: String
+): String {
+    if (respostaBruta.isBlank()) return ""
+    if (tipoResposta == "CHECKBOX" && respostaBruta.trim().startsWith("[")) {
+        return try {
+            val json = JSONArray(respostaBruta)
+            val itens = (0 until json.length()).mapNotNull { i ->
+                json.optString(i).takeIf { it.isNotBlank() }
+            }
+            if (itens.isEmpty()) "" else itens.joinToString(", ")
+        } catch (_: Exception) {
+            respostaBruta
+        }
+    }
+    return respostaBruta
+}
+
+private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
+    alunoId: Long,
+    alunoRepository: AlunoRepository,
+    perguntas: List<PerguntaAnamneseAtribuidaEntity>,
+    respostas: Map<Long, String>
+) {
+    val aluno = alunoRepository.buscarPorIdDireto(alunoId) ?: return
+
+    val condicoesExtraidas = linkedSetOf<String>()
+    val restricoesExtraidas = linkedSetOf<String>()
+
+    // Preserva itens já registrados anteriormente, caso existam
+    aluno.condicoes.split(",")
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !it.equals("Nenhuma", ignoreCase = true) }
+        .forEach { condicoesExtraidas.add(it) }
+
+    aluno.restricoes.split(",")
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !it.equals("Nenhuma", ignoreCase = true) }
+        .forEach { restricoesExtraidas.add(it) }
+
+    for (pergunta in perguntas) {
+        val tituloLower = pergunta.texto.lowercase(Locale.ROOT)
+        val respostaBruta = respostas[pergunta.id].orEmpty().trim()
+        if (respostaBruta.isBlank()) continue
+
+        val itens = if (
+            pergunta.tipoResposta == "CHECKBOX" &&
+            respostaBruta.startsWith("[")
+        ) {
+            try {
+                val arr = JSONArray(respostaBruta)
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optString(i).trim().takeIf { it.isNotBlank() }
+                }
+            } catch (_: Exception) {
+                listOf(respostaBruta)
+            }
+        } else {
+            respostaBruta.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        }
+
+        val itensValidos = itens.filterNot {
+            it.equals("Nenhuma", ignoreCase = true) ||
+                    it.equals("Não", ignoreCase = true) ||
+                    it.equals("Nao", ignoreCase = true)
+        }
+
+        when {
+            tituloLower.contains("condiç") ||
+                    tituloLower.contains("condic") ||
+                    tituloLower.contains("saúde") ||
+                    tituloLower.contains("saude") ||
+                    tituloLower.contains("dor") -> {
+                if (
+                    pergunta.tipoResposta == "SIM_NAO" &&
+                    respostaBruta.equals("Sim", ignoreCase = true)
+                ) {
+                    condicoesExtraidas.add(pergunta.texto.trim())
+                } else if (pergunta.tipoResposta != "SIM_NAO") {
+                    condicoesExtraidas.addAll(itensValidos)
+                }
+            }
+
+            tituloLower.contains("restriç") ||
+                    tituloLower.contains("restric") ||
+                    tituloLower.contains("limitaç") ||
+                    tituloLower.contains("limitac") -> {
+                if (
+                    pergunta.tipoResposta == "SIM_NAO" &&
+                    respostaBruta.equals("Sim", ignoreCase = true)
+                ) {
+                    restricoesExtraidas.add(pergunta.texto.trim())
+                } else if (pergunta.tipoResposta != "SIM_NAO") {
+                    restricoesExtraidas.addAll(itensValidos)
+                }
+            }
+        }
+    }
+
+    val novasCondicoes = condicoesExtraidas.joinToString(", ")
+    val novasRestricoes = restricoesExtraidas.joinToString(", ")
+
+    val totalItens = condicoesExtraidas.size + restricoesExtraidas.size
+    val novoStatus = when {
+        totalItens == 0 -> "Normal"
+        totalItens == 1 -> "Atenção"
+        else -> "Prioridade"
+    }
+
+    if (
+        novasCondicoes != aluno.condicoes ||
+        novasRestricoes != aluno.restricoes ||
+        novoStatus != aluno.status
+    ) {
+        alunoRepository.atualizarDireto(
+            aluno.copy(
+                condicoes = novasCondicoes,
+                restricoes = novasRestricoes,
+                status = novoStatus
+            )
+        )
+    }
+}
 
 @Composable
 fun TelaAreaAluno(
@@ -53,6 +203,20 @@ fun TelaAreaAluno(
     val context = LocalContext.current
 
     val idAluno = alunoId
+
+    // Sincroniza ao abrir a área do aluno para garantir recebimento imediato das anamneses
+    LaunchedEffect(idAluno) {
+        if (idAluno != null && idAluno > 0L) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val db = FitCareDatabase.getDatabase(context)
+                    val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                    syncService.sincronizarAnamnesesAtribuidasDoAluno()
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
 
     val anamnesesFlow = remember(idAluno) {
         if (idAluno != null && idAluno > 0L) {
@@ -100,6 +264,10 @@ fun TelaAreaAluno(
         mutableStateOf("")
     }
 
+    var mensagemSucesso by remember {
+        mutableStateOf("")
+    }
+
     var mensagemDocumento by remember {
         mutableStateOf("")
     }
@@ -112,6 +280,16 @@ fun TelaAreaAluno(
         it.id == anamneseSelecionadaId
     }
 
+    LaunchedEffect(anamneseSelecionadaId, anamneses) {
+        if (
+            anamneseSelecionadaId != null &&
+            anamneses.isNotEmpty() &&
+            anamneses.none { it.id == anamneseSelecionadaId }
+        ) {
+            anamneseSelecionadaId = null
+        }
+    }
+
     suspend fun aguardarSalvamentos() {
         salvamentosPendentes.values.toList().forEach {
             it.join()
@@ -122,17 +300,14 @@ fun TelaAreaAluno(
     LaunchedEffect(anamneseSelecionadaId, idAluno) {
         val id = anamneseSelecionadaId
         val idDoAluno = idAluno
-
         if (id != null && idDoAluno != null && idDoAluno > 0L) {
             carregando = true
             mensagemErro = ""
-
+            mensagemSucesso = ""
             try {
                 perguntas = anamneseRepository.buscarPerguntas(id)
-
                 val respostasSalvas =
                     respostaRepository.buscarRespostasDaAnamnese(id)
-
                 respostas = respostasSalvas.associate {
                     it.perguntaAtribuidaId to it.resposta
                 }
@@ -147,16 +322,15 @@ fun TelaAreaAluno(
             respostas = emptyMap()
         }
     }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFEAF3F9))
             .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
     ) {
-
-        // CABEÇALHO PADRÃO DO FITCARE
+// CABEÇALHO PADRÃO DO FITCARE
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -178,7 +352,6 @@ fun TelaAreaAluno(
                         .width(125.dp)
                         .height(62.dp)
                 )
-
                 OutlinedButton(
                     onClick = {
                         scope.launch {
@@ -205,9 +378,7 @@ fun TelaAreaAluno(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
+            Spacer(modifier = Modifier.height(6.dp))
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF002B5C).copy(alpha = 0.10f)
@@ -216,23 +387,20 @@ fun TelaAreaAluno(
                     text = "PERFIL: ALUNO",
                     modifier = Modifier.padding(
                         horizontal = 16.dp,
-                        vertical = 7.dp
+                        vertical = 6.dp
                     ),
                     color = Color(0xFF002B5C),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-
             Spacer(modifier = Modifier.height(4.dp))
-
             Text(
                 text = "Acompanhe suas anamneses e documentos.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF526579)
             )
         }
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -243,9 +411,25 @@ fun TelaAreaAluno(
                     bottom = 16.dp
                 )
         ) {
-
+            if (mensagemSucesso.isNotBlank()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFE8F5E9)
+                    )
+                ) {
+                    Text(
+                        text = mensagemSucesso,
+                        modifier = Modifier.padding(12.dp),
+                        color = Color(0xFF2E7D32),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
             if (idAluno == null || idAluno <= 0L) {
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -258,21 +442,36 @@ fun TelaAreaAluno(
                         color = Color(0xFFB71C1C)
                     )
                 }
-
             } else if (anamneseSelecionadaId != null) {
-
-                // FORMULÁRIO DA ANAMNESE
-
+                val modoSomenteLeitura =
+                    anamneseSelecionada?.status == "RESPONDIDA"
                 Text(
                     text = anamneseSelecionada?.nomeModelo
-                        ?: "Preenchimento da anamnese",
+                        ?: if (modoSomenteLeitura) {
+                            "Visualização da anamnese"
+                        } else {
+                            "Preenchimento da anamnese"
+                        },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF002B5C)
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+                if (modoSomenteLeitura) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = buildString {
+                            append("Status: Concluída")
+                            val dataResp = anamneseSelecionada?.dataResposta.orEmpty()
+                            if (dataResp.isNotBlank()) {
+                                append(" em $dataResp")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
                 TextButton(
                     onClick = {
                         scope.launch {
@@ -284,16 +483,73 @@ fun TelaAreaAluno(
                 ) {
                     Text("VOLTAR ÀS ANAMNESES")
                 }
-
                 if (carregando) {
                     CircularProgressIndicator()
+                } else if (modoSomenteLeitura) {
+                    if (perguntas.isEmpty()) {
+                        Text(
+                            text = "Esta anamnese não possui perguntas registradas.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF526579)
+                        )
+                    } else {
+                        perguntas.forEachIndexed { index, pergunta ->
+                            val respostaBruta = respostas[pergunta.id].orEmpty()
+                            val respostaExibida = formatarRespostaAluno(
+                                tipoResposta = pergunta.tipoResposta,
+                                respostaBruta = respostaBruta
+                            )
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color.White
+                                ),
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = 2.dp
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "${index + 1}. ${pergunta.texto}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF002B5C)
+                                    )
+                                    Text(
+                                        text = respostaExibida.ifBlank {
+                                            "Não respondida"
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (respostaExibida.isBlank()) {
+                                            Color(0xFF757575)
+                                        } else {
+                                            Color(0xFF212121)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            anamneseSelecionadaId = null
+                            mensagemErro = ""
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("VOLTAR")
+                    }
                 } else {
-
                     perguntas.forEach { pergunta ->
-
                         val respostaAtual =
                             respostas[pergunta.id] ?: ""
-
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -313,21 +569,16 @@ fun TelaAreaAluno(
                                     pergunta = pergunta,
                                     valor = respostaAtual,
                                     onChange = { novaResposta ->
-
                                         respostas = respostas +
                                                 (pergunta.id to novaResposta)
-
                                         mensagemErro = ""
-
                                         salvamentosPendentes[
                                             pergunta.id
                                         ]?.cancel()
-
                                         salvamentosPendentes[
                                             pergunta.id
                                         ] = scope.launch {
-                                            delay(300)
-
+                                            delay(250)
                                             try {
                                                 respostaRepository
                                                     .salvarRespostaDoAluno(
@@ -345,58 +596,65 @@ fun TelaAreaAluno(
                             }
                         }
                     }
-
                     Spacer(modifier = Modifier.height(12.dp))
-
                     val perguntasObrigatoriasPendentes =
                         perguntas.count { pergunta ->
                             pergunta.obrigatoria &&
-                                    respostas[pergunta.id].isNullOrBlank()
+                                    !respostaEstaPreenchida(
+                                        tipoResposta = pergunta.tipoResposta,
+                                        resposta = respostas[pergunta.id]
+                                    )
                         }
-
                     if (perguntasObrigatoriasPendentes > 0) {
                         Text(
                             text = "Ainda faltam $perguntasObrigatoriasPendentes pergunta(s) obrigatória(s).",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
-
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-
                     Button(
                         onClick = {
                             scope.launch {
                                 try {
                                     carregando = true
                                     mensagemErro = ""
-
-                                    // Aguarda os salvamentos automáticos.
                                     aguardarSalvamentos()
-
-                                    // Salva novamente todas as respostas atuais.
-                                    // A gravação é sequencial e aguardada.
                                     for (pergunta in perguntas) {
                                         val respostaAtual =
                                             respostas[pergunta.id] ?: ""
-
                                         respostaRepository.salvarRespostaDoAluno(
                                             alunoId = idAluno,
                                             perguntaId = pergunta.id,
                                             resposta = respostaAtual
                                         )
                                     }
-
-                                    // Conclui somente depois de salvar tudo.
                                     respostaRepository.concluirDoAluno(
                                         alunoId = idAluno,
                                         anamneseId = anamneseSelecionadaId!!
                                     )
-
+// Vincula e atualiza automaticamente Condições, Restrições e Status no perfil do aluno
+                                    sincronizarAcompanhamentoAlunoComRespostas(
+                                        alunoId = idAluno,
+                                        alunoRepository = alunoRepository,
+                                        perguntas = perguntas,
+                                        respostas = respostas
+                                    )
+// Envia imediatamente as respostas e dados atualizados ao Firestore
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val db = FitCareDatabase.getDatabase(context)
+                                            val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                                            syncService.sincronizarAnamnesesAtribuidasDoAluno()
+                                        } catch (_: Exception) {
+                                        }
+                                    }
+                                    AlunoSyncWorker.agendar(context)
                                     anamneseSelecionadaId = null
                                     perguntas = emptyList()
                                     respostas = emptyMap()
-
+                                    mensagemSucesso =
+                                        "Anamnese concluída e enviada com sucesso ao professor."
                                 } catch (e: Exception) {
                                     mensagemErro = e.message
                                         ?: "Não foi possível concluir a anamnese."
@@ -413,24 +671,18 @@ fun TelaAreaAluno(
                         Text("CONCLUIR ANAMNESE")
                     }
                 }
-
             } else {
-
-                // LISTAGEM DAS ANAMNESES
-
+// LISTAGEM DAS ANAMNESES
                 val pendentes = anamneses.filter {
                     it.status == "PENDENTE" ||
                             it.status == "EM_ANDAMENTO"
                 }
-
                 val naoEnviadas = anamneses.filter {
                     it.status == "NAO_ENVIADA"
                 }
-
                 val respondidas = anamneses.filter {
                     it.status == "RESPONDIDA"
                 }
-
                 if (anamneses.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -445,7 +697,6 @@ fun TelaAreaAluno(
                         )
                     }
                 }
-
                 if (pendentes.isNotEmpty()) {
                     Text(
                         text = "Anamneses disponíveis",
@@ -453,9 +704,7 @@ fun TelaAreaAluno(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF002B5C)
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     pendentes.forEach { anamnese ->
                         Card(
                             modifier = Modifier
@@ -476,7 +725,6 @@ fun TelaAreaAluno(
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
-
                                 Text(
                                     text = if (
                                         anamnese.status == "EM_ANDAMENTO"
@@ -488,9 +736,7 @@ fun TelaAreaAluno(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFF526579)
                                 )
-
                                 Spacer(modifier = Modifier.height(8.dp))
-
                                 Button(
                                     onClick = {
                                         anamneseSelecionadaId = anamnese.id
@@ -511,16 +757,13 @@ fun TelaAreaAluno(
                         }
                     }
                 }
-
                 if (naoEnviadas.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
-
                     Text(
                         text = "Aguardando liberação do profissional",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
-
                     naoEnviadas.forEach { anamnese ->
                         Text(
                             text = "• ${anamnese.nomeModelo} — ainda não enviada.",
@@ -528,17 +771,15 @@ fun TelaAreaAluno(
                         )
                     }
                 }
-
                 if (respondidas.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(14.dp))
-
                     Text(
                         text = "Anamneses concluídas",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF002B5C)
                     )
-
+                    Spacer(modifier = Modifier.height(6.dp))
                     respondidas.forEach { anamnese ->
                         Card(
                             modifier = Modifier
@@ -546,6 +787,9 @@ fun TelaAreaAluno(
                                 .padding(vertical = 5.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = Color.White
+                            ),
+                            elevation = CardDefaults.cardElevation(
+                                defaultElevation = 2.dp
                             )
                         ) {
                             Column(
@@ -554,19 +798,38 @@ fun TelaAreaAluno(
                                 Text(
                                     text = anamnese.nomeModelo,
                                     fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFF002B5C)
                                 )
-
                                 Text(
-                                    text = "Concluída",
-                                    color = MaterialTheme.colorScheme.primary,
+                                    text = buildString {
+                                        append("Concluída")
+                                        if (anamnese.dataResposta.isNotBlank()) {
+                                            append(" em ${anamnese.dataResposta}")
+                                        }
+                                    },
+                                    color = Color(0xFF2E7D32),
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        anamneseSelecionadaId = anamnese.id
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("VISUALIZAR ANAMNESE")
+                                }
                             }
                         }
                     }
                 }
-
                 if (
                     anamneses.isNotEmpty() &&
                     pendentes.isEmpty() &&
@@ -574,7 +837,6 @@ fun TelaAreaAluno(
                     respondidas.size == anamneses.size
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
-
                     Text(
                         text = "Todas as suas anamneses foram concluídas. Seu acesso está liberado.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -582,30 +844,23 @@ fun TelaAreaAluno(
                     )
                 }
             }
-
-            // DOCUMENTOS E IMAGENS DO ALUNO
-
+// DOCUMENTOS E IMAGENS DO ALUNO
             Spacer(modifier = Modifier.height(22.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(14.dp))
-
             Text(
                 text = "MEUS DOCUMENTOS",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF002B5C)
             )
-
             Spacer(modifier = Modifier.height(5.dp))
-
             Text(
                 text = "Importe exames, laudos e imagens para comparação.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF526579)
             )
-
             Spacer(modifier = Modifier.height(10.dp))
-
             if (idAluno != null && idAluno > 0L) {
                 BotaoImportarDocumentoAnamnese(
                     alunoId = idAluno,
@@ -616,7 +871,6 @@ fun TelaAreaAluno(
                     }
                 )
             }
-
             if (mensagemDocumento.isNotBlank()) {
                 Text(
                     text = mensagemDocumento,
@@ -624,9 +878,7 @@ fun TelaAreaAluno(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-
             Spacer(modifier = Modifier.height(12.dp))
-
             if (documentos.isEmpty()) {
                 Text(
                     text = "Nenhum documento importado.",
@@ -634,9 +886,7 @@ fun TelaAreaAluno(
                     style = MaterialTheme.typography.bodySmall
                 )
             } else {
-
                 documentos.forEach { documento ->
-
                     val ehComparacao =
                         documento.tipoArquivo.startsWith(
                             "comparacao_",
@@ -646,10 +896,8 @@ fun TelaAreaAluno(
                                     "comparacao_",
                                     ignoreCase = true
                                 )
-
                     val nomeExibido = documento.nomeArquivo
                         .removePrefix("comparacao_")
-
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -681,7 +929,6 @@ fun TelaAreaAluno(
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
-
                                 Text(
                                     text = if (ehComparacao) {
                                         "Imagem para comparação"
@@ -695,13 +942,11 @@ fun TelaAreaAluno(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFF526579)
                                 )
-
                                 Text(
                                     text = "Importado em: ${documento.dataImportacao}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.Gray
                                 )
-
                                 TextButton(
                                     onClick = {
                                         try {
@@ -723,7 +968,6 @@ fun TelaAreaAluno(
                                     Text("ABRIR DOCUMENTO")
                                 }
                             }
-
                             IconButton(
                                 onClick = {
                                     scope.launch {
@@ -731,11 +975,9 @@ fun TelaAreaAluno(
                                             documentoRepository.excluirDocumento(
                                                 documento.id
                                             )
-
                                             File(
                                                 documento.caminhoArquivo
                                             ).delete()
-
                                             mensagemErro = ""
                                         } catch (erro: Exception) {
                                             mensagemErro = erro.message
@@ -754,22 +996,18 @@ fun TelaAreaAluno(
                     }
                 }
             }
-
             if (mensagemErro.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
-
                 Text(
                     text = mensagemErro,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
-
 // CAMPO DE RESPOSTA DA ANAMNESE
 @Composable
 private fun CampoRespostaAnamnese(
@@ -780,7 +1018,6 @@ private fun CampoRespostaAnamnese(
     val alternativas = remember(pergunta.opcoes) {
         try {
             val json = JSONArray(pergunta.opcoes)
-
             (0 until json.length()).map {
                 json.getString(it)
             }
@@ -788,7 +1025,6 @@ private fun CampoRespostaAnamnese(
             emptyList()
         }
     }
-
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -798,7 +1034,6 @@ private fun CampoRespostaAnamnese(
             fontWeight = FontWeight.Bold,
             color = Color(0xFF002B5C)
         )
-
         if (pergunta.obrigatoria) {
             Text(
                 text = "Obrigatória",
@@ -806,11 +1041,8 @@ private fun CampoRespostaAnamnese(
                 style = MaterialTheme.typography.labelSmall
             )
         }
-
         Spacer(modifier = Modifier.height(6.dp))
-
         when (pergunta.tipoResposta) {
-
             "TEXTO" -> {
                 OutlinedTextField(
                     value = valor,
@@ -820,14 +1052,13 @@ private fun CampoRespostaAnamnese(
                     minLines = 2
                 )
             }
-
             "NUMERO" -> {
                 OutlinedTextField(
                     value = valor,
                     onValueChange = { novo ->
                         if (
                             novo.matches(
-                                Regex("[0-9]*([.,][0-9]*)?")
+                                Regex("[0-9]([.,][0-9])?")
                             )
                         ) {
                             onChange(novo)
@@ -840,7 +1071,6 @@ private fun CampoRespostaAnamnese(
                     )
                 )
             }
-
             "DATA" -> {
                 OutlinedTextField(
                     value = valor,
@@ -853,7 +1083,6 @@ private fun CampoRespostaAnamnese(
                     )
                 )
             }
-
             "SIM_NAO" -> {
                 Row(
                     modifier = Modifier.selectableGroup()
@@ -874,7 +1103,6 @@ private fun CampoRespostaAnamnese(
                                 selected = valor == opcao,
                                 onClick = null
                             )
-
                             Text(
                                 text = opcao,
                                 style = MaterialTheme.typography.bodyMedium
@@ -883,7 +1111,6 @@ private fun CampoRespostaAnamnese(
                     }
                 }
             }
-
             "MULTIPLA_ESCOLHA" -> {
                 Column(
                     modifier = Modifier.selectableGroup()
@@ -904,7 +1131,6 @@ private fun CampoRespostaAnamnese(
                                 selected = valor == opcao,
                                 onClick = null
                             )
-
                             Text(
                                 text = opcao,
                                 style = MaterialTheme.typography.bodyMedium
@@ -913,12 +1139,10 @@ private fun CampoRespostaAnamnese(
                     }
                 }
             }
-
             "CHECKBOX" -> {
                 val selecionadas = remember(valor) {
                     try {
                         val json = JSONArray(valor)
-
                         (0 until json.length()).map {
                             json.getString(it)
                         }.toSet()
@@ -926,24 +1150,24 @@ private fun CampoRespostaAnamnese(
                         emptySet()
                     }
                 }
-
                 alternativas.forEach { opcao ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
                                 val novas = selecionadas.toMutableSet()
-
                                 if (opcao in novas) {
                                     novas.remove(opcao)
                                 } else {
                                     novas.add(opcao)
                                 }
-
-                                val json = JSONArray()
-                                novas.forEach { json.put(it) }
-
-                                onChange(json.toString())
+                                if (novas.isEmpty()) {
+                                    onChange("")
+                                } else {
+                                    val json = JSONArray()
+                                    novas.forEach { json.put(it) }
+                                    onChange(json.toString())
+                                }
                             }
                             .padding(vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -952,20 +1176,20 @@ private fun CampoRespostaAnamnese(
                             checked = opcao in selecionadas,
                             onCheckedChange = { marcado ->
                                 val novas = selecionadas.toMutableSet()
-
                                 if (marcado) {
                                     novas.add(opcao)
                                 } else {
                                     novas.remove(opcao)
                                 }
-
-                                val json = JSONArray()
-                                novas.forEach { json.put(it) }
-
-                                onChange(json.toString())
+                                if (novas.isEmpty()) {
+                                    onChange("")
+                                } else {
+                                    val json = JSONArray()
+                                    novas.forEach { json.put(it) }
+                                    onChange(json.toString())
+                                }
                             }
                         )
-
                         Text(
                             text = opcao,
                             style = MaterialTheme.typography.bodyMedium
@@ -973,7 +1197,6 @@ private fun CampoRespostaAnamnese(
                     }
                 }
             }
-
             else -> {
                 OutlinedTextField(
                     value = valor,

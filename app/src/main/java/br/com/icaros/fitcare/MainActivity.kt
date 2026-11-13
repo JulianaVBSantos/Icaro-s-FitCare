@@ -10,6 +10,8 @@ import androidx.compose.material3.TextButton
 import android.widget.Toast
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Send
 import br.com.icaros.fitcare.data.SessaoUsuario
 import br.com.icaros.fitcare.data.UsuarioRepository
 import androidx.compose.runtime.rememberCoroutineScope
@@ -18,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import br.com.icaros.fitcare.data.AnamneseRepository
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.material.icons.filled.FileUpload
@@ -32,7 +35,9 @@ import java.text.SimpleDateFormat
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.BarChart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -99,7 +104,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import br.com.icaros.fitcare.data.AlunoSyncWorker
 
-// Nova Paleta de Cores baseada na Logo
+// Paleta de Cores baseada na Logo
 private val AzulPrincipal = Color(0xFF002B5C)
 private val AzulSecundario = Color(0xFF164A73)
 private val AzulClaro = Color(0xFF5B9BD5)
@@ -108,23 +113,9 @@ private val FundoApp = Color(0xFFF5F9FC)
 private val TextoPrincipal = Color(0xFF002B5C)
 private val TextoSecundario = Color(0xFF526579)
 private val Branco = Color(0xFFFFFFFF)
-
-// Mantido apenas para alertas/erros se necessário
 private val Vermelho = Color(0xFFE34B63)
 
-// Cores da nova tela de Login e Cabeçalhos (Ajustadas para dar contraste à logo)
-private val LoginTopo = Color(0xFFEAF3F9)         // Azul muito claro para clarear o topo
-private val LoginBase = Color(0xFFFFFFFF)         // Fundo limpo e branco na base da tela
-private val LoginCampo = Color(0xFFFFFFFF)        // Campos de texto brancos para contraste
-private val LoginCampoBorda = Color(0xFF5B9BD5)   // Borda em Azul claro
-private val LoginTexto = Color(0xFF002B5C)        // Título principal em Azul escuro
-private val LoginTextoSecundario = Color(0xFF526579) // Texto secundário legível
-private val LoginPlaceholder = Color(0xFF858AA1)
-private val LoginAzul = Color(0xFF002B5C)         // Botão ENTRAR agora usa o azul principal
-private val LoginAzulClaro = Color(0xFF164A73)    // Links em Azul secundário
-
-// Cores para os cabeçalhos das outras telas
-private val CabecalhoTopoClaro = Color(0xFFEAF3F9) // Fundo claro para destacar a logo escura
+private val CabecalhoTopoClaro = Color(0xFFEAF3F9)
 private val CabecalhoBaseClaro = Color(0xFFF5F9FC)
 
 private const val PREFERENCIAS_SESSAO = "fitcare_sessao"
@@ -132,6 +123,23 @@ const val CHAVE_MANTER_CONECTADO = "manter_conectado"
 const val CHAVE_USUARIO_ID = "usuario_id"
 const val CHAVE_PERFIL = "perfil"
 
+// Checklist unificado entre Acompanhamento do Aluno e Anamnese
+val OPCOES_CONDICOES_PADRAO = listOf(
+    "Hipertensão",
+    "Diabetes",
+    "Dor lombar",
+    "Dor no joelho",
+    "Dor no ombro",
+    "Problema cardíaco"
+)
+
+val OPCOES_RESTRICOES_PADRAO = listOf(
+    "Evitar exercícios de alto impacto",
+    "Evitar agachamentos profundos",
+    "Limitar cargas elevadas",
+    "Evitar exercícios acima da cabeça",
+    "Limitar amplitude de movimento"
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -194,7 +202,6 @@ class MainActivity : ComponentActivity() {
             applicationContext
         )
 
-        // Repositórios existentes
         val repository = AlunoRepository(
             database = database,
             context = applicationContext
@@ -208,7 +215,6 @@ class MainActivity : ComponentActivity() {
             database.anamneseDao()
         )
 
-        // Novos repositórios de anamnese digital
         val modeloAnamneseRepository =
             ModeloAnamneseRepository(
                 database.modeloAnamneseDao()
@@ -254,19 +260,15 @@ class MainActivity : ComponentActivity() {
         super.onStart()
 
         monitorDispositivo.removeCallbacks(tarefaMonitoramento)
-
-        // Registra imediatamente e depois repete a cada minuto.
         monitorDispositivo.post(tarefaMonitoramento)
     }
 
     override fun onStop() {
         monitorDispositivo.removeCallbacks(tarefaMonitoramento)
-
         super.onStop()
     }
 }
 
-// Mapeamento das telas do aplicativo
 enum class AppScreen {
     Login,
     CadastroProfessor,
@@ -288,7 +290,6 @@ enum class AppScreen {
     CadastroAdminInicial
 }
 
-// Fluxo de navegação principal da aplicação
 @Composable
 fun FitCareApp(
     repository: AlunoRepository,
@@ -300,100 +301,71 @@ fun FitCareApp(
     respostaAnamneseRepository: RespostaAnamneseRepository,
     usuarioRepository: UsuarioRepository
 ) {
-    val scope = rememberCoroutineScope()
-
-// Mantém a tela atual quando a Activity é recriada.
     var tela by rememberSaveable {
         mutableStateOf(AppScreen.Login)
     }
-
-// Identificador do aluno selecionado.
     var alunoSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
-
-// Identificador do treino selecionado.
     var treinoSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
-
-// Indica se o usuário está iniciando um novo registro de treino.
     var registrarNovoTreino by rememberSaveable {
         mutableStateOf(false)
     }
-
-// Mantém temporariamente o evento que está sendo editado.
     var eventoEmEdicao by remember {
         mutableStateOf<EventoAluno?>(null)
     }
-
-// Identificador do modelo de anamnese selecionado.
     var modeloAnamneseSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
-
-// Controla a origem da navegação para retornar ao perfil do aluno
-// depois de acessar os modelos de anamnese
     var voltarModelosParaPerfil by rememberSaveable {
         mutableStateOf(false)
     }
-
+    var voltarVisualizacaoParaPerfil by rememberSaveable {
+        mutableStateOf(false)
+    }
     var anamneseAtribuidaSelecionadaId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
-// Perfil escolhido na tela inicial: PROFESSOR ou ALUNO.
     var perfilSelecionado by rememberSaveable {
         mutableStateOf<String?>(null)
     }
-
-// Indica que um aluno autenticado está na tela provisória de acesso.
     var alunoAutenticado by rememberSaveable {
         mutableStateOf(false)
     }
-
     val context = LocalContext.current
-
     val preferenciasSessao = remember {
         context.getSharedPreferences(
             PREFERENCIAS_SESSAO,
             Context.MODE_PRIVATE
         )
     }
-
     LaunchedEffect(Unit) {
         val manterConectado = preferenciasSessao.getBoolean(
             CHAVE_MANTER_CONECTADO,
             false
         )
-
         val usuarioIdSalvo = preferenciasSessao.getLong(
             CHAVE_USUARIO_ID,
             -1L
         )
-
         if (manterConectado && usuarioIdSalvo > 0L) {
             val usuario = usuarioRepository.buscarUsuarioAtivoPorId(
                 usuarioIdSalvo
             )
-
             if (usuario != null) {
                 SessaoUsuario.iniciar(usuario)
-
                 if (usuario.perfil == "PROFESSOR") {
                     val uid = FirebaseAuth.getInstance().currentUser?.uid
-
                     if (!uid.isNullOrBlank()) {
                         DispositivoRepository(context).registrarAtividade(uid)
                     }
                 }
-
-                // Retoma a sincronização imediata e periódica
-                // tanto para o professor quanto para o aluno.
                 if (usuario.perfil == "PROFESSOR" || usuario.perfil == "ALUNO") {
                     AlunoSyncWorker.agendar(context)
                     AlunoSyncWorker.agendarPeriodica(context)
                 }
-
                 when (usuario.perfil) {
                     "PROFESSOR" -> {
                         alunoAutenticado = false
@@ -416,7 +388,6 @@ fun FitCareApp(
                             .remove(CHAVE_USUARIO_ID)
                             .remove(CHAVE_PERFIL)
                             .apply()
-
                         perfilSelecionado = null
                         tela = AppScreen.Login
                     }
@@ -429,7 +400,6 @@ fun FitCareApp(
             }
         }
     }
-
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = AzulPrincipal,
@@ -450,7 +420,6 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
-
                     AppScreen.CadastroAdminInicial -> {
                         TelaCadastroAdminInicial(
                             usuarioRepository = usuarioRepository,
@@ -474,7 +443,6 @@ fun FitCareApp(
                                     .remove(CHAVE_USUARIO_ID)
                                     .remove(CHAVE_PERFIL)
                                     .apply()
-
                                 SessaoUsuario.encerrar()
                                 alunoAutenticado = false
                                 perfilSelecionado = null
@@ -484,7 +452,6 @@ fun FitCareApp(
                     }
 
                     AppScreen.Login -> {
-
                         if (alunoAutenticado) {
                             TelaAreaAluno(
                                 alunoId = SessaoUsuario.usuarioAtual?.alunoId,
@@ -494,12 +461,10 @@ fun FitCareApp(
                                 alunoRepository = repository,
                                 onSair = {
                                     AlunoSyncWorker.cancelarPeriodica(context)
-
                                     preferenciasSessao.edit()
                                         .remove(CHAVE_USUARIO_ID)
                                         .remove(CHAVE_PERFIL)
                                         .apply()
-
                                     SessaoUsuario.encerrar()
                                     alunoAutenticado = false
                                     perfilSelecionado = "ALUNO"
@@ -507,7 +472,6 @@ fun FitCareApp(
                                 }
                             )
                         } else if (perfilSelecionado == null) {
-
                             TelaEscolherPerfil(
                                 onSelecionarPerfil = { perfil ->
                                     if (perfil == "ADMIN") {
@@ -518,32 +482,25 @@ fun FitCareApp(
                                     }
                                 }
                             )
-
                         } else {
-
                             TelaLogin(
                                 usuarioRepository = usuarioRepository,
                                 perfil = perfilSelecionado!!,
                                 onVoltar = {
                                     perfilSelecionado = null
                                 },
-
                                 onEntrar = { usuario ->
                                     SessaoUsuario.iniciar(usuario)
                                     if (usuario.perfil == "PROFESSOR") {
                                         val uid = FirebaseAuth.getInstance().currentUser?.uid
-
                                         if (!uid.isNullOrBlank()) {
                                             DispositivoRepository(context).registrarAtividade(uid)
                                         }
                                     }
-                                    // Agenda a sincronização imediata e periódica
-                                    // tanto para o professor quanto para o aluno.
                                     if (usuario.perfil == "PROFESSOR" || usuario.perfil == "ALUNO") {
                                         AlunoSyncWorker.agendar(context)
                                         AlunoSyncWorker.agendarPeriodica(context)
                                     }
-
                                     if (
                                         preferenciasSessao.getBoolean(
                                             CHAVE_MANTER_CONECTADO,
@@ -560,9 +517,7 @@ fun FitCareApp(
                                             .remove(CHAVE_PERFIL)
                                             .apply()
                                     }
-
                                     perfilSelecionado = usuario.perfil
-
                                     when (usuario.perfil) {
                                         "PROFESSOR" -> {
                                             alunoAutenticado = false
@@ -607,6 +562,7 @@ fun FitCareApp(
                         TelaDashboard(
                             repository = repository,
                             treinoRepository = treinoRepository,
+                            anamneseAtribuidaRepository = anamneseAtribuidaRepository,
                             onAlunos = {
                                 tela = AppScreen.Alunos
                             },
@@ -627,20 +583,18 @@ fun FitCareApp(
                                 alunoSelecionadoId = aluno.id
                                 tela = AppScreen.PerfilAluno
                             },
-
+                            onModelosAnamnese = {
+                                alunoSelecionadoId = null
+                                voltarModelosParaPerfil = false
+                                tela = AppScreen.ModelosAnamnese
+                            },
                             onSair = {
-                                // Cancela a sincronização periódica do professor.
                                 AlunoSyncWorker.cancelarPeriodica(context)
-
-                                // Remove os dados de restauração da sessão.
                                 preferenciasSessao.edit()
                                     .remove(CHAVE_USUARIO_ID)
                                     .remove(CHAVE_PERFIL)
                                     .apply()
-
-                                // Encerra a sessão atual.
                                 SessaoUsuario.encerrar()
-
                                 alunoAutenticado = false
                                 perfilSelecionado = "PROFESSOR"
                                 tela = AppScreen.Login
@@ -670,7 +624,6 @@ fun FitCareApp(
                             onVoltar = { tela = AppScreen.Dashboard },
                             onSelecionarAluno = { aluno ->
                                 alunoSelecionadoId = aluno.id
-
                                 if (registrarNovoTreino) {
                                     tela = AppScreen.FormularioTreino
                                 } else {
@@ -685,45 +638,36 @@ fun FitCareApp(
                     }
 
                     AppScreen.PerfilAluno -> {
-
                         alunoSelecionadoId?.let { id ->
-
                             TelaPerfilAluno(
-
                                 usuarioRepository = usuarioRepository,
-
                                 alunoId = id,
-
                                 repository = repository,
-
                                 anamneseRepository = anamneseRepository,
-
                                 anamneseAtribuidaRepository = anamneseAtribuidaRepository,
-
                                 onVoltar = {
                                     tela = AppScreen.Alunos
                                 },
-
                                 onDashboard = {
                                     tela = AppScreen.Dashboard
                                 },
-
                                 onTreinos = {
                                     tela = AppScreen.Treinos
                                 },
-
                                 onEditar = {
                                     tela = AppScreen.EditarAluno
                                 },
-
                                 onLinhaDoTempo = {
                                     tela = AppScreen.LinhaDoTempoAluno
                                 },
-
-                                // Abre os modelos de anamnese a partir do perfil.
                                 onModelosAnamnese = {
                                     voltarModelosParaPerfil = true
                                     tela = AppScreen.ModelosAnamnese
+                                },
+                                onVisualizarAnamnese = { anamneseId ->
+                                    anamneseAtribuidaSelecionadaId = anamneseId
+                                    voltarVisualizacaoParaPerfil = true
+                                    tela = AppScreen.VisualizarAnamnese
                                 }
                             )
                         }
@@ -734,35 +678,27 @@ fun FitCareApp(
                             TelaLinhaDoTempoAluno(
                                 alunoId = id,
                                 repository = repository,
-
                                 onVoltar = {
                                     tela = AppScreen.PerfilAluno
                                 },
-
                                 onNovoRegistro = {
                                     eventoEmEdicao = null
                                     tela = AppScreen.RegistroEventoAluno
                                 },
-
                                 onEditarRegistro = { evento ->
                                     eventoEmEdicao = evento
                                     tela = AppScreen.RegistroEventoAluno
                                 },
-
                                 onDashboard = {
                                     tela = AppScreen.Dashboard
                                 },
-
                                 onAlunos = {
                                     tela = AppScreen.Alunos
                                 },
-
                                 onTreinos = {
                                     tela = AppScreen.Treinos
                                 },
-
                                 onRegistros = {},
-
                                 onMais = {}
                             )
                         }
@@ -855,7 +791,6 @@ fun FitCareApp(
 
                     AppScreen.FormularioTreino -> {
                         val alunoId = alunoSelecionadoId
-
                         if (alunoId != null) {
                             TelaFormularioTreino(
                                 alunoId = alunoId,
@@ -880,19 +815,13 @@ fun FitCareApp(
                         }
                     }
 
-
                     AppScreen.ModelosAnamnese -> {
                         TelaModelosAnamnese(
                             repository = modeloAnamneseRepository,
                             alunoRepository = repository,
-                            alunoId = alunoSelecionadoId,
                             anamneseAtribuidaRepository = anamneseAtribuidaRepository,
-
-                            onAbrirAnamnese = { anamneseId ->
-                                anamneseAtribuidaSelecionadaId = anamneseId
-                                tela = AppScreen.VisualizarAnamnese
-                            },
-
+                            perguntaModeloRepository = perguntaModeloAnamneseRepository,
+                            alunoId = alunoSelecionadoId,
                             onVoltar = {
                                 if (voltarModelosParaPerfil) {
                                     voltarModelosParaPerfil = false
@@ -901,20 +830,28 @@ fun FitCareApp(
                                     tela = AppScreen.Dashboard
                                 }
                             },
-
                             onNovoModelo = {
                                 modeloAnamneseSelecionadoId = null
                                 tela = AppScreen.CriarModeloAnamnese
                             },
-
                             onEditarModelo = { modelo ->
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.CriarModeloAnamnese
                             },
-
                             onPerguntas = { modelo ->
                                 modeloAnamneseSelecionadoId = modelo.id
                                 tela = AppScreen.FormularioAnamnese
+                            },
+                            onAbrirAnamnese = { anamneseId ->
+                                anamneseAtribuidaSelecionadaId = anamneseId
+                                voltarVisualizacaoParaPerfil = false
+                                tela = AppScreen.VisualizarAnamnese
+                            },
+                            onAnamneseEnviada = {
+                                if (voltarModelosParaPerfil) {
+                                    voltarModelosParaPerfil = false
+                                    tela = AppScreen.PerfilAluno
+                                }
                             }
                         )
                     }
@@ -934,28 +871,17 @@ fun FitCareApp(
                         )
                     }
 
-// Tela responsável por cadastrar e organizar as perguntas do modelo.
                     AppScreen.FormularioAnamnese -> {
-
                         val modeloId = modeloAnamneseSelecionadoId
-
                         if (modeloId != null) {
-
                             TelaPerguntasModeloAnamnese(
                                 modeloId = modeloId,
-
-                                // Repositório responsável pelas perguntas do modelo.
                                 repository = perguntaModeloAnamneseRepository,
-
-                                // Retorna à lista de modelos.
                                 onVoltar = {
                                     tela = AppScreen.ModelosAnamnese
                                 }
                             )
-
                         } else {
-
-                            // Proteção caso a tela seja aberta sem um modelo selecionado.
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -964,9 +890,7 @@ fun FitCareApp(
                                 verticalArrangement = Arrangement.Center
                             ) {
                                 Text("Nenhum modelo de anamnese foi selecionado.")
-
                                 Spacer(modifier = Modifier.height(12.dp))
-
                                 Button(
                                     onClick = {
                                         tela = AppScreen.ModelosAnamnese
@@ -983,14 +907,27 @@ fun FitCareApp(
 
                     AppScreen.VisualizarAnamnese -> {
                         val anamneseId = anamneseAtribuidaSelecionadaId
-
                         if (anamneseId != null) {
                             TelaVisualizarAnamnese(
                                 anamneseId = anamneseId,
                                 anamneseRepository = anamneseAtribuidaRepository,
                                 respostaRepository = respostaAnamneseRepository,
                                 onVoltar = {
-                                    tela = AppScreen.ModelosAnamnese
+                                    if (voltarVisualizacaoParaPerfil) {
+                                        voltarVisualizacaoParaPerfil = false
+                                        tela = AppScreen.PerfilAluno
+                                    } else {
+                                        tela = AppScreen.ModelosAnamnese
+                                    }
+                                },
+                                onAnamneseExcluida = {
+                                    AlunoSyncWorker.agendar(context)
+                                    if (voltarVisualizacaoParaPerfil) {
+                                        voltarVisualizacaoParaPerfil = false
+                                        tela = AppScreen.PerfilAluno
+                                    } else {
+                                        tela = AppScreen.ModelosAnamnese
+                                    }
                                 }
                             )
                         } else {
@@ -1002,12 +939,15 @@ fun FitCareApp(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("Nenhuma anamnese foi selecionada.")
-
                                 Spacer(modifier = Modifier.height(12.dp))
-
                                 Button(
                                     onClick = {
-                                        tela = AppScreen.ModelosAnamnese
+                                        if (voltarVisualizacaoParaPerfil) {
+                                            voltarVisualizacaoParaPerfil = false
+                                            tela = AppScreen.PerfilAluno
+                                        } else {
+                                            tela = AppScreen.ModelosAnamnese
+                                        }
                                     }
                                 ) {
                                     Text("VOLTAR")
@@ -1079,6 +1019,8 @@ fun TelaCadastroAluno(
     onCadastroConcluido: () -> Unit,
     onTreinos: () -> Unit
 ) {
+    val context = LocalContext.current
+
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
@@ -1089,22 +1031,8 @@ fun TelaCadastroAluno(
     var mostrarSenha by remember { mutableStateOf(false) }
     var mostrarConfirmarSenha by remember { mutableStateOf(false) }
 
-    val opcoesCondicoes = listOf(
-        "Hipertensão",
-        "Diabetes",
-        "Dor lombar",
-        "Dor no joelho",
-        "Dor no ombro",
-        "Problema cardíaco"
-    )
-
-    val opcoesRestricoes = listOf(
-        "Evitar exercícios de alto impacto",
-        "Evitar agachamentos profundos",
-        "Limitar cargas elevadas",
-        "Evitar exercícios acima da cabeça",
-        "Limitar amplitude de movimento"
-    )
+    val opcoesCondicoes = OPCOES_CONDICOES_PADRAO
+    val opcoesRestricoes = OPCOES_RESTRICOES_PADRAO
 
     var condicoesSelecionadas by remember {
         mutableStateOf(setOf<String>())
@@ -1138,6 +1066,7 @@ fun TelaCadastroAluno(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
+            .statusBarsPadding()
     ) {
 
         CabecalhoPadrao(
@@ -1183,7 +1112,6 @@ fun TelaCadastroAluno(
                 shape = RoundedCornerShape(10.dp)
             )
 
-            // Senha de acesso do aluno
             Text(
                 text = "Acesso do aluno",
                 fontSize = 16.sp,
@@ -1273,7 +1201,7 @@ fun TelaCadastroAluno(
             )
 
             Text(
-                text = "Selecione as condições que se aplicam ao aluno.",
+                text = "Selecione as condições que se aplicam ao aluno (mesmo checklist da anamnese).",
                 fontSize = 12.sp,
                 color = TextoSecundario
             )
@@ -1339,14 +1267,12 @@ fun TelaCadastroAluno(
                             }
                     }
                 )
-
                 Text(
                     text = "Outro",
                     fontSize = 14.sp,
                     color = TextoPrincipal
                 )
             }
-
             if (condicoesSelecionadas.contains("Outro")) {
                 OutlinedTextField(
                     value = outraCondicao,
@@ -1371,24 +1297,19 @@ fun TelaCadastroAluno(
                     shape = RoundedCornerShape(10.dp)
                 )
             }
-
             Spacer(modifier = Modifier.height(4.dp))
-
             Text(
                 text = "Restrições",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             Text(
                 text = "Selecione as restrições que devem ser consideradas durante os treinos.",
                 fontSize = 12.sp,
                 color = TextoSecundario
             )
-
             opcoesRestricoes.forEach { restricao ->
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1414,7 +1335,6 @@ fun TelaCadastroAluno(
                                 }
                         }
                     )
-
                     Text(
                         text = restricao,
                         fontSize = 14.sp,
@@ -1422,7 +1342,6 @@ fun TelaCadastroAluno(
                     )
                 }
             }
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1448,14 +1367,12 @@ fun TelaCadastroAluno(
                             }
                     }
                 )
-
                 Text(
                     text = "Outro",
                     fontSize = 14.sp,
                     color = TextoPrincipal
                 )
             }
-
             if (restricoesSelecionadas.contains("Outro")) {
                 OutlinedTextField(
                     value = outraRestricao,
@@ -1480,7 +1397,6 @@ fun TelaCadastroAluno(
                     shape = RoundedCornerShape(10.dp)
                 )
             }
-
             OutlinedTextField(
                 value = observacoesProfissionais,
                 onValueChange = {
@@ -1503,7 +1419,6 @@ fun TelaCadastroAluno(
                 maxLines = 6,
                 shape = RoundedCornerShape(10.dp)
             )
-
             if (erro.isNotBlank()) {
                 Text(
                     text = erro,
@@ -1512,35 +1427,28 @@ fun TelaCadastroAluno(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-
             Button(
                 onClick = {
-
                     if (nome.isBlank()) {
                         erro = "Informe o nome do aluno."
                         return@Button
                     }
-
                     if (email.isBlank()) {
                         erro = "Informe o e-mail do aluno."
                         return@Button
                     }
-
                     if (objective.isBlank()) {
                         erro = "Informe o objetivo do aluno."
                         return@Button
                     }
-
                     if (senha.length < 8) {
                         erro = "A senha deve possuir pelo menos 8 caracteres."
                         return@Button
                     }
-
                     if (senha != confirmarSenha) {
                         erro = "As senhas não coincidem."
                         return@Button
                     }
-
                     if (
                         condicoesSelecionadas.contains("Outro") &&
                         outraCondicao.isBlank()
@@ -1548,7 +1456,6 @@ fun TelaCadastroAluno(
                         erro = "Descreva a outra condição selecionada."
                         return@Button
                     }
-
                     if (
                         restricoesSelecionadas.contains("Outro") &&
                         outraRestricao.isBlank()
@@ -1556,26 +1463,18 @@ fun TelaCadastroAluno(
                         erro = "Descreva a outra restrição selecionada."
                         return@Button
                     }
-
                     erro = ""
-
                     scope.launch {
                         salvando = true
-
-                        var alunoCriado: AlunoEntity? = null
-
                         try {
-
                             val dataAtual = SimpleDateFormat(
                                 "dd/MM/yyyy",
                                 Locale("pt", "BR")
                             ).format(Date())
-
                             val condicoesSalvas =
                                 condicoesSelecionadas
                                     .filter { it != "Outro" }
                                     .toMutableList()
-
                             if (
                                 condicoesSelecionadas.contains("Outro") &&
                                 outraCondicao.isNotBlank()
@@ -1584,12 +1483,10 @@ fun TelaCadastroAluno(
                                     outraCondicao.trim()
                                 )
                             }
-
                             val restricoesSalvas =
                                 restricoesSelecionadas
                                     .filter { it != "Outro" }
                                     .toMutableList()
-
                             if (
                                 restricoesSelecionadas.contains("Outro") &&
                                 outraRestricao.isNotBlank()
@@ -1598,21 +1495,17 @@ fun TelaCadastroAluno(
                                     outraRestricao.trim()
                                 )
                             }
-
                             val condicoesTexto =
                                 condicoesSalvas.joinToString(", ")
-
                             val restricoesTexto =
                                 restricoesSalvas.joinToString(", ")
-
                             val status = calcularStatusAcompanhamento(
                                 condicoes = condicoesTexto,
                                 restricoes = restricoesTexto
                             )
-
                             val aluno = AlunoEntity(
                                 nome = nome.trim(),
-                                email = email.trim(),
+                                email = email.trim().lowercase(),
                                 dataCadastro = dataAtual,
                                 objetivo = objective.trim(),
                                 observacoesProfissionais =
@@ -1621,37 +1514,29 @@ fun TelaCadastroAluno(
                                 restricoes = restricoesTexto,
                                 status = status
                             )
-
-                            // Primeiro salva o cadastro do aluno.
                             val alunoId = repository.inserir(aluno)
-
-                            alunoCriado = aluno.copy(id = alunoId)
-
-                            // Depois cria a conta de acesso vinculada ao aluno.
                             try {
                                 usuarioRepository.cadastrarAluno(
                                     nome = nome.trim(),
-                                    email = email.trim(),
+                                    email = email.trim().lowercase(),
                                     senha = senha,
                                     alunoId = alunoId
                                 )
                             } catch (e: Exception) {
-                                // Se a conta não puder ser criada,
-                                // remove o cadastro de aluno recém-criado.
                                 repository.excluir(
                                     aluno.copy(id = alunoId)
                                 )
                                 throw e
                             }
-
+                            withContext(Dispatchers.IO) {
+                                val db = FitCareDatabase.getDatabase(context)
+                                FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()
+                            }
                             onCadastroConcluido()
-
                         } catch (e: Exception) {
-
                             erro =
                                 "Não foi possível cadastrar o aluno: " +
                                         (e.message ?: "erro desconhecido")
-
                         } finally {
                             salvando = false
                         }
@@ -1677,10 +1562,8 @@ fun TelaCadastroAluno(
                     fontWeight = FontWeight.Bold
                 )
             }
-
             Spacer(modifier = Modifier.height(12.dp))
         }
-
         DashboardBottomBar(
             telaAtual = AppScreen.CadastroAluno,
             onInicio = onVoltar,
@@ -1692,7 +1575,6 @@ fun TelaCadastroAluno(
     }
 }
 
-// Componente de Cartão customizado reútilizavel
 @Composable
 private fun Cartao(
     modifier: Modifier = Modifier,
@@ -1718,14 +1600,12 @@ fun TelaLogin(
     onEntrar: (UsuarioEntity) -> Unit
 ) {
     val context = LocalContext.current
-
     val preferencias = remember {
         context.getSharedPreferences(
             PREFERENCIAS_SESSAO,
             Context.MODE_PRIVATE
         )
     }
-
     var email by rememberSaveable { mutableStateOf("") }
     var senha by rememberSaveable { mutableStateOf("") }
     var senhaVisivel by remember { mutableStateOf(false) }
@@ -1740,19 +1620,15 @@ fun TelaLogin(
     var carregando by remember { mutableStateOf(false) }
     var mensagemErro by remember { mutableStateOf<String?>(null) }
     var mostrarAjudaSenha by remember { mutableStateOf(false) }
-
     val scope = rememberCoroutineScope()
-
     val azulClaro = Color(0xFFEAF5FF)
     val azulFundo = Color(0xFFD8ECFF)
-
     val descricaoPerfil = when (perfil) {
         "PROFESSOR" -> "Acesse sua conta profissional."
         "ALUNO" -> "Acesse sua conta de aluno."
         "ADMIN" -> "Acesse sua conta administrativa."
         else -> "Informe seus dados de acesso."
     }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1779,23 +1655,18 @@ fun TelaLogin(
                     .width(220.dp)
                     .height(145.dp)
             )
-
             Text(
                 text = "Bem-vindo de volta",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF173B5E)
             )
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = descricaoPerfil,
                 color = Color(0xFF38566F)
             )
-
             Spacer(modifier = Modifier.height(28.dp))
-
             OutlinedTextField(
                 value = email,
                 onValueChange = {
@@ -1807,9 +1678,7 @@ fun TelaLogin(
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
-
             Spacer(modifier = Modifier.height(12.dp))
-
             OutlinedTextField(
                 value = senha,
                 onValueChange = {
@@ -1837,7 +1706,6 @@ fun TelaLogin(
                     }
                 }
             )
-
             if (perfil == "ALUNO") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1855,9 +1723,7 @@ fun TelaLogin(
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1866,14 +1732,12 @@ fun TelaLogin(
                     checked = manterConectado,
                     onCheckedChange = { marcado ->
                         manterConectado = marcado
-
                         preferencias.edit()
                             .putBoolean(
                                 CHAVE_MANTER_CONECTADO,
                                 marcado
                             )
                             .apply()
-
                         if (!marcado) {
                             preferencias.edit()
                                 .remove(CHAVE_USUARIO_ID)
@@ -1882,24 +1746,20 @@ fun TelaLogin(
                         }
                     }
                 )
-
                 Text(
                     text = "Manter-me conectado",
                     color = Color(0xFF24445F)
                 )
             }
-
             if (mensagemErro != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-
                 Text(
                     text = mensagemErro!!,
-                    color = MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
                 )
             }
-
             Spacer(modifier = Modifier.height(20.dp))
-
             Button(
                 onClick = {
                     if (email.isBlank() || senha.isBlank()) {
@@ -1907,18 +1767,15 @@ fun TelaLogin(
                             "Informe seu e-mail e sua senha."
                         return@Button
                     }
-
                     scope.launch {
                         carregando = true
                         mensagemErro = null
-
                         try {
                             val usuario = usuarioRepository.autenticar(
                                 email = email.trim(),
                                 senha = senha,
                                 perfilEsperado = perfil
                             )
-
                             if (usuario == null) {
                                 mensagemErro =
                                     "E-mail, senha ou perfil incorreto."
@@ -1931,13 +1788,11 @@ fun TelaLogin(
                                         CHAVE_MANTER_CONECTADO,
                                         manterConectado
                                     )
-
                                     if (manterConectado) {
                                         putLong(
                                             CHAVE_USUARIO_ID,
                                             usuario.id
                                         )
-
                                         putString(
                                             CHAVE_PERFIL,
                                             usuario.perfil
@@ -1946,10 +1801,8 @@ fun TelaLogin(
                                         remove(CHAVE_USUARIO_ID)
                                         remove(CHAVE_PERFIL)
                                     }
-
                                     apply()
                                 }
-
                                 onEntrar(usuario)
                             }
                         } catch (e: Exception) {
@@ -1971,9 +1824,7 @@ fun TelaLogin(
                     if (carregando) "AGUARDE..." else "ENTRAR"
                 )
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
             TextButton(
                 onClick = onVoltar
             ) {
@@ -1984,7 +1835,6 @@ fun TelaLogin(
             }
         }
     }
-
     if (mostrarAjudaSenha && perfil == "ALUNO") {
         AlertDialog(
             onDismissRequest = {
@@ -2020,39 +1870,69 @@ fun TelaLogin(
     }
 }
 
-// Tela de Dashboard principal tela do professor
+// Tela de Dashboard principal do professor (com sino de notificações e sync imediato)
 @Composable
 fun TelaDashboard(
     repository: AlunoRepository,
     treinoRepository: TreinoRepository,
+    anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
     onAlunos: () -> Unit,
     onCadastrarAluno: () -> Unit,
     onTreinos: () -> Unit,
     onRegistrarTreino: () -> Unit,
     onPerfil: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
+    onModelosAnamnese: () -> Unit = {},
     onSair: () -> Unit
 ) {
+    val context = LocalContext.current
     var pesquisa by remember { mutableStateOf("") }
+    var mostrarNotificacoes by remember { mutableStateOf(false) }
+// Sincroniza imediatamente ao abrir o Dashboard para refletir dados de outros dispositivos
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(context)
+                val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                syncService.sincronizarModelosAnamnese()
+                syncService.sincronizarAnamnesesAtribuidas()
+            } catch (_: Exception) {
+            }
+        }
+    }
     val alunos by repository
         .listarAlunos()
         .collectAsState(initial = emptyList())
-
+// Lista todas as anamneses respondidas dos alunos deste professor para o sino de notificações
+    val notificacoesRespondidas by produceState(
+        initialValue = emptyList<Pair<AlunoEntity, AnamneseAtribuidaEntity>>(),
+        key1 = alunos
+    ) {
+        val lista = mutableListOf<Pair<AlunoEntity, AnamneseAtribuidaEntity>>()
+        for (aluno in alunos) {
+            try {
+                val atribuicoes = anamneseAtribuidaRepository
+                    .listarPorAluno(aluno.id)
+                    .first()
+                atribuicoes
+                    .filter { it.status == "RESPONDIDA" }
+                    .forEach { anamnese ->
+                        lista.add(aluno to anamnese)
+                    }
+            } catch (_: Exception) {
+            }
+        }
+        value = lista.sortedByDescending { it.second.updatedAtMillis }
+    }
     val totalAlunos = alunos.size
-
     val alunosEmAtencao = alunos.count { aluno ->
         aluno.status == "Atenção"
     }
-
     val alunosEmDia = alunos.count { aluno ->
         aluno.status == "Normal"
     }
-
     val alunosFiltrados = alunos.filter { aluno ->
         aluno.nome.contains(pesquisa.trim(), ignoreCase = true)
     }
-    val treinos by treinoRepository
-        .listarTodosTreinos()
-        .collectAsState(initial = emptyList())
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2064,8 +1944,6 @@ fun TelaDashboard(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
-
-// Cabeçalho claro padronizado
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2078,24 +1956,55 @@ fun TelaDashboard(
                         )
                     )
                     .statusBarsPadding()
-                    .padding(top = 4.dp, bottom = 12.dp)
+                    .padding(top = 4.dp, bottom = 10.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp),
+                        .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
+// Sino de notificações no canto superior esquerdo/direito ao lado de Sair
+                    Box(
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    ) {
+                        IconButton(
+                            onClick = { mostrarNotificacoes = true }
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    if (notificacoesRespondidas.isNotEmpty()) {
+                                        Badge(
+                                            containerColor = Color(0xFFD32F2F),
+                                            contentColor = Color.White
+                                        ) {
+                                            Text(
+                                                text = notificacoesRespondidas.size.toString(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Notifications,
+                                    contentDescription = "Notificações de anamnese",
+                                    tint = AzulPrincipal,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+                    }
                     Image(
                         painter = painterResource(
                             id = R.drawable.logo_fitcare
                         ),
                         contentDescription = "Logo Ícaro's FitCare",
                         modifier = Modifier
-                            .width(160.dp)
-                            .height(80.dp)
+                            .width(145.dp)
+                            .height(70.dp)
                     )
-
                     Box(
                         modifier = Modifier.align(Alignment.CenterEnd)
                     ) {
@@ -2105,11 +2014,10 @@ fun TelaDashboard(
                     }
                 }
             }
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(top = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
@@ -2120,7 +2028,7 @@ fun TelaDashboard(
                         text = "PERFIL: PROFESSOR",
                         modifier = Modifier.padding(
                             horizontal = 16.dp,
-                            vertical = 7.dp
+                            vertical = 6.dp
                         ),
                         color = AzulPrincipal,
                         fontSize = 12.sp,
@@ -2128,13 +2036,11 @@ fun TelaDashboard(
                     )
                 }
             }
-
             val primeiroNomeProfessor = SessaoUsuario.usuarioAtual
                 ?.nome
                 ?.trim()
                 ?.substringBefore(" ")
                 .orEmpty()
-
             Text(
                 text = if (primeiroNomeProfessor.isNotBlank()) {
                     "Bem-vindo de volta, $primeiroNomeProfessor!"
@@ -2146,15 +2052,15 @@ fun TelaDashboard(
                 modifier = Modifier.padding(
                     start = 22.dp,
                     end = 22.dp,
-                    top = 16.dp,
+                    top = 12.dp,
                     bottom = 0.dp
                 )
             )
-            // Área clara de conteúdo do Dashboard
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 4.dp)            ) {
+                    .padding(horizontal = 18.dp, vertical = 4.dp)
+            ) {
                 Text(
                     text = "Acompanhe seus alunos e seus progressos.",
                     color = TextoPrincipal,
@@ -2212,7 +2118,6 @@ fun TelaDashboard(
                         corFundo = AzulMuitoClaro,
                         corTexto = AzulPrincipal
                     )
-
                     DashboardIndicador(
                         modifier = Modifier.weight(1f),
                         titulo = "Em atenção",
@@ -2220,7 +2125,6 @@ fun TelaDashboard(
                         corFundo = Color(0xFFFFEAB5),
                         corTexto = Color(0xFFB17B00)
                     )
-
                     DashboardIndicador(
                         modifier = Modifier.weight(1f),
                         titulo = "Em dia",
@@ -2276,12 +2180,12 @@ fun TelaDashboard(
                     )
                     DashboardAcao(
                         modifier = Modifier.weight(1f),
-                        titulo = "Central de Atenção",
-                        subtitulo = "Ver casos prioritários",
+                        titulo = "Modelos de anamnese",
+                        subtitulo = "Criar, visualizar e enviar",
                         corFundo = Color(0xFFFFD9DC),
                         corTexto = Color(0xFF9C4350),
-                        icone = "!",
-                        onClick = onAlunos
+                        icone = "📋",
+                        onClick = onModelosAnamnese
                     )
                 }
                 Spacer(modifier = Modifier.height(22.dp))
@@ -2362,9 +2266,90 @@ fun TelaDashboard(
             onMais = onSair
         )
     }
+// Diálogo do sino de notificações (anamneses respondidas pelos alunos)
+    if (mostrarNotificacoes) {
+        AlertDialog(
+            onDismissRequest = { mostrarNotificacoes = false },
+            title = {
+                Text(
+                    text = "Notificações de Anamnese",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AzulPrincipal
+                )
+            },
+            text = {
+                if (notificacoesRespondidas.isEmpty()) {
+                    Text(
+                        text = "Nenhuma anamnese respondida pelos alunos até o momento.",
+                        fontSize = 13.sp,
+                        color = TextoSecundario
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        notificacoesRespondidas.forEach { (aluno, anamnese) ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        mostrarNotificacoes = false
+                                        onPerfil(aluno)
+                                    },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = AzulMuitoClaro
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = "${aluno.nome} respondeu a anamnese",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AzulPrincipal
+                                    )
+                                    Text(
+                                        text = anamnese.nomeModelo,
+                                        fontSize = 12.sp,
+                                        color = TextoPrincipal
+                                    )
+                                    if (anamnese.dataResposta.isNotBlank()) {
+                                        Text(
+                                            text = "Concluída em: ${anamnese.dataResposta}",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                    Text(
+                                        text = "Toque para abrir o perfil ›",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AzulPrincipal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { mostrarNotificacoes = false }
+                ) {
+                    Text("Fechar", color = AzulPrincipal)
+                }
+            }
+        )
+    }
 }
 
-// Indicadores do topo do dashboard
 @Composable
 private fun DashboardIndicador(
     modifier: Modifier = Modifier,
@@ -2397,7 +2382,6 @@ private fun DashboardIndicador(
     }
 }
 
-// Botões das ações rápidas
 @Composable
 private fun DashboardAcao(
     modifier: Modifier = Modifier,
@@ -2447,7 +2431,6 @@ private fun DashboardAcao(
     }
 }
 
-// Elemento individual da listagem rápida de alunos
 @Composable
 private fun DashboardAluno(
     nome: String,
@@ -2535,7 +2518,6 @@ fun TelaAlunos(
 
     val termo = pesquisa.trim()
 
-    // Filtragem dos alunos
     val filtrados = alunos.filter { aluno ->
 
         val correspondeAcompanhamento = when (filtroAcompanhamento) {
@@ -2569,7 +2551,6 @@ fun TelaAlunos(
             .background(FundoApp)
     ) {
 
-        // Conteúdo rolável da tela
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -2577,7 +2558,6 @@ fun TelaAlunos(
                 .verticalScroll(rememberScrollState())
         ) {
 
-            // Cabeçalho com logo e botão voltar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2590,7 +2570,7 @@ fun TelaAlunos(
                         )
                     )
                     .statusBarsPadding()
-                    .padding(top = 4.dp, bottom = 12.dp)
+                    .padding(top = 4.dp, bottom = 10.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -2604,11 +2584,10 @@ fun TelaAlunos(
                         ),
                         contentDescription = "Logo Ícaro's FitCare",
                         modifier = Modifier
-                            .width(160.dp)
-                            .height(80.dp)
+                            .width(145.dp)
+                            .height(70.dp)
                     )
 
-                    // Botão voltar à esquerda
                     Box(
                         modifier = Modifier.align(Alignment.CenterStart)
                     ) {
@@ -2619,14 +2598,12 @@ fun TelaAlunos(
                 }
             }
 
-            // Conteúdo da listagem
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 18.dp, vertical = 14.dp)
             ) {
 
-                // Título e botão de cadastro
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2664,8 +2641,6 @@ fun TelaAlunos(
                         }
                     }
                 }
-
-                // Campo de pesquisa
                 OutlinedTextField(
                     value = pesquisa,
                     onValueChange = { pesquisa = it },
@@ -2688,316 +2663,272 @@ fun TelaAlunos(
                         unfocusedBorderColor = AzulMuitoClaro
                     )
                 )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Filtros de status
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "Todos",
-                        "Normal",
-                        "Atenção",
-                        "Prioridade"
-                    ).forEach { tag ->
-
-                        val selecionado = filtroSelecionado == tag
-
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = if (selecionado) {
-                                        AzulPrincipal
-                                    } else {
-                                        Color.White
-                                    },
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable {
-                                    filtroSelecionado = tag
-                                }
-                                .padding(
-                                    horizontal = 18.dp,
-                                    vertical = 8.dp
-                                )
-                        ) {
-                            Text(
-                                text = tag,
-                                color = if (selecionado) {
-                                    Color.White
-                                } else {
-                                    TextoPrincipal
-                                },
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Filtros de acompanhamento
-                Text(
-                    text = "Acompanhamento",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextoPrincipal
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "Todos",
-                        "Com restrições",
-                        "Com observações"
-                    ).forEach { filtro ->
-
-                        val selecionado =
-                            filtroAcompanhamento == filtro
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (selecionado) {
-                                        AzulMuitoClaro
-                                    } else {
-                                        Branco
-                                    }
-                                )
-                                .clickable {
-                                    filtroAcompanhamento = filtro
-                                }
-                                .padding(
-                                    horizontal = 6.dp,
-                                    vertical = 12.dp
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = filtro,
-                                fontSize = 11.sp,
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "Todos",
+                    "Normal",
+                    "Atenção",
+                    "Prioridade"
+                ).forEach { tag ->
+                    val selecionado = filtroSelecionado == tag
+                    Box(
+                        modifier = Modifier
+                            .background(
                                 color = if (selecionado) {
                                     AzulPrincipal
                                 } else {
-                                    TextoPrincipal
+                                    Color.White
                                 },
-                                fontWeight = if (selecionado) {
-                                    FontWeight.SemiBold
-                                } else {
-                                    FontWeight.Normal
-                                }
+                                shape = RoundedCornerShape(20.dp)
                             )
-                        }
+                            .clickable {
+                                filtroSelecionado = tag
+                            }
+                            .padding(
+                                horizontal = 18.dp,
+                                vertical = 8.dp
+                            )
+                    ) {
+                        Text(
+                            text = tag,
+                            color = if (selecionado) {
+                                Color.White
+                            } else {
+                                TextoPrincipal
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Resultado da filtragem
-                if (filtrados.isEmpty()) {
-
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = "Acompanhamento",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextoPrincipal
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "Todos",
+                    "Com restrições",
+                    "Com observações"
+                ).forEach { filtro ->
+                    val selecionado =
+                        filtroAcompanhamento == filtro
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (selecionado) {
+                                    AzulMuitoClaro
+                                } else {
+                                    Branco
+                                }
+                            )
+                            .clickable {
+                                filtroAcompanhamento = filtro
+                            }
+                            .padding(
+                                horizontal = 6.dp,
+                                vertical = 12.dp
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = filtro,
+                            fontSize = 11.sp,
+                            color = if (selecionado) {
+                                AzulPrincipal
+                            } else {
+                                TextoPrincipal
+                            },
+                            fontWeight = if (selecionado) {
+                                FontWeight.SemiBold
+                            } else {
+                                FontWeight.Normal
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+            if (filtrados.isEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Nenhum aluno encontrado.",
+                            color = TextoPrincipal,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (pesquisa.isBlank()) {
+                                "Não há alunos cadastrados."
+                            } else {
+                                "Tente buscar por outro nome ou altere o filtro."
+                            },
+                            color = TextoSecundario,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            } else {
+                filtrados.forEach { aluno ->
+                    val nome = aluno.nome
+                    val objetivo = aluno.objetivo
+                    val status = aluno.status
+                    val corStatus = when (status) {
+                        "Prioridade" -> Color(0xFFFFD9DC)
+                        "Atenção" -> Color(0xFFFFEAB5)
+                        else -> Color(0xFFDDF4E3)
+                    }
+                    val corTextoStatus = when (status) {
+                        "Prioridade" -> Color(0xFF9C4350)
+                        "Atenção" -> Color(0xFF9A7000)
+                        else -> Color(0xFF39754A)
+                    }
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(bottom = 10.dp)
+                            .clickable {
+                                onSelecionarAluno(aluno)
+                            },
                         shape = RoundedCornerShape(13.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = Color.White
                         )
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.padding(12.dp)
                         ) {
-                            Text(
-                                text = "Nenhum aluno encontrado.",
-                                color = TextoPrincipal,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = if (pesquisa.isBlank()) {
-                                    "Não há alunos cadastrados."
-                                } else {
-                                    "Tente buscar por outro nome ou altere o filtro."
-                                },
-                                color = TextoSecundario,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-
-                } else {
-
-                    // Cartões dos alunos
-                    filtrados.forEach { aluno ->
-
-                        val nome = aluno.nome
-                        val objetivo = aluno.objetivo
-                        val status = aluno.status
-
-                        val corStatus = when (status) {
-                            "Prioridade" -> Color(0xFFFFD9DC)
-                            "Atenção" -> Color(0xFFFFEAB5)
-                            else -> Color(0xFFDDF4E3)
-                        }
-
-                        val corTextoStatus = when (status) {
-                            "Prioridade" -> Color(0xFF9C4350)
-                            "Atenção" -> Color(0xFF9A7000)
-                            else -> Color(0xFF39754A)
-                        }
-
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 10.dp)
-                                .clickable {
-                                    onSelecionarAluno(aluno)
-                                },
-                            shape = RoundedCornerShape(13.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color.White
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(
+                                            Color(0xFFE9E7EC),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
                                 ) {
-
-                                    // Iniciais do aluno
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .background(
-                                                Color(0xFFE9E7EC),
-                                                CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = nome.split(" ")
-                                                .take(2)
-                                                .mapNotNull {
-                                                    it.firstOrNull()
-                                                }
-                                                .joinToString(""),
-                                            color = Color(0xFF706A75),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
-                                        )
-                                    }
-
-                                    Spacer(
-                                        modifier = Modifier.width(12.dp)
-                                    )
-
-                                    // Nome e objetivo
-                                    Column(
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = nome,
-                                            color = TextoPrincipal,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-
-                                        Text(
-                                            text = objetivo,
-                                            color = TextoSecundario,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-
                                     Text(
-                                        text = "›",
-                                        color = Color(0xFF77717F),
-                                        fontSize = 26.sp
+                                        text = nome.split(" ")
+                                            .take(2)
+                                            .mapNotNull {
+                                                it.firstOrNull()
+                                            }
+                                            .joinToString(""),
+                                        color = Color(0xFF706A75),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
                                     )
                                 }
-
                                 Spacer(
-                                    modifier = Modifier.height(10.dp)
+                                    modifier = Modifier.width(12.dp)
                                 )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Column(
+                                    modifier = Modifier.weight(1f)
                                 ) {
-
-                                    // Status do aluno
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = corStatus,
-                                                shape = RoundedCornerShape(20.dp)
-                                            )
-                                            .padding(
-                                                horizontal = 12.dp,
-                                                vertical = 5.dp
-                                            )
-                                    ) {
-                                        Text(
-                                            text = status,
-                                            color = corTextoStatus,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-
                                     Text(
-                                        text = if (modoSelecaoTreino) {
-                                            "Selecionar ›"
-                                        } else {
-                                            "Ver perfil ›"
-                                        },
-                                        color = AzulPrincipal,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium
+                                        text = nome,
+                                        color = TextoPrincipal,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = objetivo,
+                                        color = TextoSecundario,
+                                        fontSize = 12.sp
                                     )
                                 }
+                                Text(
+                                    text = "›",
+                                    color = Color(0xFF77717F),
+                                    fontSize = 26.sp
+                                )
+                            }
+                            Spacer(
+                                modifier = Modifier.height(10.dp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = corStatus,
+                                            shape = RoundedCornerShape(20.dp)
+                                        )
+                                        .padding(
+                                            horizontal = 12.dp,
+                                            vertical = 5.dp
+                                        )
+                                ) {
+                                    Text(
+                                        text = status,
+                                        color = corTextoStatus,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Text(
+                                    text = if (modoSelecaoTreino) {
+                                        "Selecionar ›"
+                                    } else {
+                                        "Ver perfil ›"
+                                    },
+                                    color = AzulPrincipal,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
             }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-
-        // Barra inferior fixa
-        DashboardBottomBar(
-            telaAtual = AppScreen.Alunos,
-            onInicio = onVoltar,
-            onAlunos = {},
-            onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
-        )
     }
+    DashboardBottomBar(
+        telaAtual = AppScreen.Alunos,
+        onInicio = onVoltar,
+        onAlunos = {},
+        onTreinos = onTreinos,
+        onRegistros = {},
+        onMais = {}
+    )
 }
 
-// Modelo de eventos do acompanhamento individual.
-// A persistência usa SharedPreferences para integrar a funcionalidade ao código atual
-// sem exigir alterações no FitCareDatabase já existente.
 data class EventoAluno(
     val id: Long,
     val alunoId: Long,
@@ -3045,7 +2976,7 @@ class EventoAlunoStorage(context: Context) {
                     )
                 )
             }
-        }.sortedWith(compareByDescending<EventoAluno> { it.data }.thenByDescending { it.id })
+        }.sortedWith(compareByDescending<EventoAluno> { e -> e.data }.thenByDescending { e -> e.id })
     }
 
     fun listarPorAluno(alunoId: Long): List<EventoAluno> =
@@ -3053,17 +2984,14 @@ class EventoAlunoStorage(context: Context) {
 
     fun inserir(evento: EventoAluno) {
         val eventos = listarTodos().toMutableList()
-
         val indice = eventos.indexOfFirst {
             it.id == evento.id
         }
-
         if (indice >= 0) {
             eventos[indice] = evento
         } else {
             eventos.add(evento)
         }
-
         salvar(eventos)
     }
 
@@ -3117,30 +3045,36 @@ fun TelaPerfilAluno(
     onTreinos: () -> Unit,
     onEditar: () -> Unit,
     onLinhaDoTempo: () -> Unit,
-    onModelosAnamnese: () -> Unit
+    onModelosAnamnese: () -> Unit,
+    onVisualizarAnamnese: (Long) -> Unit = {}
 ) {
     var alunoAtual by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
     }
-
     var carregando by remember { mutableStateOf(true) }
     var mostrarDialogoExclusao by remember { mutableStateOf(false) }
     var excluindo by remember { mutableStateOf(false) }
     var erroExclusao by remember { mutableStateOf("") }
-
     val scope = rememberCoroutineScope()
     val contextoEventosPerfil = LocalContext.current
-
+// Sincroniza imediatamente ao abrir o perfil do aluno para trazer atualizações de outros aparelhos
+    LaunchedEffect(alunoId) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                syncService.sincronizarAnamnesesAtribuidas()
+            } catch (_: Exception) {
+            }
+        }
+    }
     val documentosAnamnese by anamneseRepository
         .listarDocumentos(alunoId)
         .collectAsState(initial = emptyList())
-
-    // SEPARAÇÃO DOS DOCUMENTOS MÉDICOS E IMAGENS DE COMPARAÇÃO
     val documentosMedicos = documentosAnamnese.filterNot { documento ->
         documento.tipoArquivo.startsWith("comparacao_", ignoreCase = true) ||
                 documento.nomeArquivo.startsWith("comparacao_", ignoreCase = true)
     }
-
     val imagensComparacao = documentosAnamnese.filter { documento ->
         documento.tipoArquivo.startsWith("comparacao_", ignoreCase = true) ||
                 documento.nomeArquivo.startsWith("comparacao_", ignoreCase = true)
@@ -3148,96 +3082,76 @@ fun TelaPerfilAluno(
     val avaliacoesAnamnese by anamneseAtribuidaRepository
         .listarPorAluno(alunoId)
         .collectAsState(initial = emptyList())
-
     val storageEventosPerfil = remember(contextoEventosPerfil) {
         EventoAlunoStorage(contextoEventosPerfil)
     }
-
     var eventosAluno by remember(alunoId) {
         mutableStateOf(storageEventosPerfil.listarPorAluno(alunoId))
     }
-
     var documentoParaExcluir by remember {
         mutableStateOf<br.com.icaros.fitcare.data.DocumentoAnamneseEntity?>(null)
     }
-
     var excluindoDocumento by remember {
         mutableStateOf(false)
     }
-
     var erroExclusaoDocumento by remember {
         mutableStateOf("")
     }
-
     var mostrarCadastroAcessoAluno by remember {
         mutableStateOf(false)
     }
-
     var nomeAcessoAluno by remember { mutableStateOf("") }
     var emailAcessoAluno by remember { mutableStateOf("") }
     var senhaAcessoAluno by remember { mutableStateOf("") }
     var confirmarSenhaAcessoAluno by remember { mutableStateOf("") }
-
     var carregandoCadastroAcesso by remember {
         mutableStateOf(false)
     }
-
     var erroCadastroAcesso by remember { mutableStateOf("") }
     var sucessoCadastroAcesso by remember { mutableStateOf("") }
-
-    // REDEFINIÇÃO DE SENHA
     var mostrarDialogoRedefinirSenha by remember {
         mutableStateOf(false)
     }
-
     var novaSenhaAluno by remember {
         mutableStateOf("")
     }
-
     var confirmarNovaSenhaAluno by remember {
         mutableStateOf("")
     }
-
     var carregandoRedefinicaoSenha by remember {
         mutableStateOf(false)
     }
-
     var erroRedefinicaoSenha by remember {
         mutableStateOf("")
     }
-
     var sucessoRedefinicaoSenha by remember {
         mutableStateOf("")
     }
-
     var verificandoAcessoAluno by remember {
         mutableStateOf(false)
     }
-
     var anamneseParaExcluirId by remember {
         mutableStateOf<Long?>(null)
     }
-
     var excluindoAnamnese by remember {
         mutableStateOf(false)
     }
-
     var erroExclusaoAnamnese by remember {
         mutableStateOf("")
     }
-
     LaunchedEffect(alunoId) {
         repository.buscarPorId(alunoId).collect { resultado ->
             alunoAtual = resultado
+            if (resultado != null) {
+                nomeAcessoAluno = resultado.nome
+                emailAcessoAluno = resultado.email
+            }
             carregando = false
         }
     }
-
     LaunchedEffect(alunoId) {
         eventosAluno = storageEventosPerfil.listarPorAluno(alunoId)
     }
-
-    // CARREGAMENTO
     if (carregando) {
         Column(
             modifier = Modifier
@@ -3247,9 +3161,7 @@ fun TelaPerfilAluno(
             verticalArrangement = Arrangement.Center
         ) {
             CircularProgressIndicator(color = AzulPrincipal)
-
             Spacer(modifier = Modifier.height(12.dp))
-
             Text(
                 text = "Carregando dados do aluno...",
                 color = TextoSecundario,
@@ -3258,8 +3170,6 @@ fun TelaPerfilAluno(
         }
         return
     }
-
-    // ALUNO NÃO ENCONTRADO
     if (alunoAtual == null) {
         Column(
             modifier = Modifier
@@ -3274,17 +3184,13 @@ fun TelaPerfilAluno(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = "Não foi possível localizar os dados deste aluno.",
                 color = TextoSecundario,
                 fontSize = 13.sp
             )
-
             Spacer(modifier = Modifier.height(20.dp))
-
             Button(
                 onClick = onVoltar,
                 colors = ButtonDefaults.buttonColors(
@@ -3296,34 +3202,28 @@ fun TelaPerfilAluno(
         }
         return
     }
-
     val nomeAluno = alunoAtual!!.nome
     val objetivoAluno = alunoAtual!!.objetivo
     val statusAluno = alunoAtual!!.status
     val observacoesProfissionais = alunoAtual!!.observacoesProfissionais
     val condicoes = alunoAtual!!.condicoes
     val restricoes = alunoAtual!!.restricoes
-
     val corStatus = when (statusAluno) {
         "Prioridade" -> Color(0xFFFFD9DC)
         "Atenção" -> Color(0xFFFFEAB5)
         else -> Color(0xFFDDF4E3)
     }
-
     val corTextoStatus = when (statusAluno) {
         "Prioridade" -> Color(0xFF9C4350)
         "Atenção" -> Color(0xFF9A7000)
         else -> Color(0xFF39754A)
     }
-
-    // ESTRUTURA PRINCIPAL
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
     ) {
-
-        // CABEÇALHO COM LOGO
+// Cabeçalho compacto com espaçamento reduzido entre logo e selo PERFIL: PROFESSOR
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3336,7 +3236,7 @@ fun TelaPerfilAluno(
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 4.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 4.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -3350,10 +3250,9 @@ fun TelaPerfilAluno(
                     ),
                     contentDescription = "Logo Ícaro's FitCare",
                     modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                        .width(125.dp)
+                        .height(58.dp)
                 )
-
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
@@ -3364,7 +3263,7 @@ fun TelaPerfilAluno(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp, bottom = 4.dp),
+                .padding(top = 2.dp, bottom = 2.dp),
             contentAlignment = Alignment.Center
         ) {
             Surface(
@@ -3374,57 +3273,49 @@ fun TelaPerfilAluno(
                 Text(
                     text = "PERFIL: PROFESSOR",
                     modifier = Modifier.padding(
-                        horizontal = 16.dp,
-                        vertical = 7.dp
+                        horizontal = 14.dp,
+                        vertical = 5.dp
                     ),
                     color = AzulPrincipal,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
-        // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
-
-            // IDENTIFICAÇÃO DO ALUNO
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(52.dp)
                         .background(Color(0xFFE9E7EC), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("👤", fontSize = 24.sp)
+                    Text("👤", fontSize = 22.sp)
                 }
-
                 Spacer(modifier = Modifier.width(14.dp))
-
                 Column {
                     Text(
                         text = nomeAluno,
                         color = TextoPrincipal,
-                        fontSize = 22.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-
                     Text(
                         text = objetivoAluno,
                         color = TextoSecundario,
-                        fontSize = 14.sp
+                        fontSize = 13.sp
                     )
-
                     Spacer(modifier = Modifier.height(4.dp))
-
                     Box(
                         modifier = Modifier
                             .background(
@@ -3442,14 +3333,11 @@ fun TelaPerfilAluno(
                     }
                 }
             }
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-
-                // DADOS CADASTRAIS
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -3460,9 +3348,7 @@ fun TelaPerfilAluno(
                             tint = AzulPrincipal,
                             modifier = Modifier.size(20.dp)
                         )
-
                         Spacer(modifier = Modifier.width(8.dp))
-
                         Text(
                             text = "Dados cadastrais",
                             fontSize = 15.sp,
@@ -3470,15 +3356,11 @@ fun TelaPerfilAluno(
                             color = TextoPrincipal
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
+                    Spacer(modifier = Modifier.height(10.dp))
                     LinhaDado("E-mail", alunoAtual!!.email)
                     LinhaDado("Cadastro", alunoAtual!!.dataCadastro)
                     LinhaDado("Objetivo", alunoAtual!!.objetivo)
-
                     Spacer(modifier = Modifier.height(4.dp))
-
                     Button(
                         onClick = onEditar,
                         modifier = Modifier
@@ -3497,18 +3379,22 @@ fun TelaPerfilAluno(
                         )
                     }
                 }
-
-                // GERENCIAR ACESSO DO ALUNO
                 Button(
                     onClick = {
+// Puxa sempre os dados cadastrados do aluno ao abrir o gerenciamento de acesso
+                        nomeAcessoAluno = alunoAtual?.nome.orEmpty()
+                        emailAcessoAluno = alunoAtual?.email.orEmpty()
+                        senhaAcessoAluno = ""
+                        confirmarSenhaAcessoAluno = ""
+                        novaSenhaAluno = ""
+                        confirmarNovaSenhaAluno = ""
+                        erroCadastroAcesso = ""
+                        erroRedefinicaoSenha = ""
                         scope.launch {
                             verificandoAcessoAluno = true
-                            erroCadastroAcesso = ""
-
                             try {
                                 val possuiAcesso =
                                     usuarioRepository.alunoPossuiAcesso(alunoId)
-
                                 if (possuiAcesso) {
                                     mostrarDialogoRedefinirSenha = true
                                 } else {
@@ -3540,11 +3426,7 @@ fun TelaPerfilAluno(
                         }
                     )
                 }
-
-                // PEQUENO ESPAÇAMENTO ENTRE OS BOTÕES
                 Spacer(modifier = Modifier.height(8.dp))
-
-                // EXCLUIR ALUNO
                 OutlinedButton(
                     onClick = {
                         erroExclusao = ""
@@ -3564,10 +3446,7 @@ fun TelaPerfilAluno(
                 ) {
                     Text("Excluir aluno")
                 }
-
                 Spacer(modifier = Modifier.height(12.dp))
-
-                // ACOMPANHAMENTO
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -3578,9 +3457,7 @@ fun TelaPerfilAluno(
                             tint = AzulPrincipal,
                             modifier = Modifier.size(20.dp)
                         )
-
                         Spacer(modifier = Modifier.width(8.dp))
-
                         Text(
                             text = "Acompanhamento",
                             fontSize = 15.sp,
@@ -3588,9 +3465,7 @@ fun TelaPerfilAluno(
                             color = TextoPrincipal
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
                             .background(
@@ -3606,23 +3481,19 @@ fun TelaPerfilAluno(
                             fontWeight = FontWeight.Bold
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
+                    Spacer(modifier = Modifier.height(12.dp))
                     LinhaDado(
                         rotulo = "Observações profissionais",
                         valor = observacoesProfissionais.ifBlank {
                             "Não informado."
                         }
                     )
-
                     LinhaDado(
                         rotulo = "Condições",
                         valor = condicoes.ifBlank {
                             "Não informado."
                         }
                     )
-
                     LinhaDado(
                         rotulo = "Restrições",
                         valor = restricoes.ifBlank {
@@ -3630,8 +3501,7 @@ fun TelaPerfilAluno(
                         }
                     )
                 }
-
-                // ANAMNESE E DOCUMENTOS
+// ANAMNESE E DOCUMENTOS (BOTÕES SEPARADOS: ATRIBUIR E VISUALIZAR)
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -3642,9 +3512,7 @@ fun TelaPerfilAluno(
                             tint = AzulPrincipal,
                             modifier = Modifier.size(20.dp)
                         )
-
                         Spacer(modifier = Modifier.width(8.dp))
-
                         Text(
                             text = "Anamnese",
                             fontSize = 15.sp,
@@ -3652,19 +3520,15 @@ fun TelaPerfilAluno(
                             color = TextoPrincipal
                         )
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = "Atribua uma anamnese ao aluno e consulte as respostas e os documentos médicos anexados por ele.",
                         color = TextoSecundario,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // ATRIBUIR ANAMNESE
+                    Spacer(modifier = Modifier.height(12.dp))
+// BOTÃO 1: ATRIBUIR ANAMNESE PARA O ALUNO
                     Button(
                         onClick = onModelosAnamnese,
                         modifier = Modifier
@@ -3675,32 +3539,20 @@ fun TelaPerfilAluno(
                             containerColor = AzulPrincipal
                         )
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Assignment,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
                         Text(
-                            text = "Visualizar anamnese(s)",
+                            text = "Gerenciar documentos de anamnese",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
-
                     Spacer(modifier = Modifier.height(14.dp))
-
                     Text(
-                        text = "Anamneses atribuídas",
+                        text = "Anamneses atribuídas (${avaliacoesAnamnese.size})",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
                     )
-
                     Spacer(modifier = Modifier.height(10.dp))
-
                     if (avaliacoesAnamnese.isEmpty()) {
                         Text(
                             text = "Nenhuma anamnese foi atribuída a este aluno.",
@@ -3709,7 +3561,6 @@ fun TelaPerfilAluno(
                         )
                     } else {
                         avaliacoesAnamnese.forEach { avaliacao ->
-
                             val (rotuloStatus, fundoStatus, textoStatus) =
                                 when (avaliacao.status) {
                                     "NAO_ENVIADA" -> Triple(
@@ -3742,7 +3593,6 @@ fun TelaPerfilAluno(
                                         Color.DarkGray
                                     )
                                 }
-
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -3761,9 +3611,7 @@ fun TelaPerfilAluno(
                                         fontWeight = FontWeight.Bold,
                                         color = TextoPrincipal
                                     )
-
                                     Spacer(modifier = Modifier.height(8.dp))
-
                                     Box(
                                         modifier = Modifier
                                             .background(
@@ -3782,66 +3630,78 @@ fun TelaPerfilAluno(
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
-
                                     if (avaliacao.dataCriacao.isNotBlank()) {
                                         Spacer(modifier = Modifier.height(6.dp))
-
                                         Text(
                                             text = "Criada em: ${avaliacao.dataCriacao}",
                                             fontSize = 11.sp,
                                             color = TextoSecundario
                                         )
                                     }
-                                    if (avaliacao.status == "PENDENTE") {
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        OutlinedButton(
-                                            onClick = {
-                                                anamneseParaExcluirId = avaliacao.id
-                                                erroExclusaoAnamnese = ""
-                                            },
-                                            enabled = !excluindoAnamnese,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                contentColor = Vermelho
-                                            ),
-                                            border = BorderStroke(
-                                                width = 1.dp,
-                                                color = Vermelho
-                                            )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(17.dp)
-                                            )
-
-                                            Spacer(modifier = Modifier.width(6.dp))
-
-                                            Text("Excluir anamnese pendente")
-                                        }
+                                    if (avaliacao.dataResposta.isNotBlank()) {
+                                        Text(
+                                            text = "Respondida em: ${avaliacao.dataResposta}",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            onVisualizarAnamnese(avaliacao.id)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = AzulPrincipal,
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Visibility,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Visualizar anamnese")
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            anamneseParaExcluirId = avaliacao.id
+                                            erroExclusaoAnamnese = ""
+                                        },
+                                        enabled = !excluindoAnamnese,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = Vermelho
+                                        ),
+                                        border = BorderStroke(
+                                            width = 1.dp,
+                                            color = Vermelho
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Excluir anamnese")
                                     }
                                 }
                             }
                         }
                     }
-
                     Spacer(modifier = Modifier.height(14.dp))
-
                     Divider(color = Color.LightGray)
-
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    // DOCUMENTOS ANEXADOS PELO ALUNO
                     Text(
                         text = "Documentos médicos anexados pelo aluno:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
                     )
-
                     Spacer(modifier = Modifier.height(10.dp))
-
                     if (documentosMedicos.isEmpty()) {
                         Text(
                             text = "Nenhum documento médico foi anexado pelo aluno.",
@@ -3873,7 +3733,6 @@ fun TelaPerfilAluno(
                                             color = TextoPrincipal,
                                             modifier = Modifier.weight(1f)
                                         )
-
                                         IconButton(
                                             onClick = {
                                                 documentoParaExcluir = documento
@@ -3888,21 +3747,17 @@ fun TelaPerfilAluno(
                                             )
                                         }
                                     }
-
                                     Text(
                                         text = "Formato: ${documento.tipoArquivo.uppercase()}",
                                         fontSize = 11.sp,
                                         color = TextoSecundario
                                     )
-
                                     Text(
                                         text = "Anexado em: ${documento.dataImportacao}",
                                         fontSize = 11.sp,
                                         color = TextoSecundario
                                     )
-
                                     Spacer(modifier = Modifier.height(8.dp))
-
                                     OutlinedButton(
                                         onClick = {
                                             try {
@@ -3913,7 +3768,8 @@ fun TelaPerfilAluno(
                                             } catch (e: Exception) {
                                                 android.widget.Toast.makeText(
                                                     contextoEventosPerfil,
-                                                    e.message ?: "Não foi possível abrir o documento.",
+                                                    e.message
+                                                        ?: "Não foi possível abrir o documento.",
                                                     android.widget.Toast.LENGTH_LONG
                                                 ).show()
                                             }
@@ -3927,21 +3783,15 @@ fun TelaPerfilAluno(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-
                     Divider(color = Color.LightGray)
-
                     Spacer(modifier = Modifier.height(12.dp))
-
-// IMAGENS DE COMPARAÇÃO
                     Text(
                         text = "Imagens para comparação anexadas pelo aluno:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
                     )
-
                     Spacer(modifier = Modifier.height(10.dp))
-
                     if (imagensComparacao.isEmpty()) {
                         Text(
                             text = "Nenhuma imagem de comparação foi anexada pelo aluno.",
@@ -3973,7 +3823,6 @@ fun TelaPerfilAluno(
                                             color = TextoPrincipal,
                                             modifier = Modifier.weight(1f)
                                         )
-
                                         IconButton(
                                             onClick = {
                                                 documentoParaExcluir = documento
@@ -3988,21 +3837,17 @@ fun TelaPerfilAluno(
                                             )
                                         }
                                     }
-
                                     Text(
                                         text = "Formato: ${documento.tipoArquivo.uppercase()}",
                                         fontSize = 11.sp,
                                         color = TextoSecundario
                                     )
-
                                     Text(
                                         text = "Anexada em: ${documento.dataImportacao}",
                                         fontSize = 11.sp,
                                         color = TextoSecundario
                                     )
-
                                     Spacer(modifier = Modifier.height(8.dp))
-
                                     OutlinedButton(
                                         onClick = {
                                             try {
@@ -4013,7 +3858,8 @@ fun TelaPerfilAluno(
                                             } catch (e: Exception) {
                                                 android.widget.Toast.makeText(
                                                     contextoEventosPerfil,
-                                                    e.message ?: "Não foi possível abrir a imagem.",
+                                                    e.message
+                                                        ?: "Não foi possível abrir a imagem.",
                                                     android.widget.Toast.LENGTH_LONG
                                                 ).show()
                                             }
@@ -4027,8 +3873,7 @@ fun TelaPerfilAluno(
                         }
                     }
                 }
-
-                // HISTÓRICO DO ALUNO
+// HISTÓRICO DO ALUNO
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -4039,9 +3884,7 @@ fun TelaPerfilAluno(
                             tint = AzulPrincipal,
                             modifier = Modifier.size(20.dp)
                         )
-
                         Spacer(modifier = Modifier.width(8.dp))
-
                         Text(
                             text = "Histórico do aluno",
                             fontSize = 15.sp,
@@ -4049,9 +3892,7 @@ fun TelaPerfilAluno(
                             color = TextoPrincipal
                         )
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = if (eventosAluno.isEmpty()) {
                             "Ainda não há registros de acompanhamento para este aluno."
@@ -4062,25 +3903,18 @@ fun TelaPerfilAluno(
                         fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
-
                     Spacer(modifier = Modifier.height(14.dp))
-
                     Text(
                         text = "Evolução da intensidade da dor",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextoPrincipal
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     GraficoIntensidadeDor(eventosAluno)
-
                     Spacer(modifier = Modifier.height(14.dp))
-
                     if (eventosAluno.isNotEmpty()) {
                         val ultimo = eventosAluno.first()
-
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
@@ -4095,19 +3929,15 @@ fun TelaPerfilAluno(
                                     fontWeight = FontWeight.Bold,
                                     color = AzulPrincipal
                                 )
-
                                 Spacer(modifier = Modifier.height(4.dp))
-
                                 Text(
                                     text = "${ultimo.tipo}: ${ultimo.titulo}",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextoPrincipal
                                 )
-
                                 if (ultimo.descricao.isNotBlank()) {
                                     Spacer(modifier = Modifier.height(4.dp))
-
                                     Text(
                                         text = ultimo.descricao,
                                         fontSize = 12.sp,
@@ -4117,10 +3947,8 @@ fun TelaPerfilAluno(
                                 }
                             }
                         }
-
                         Spacer(modifier = Modifier.height(12.dp))
                     }
-
                     Button(
                         onClick = onLinhaDoTempo,
                         modifier = Modifier
@@ -4137,9 +3965,7 @@ fun TelaPerfilAluno(
                             fontWeight = FontWeight.Bold
                         )
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedButton(
                         onClick = { },
                         modifier = Modifier
@@ -4150,12 +3976,9 @@ fun TelaPerfilAluno(
                         Text("Registros: ${eventosAluno.size}")
                     }
                 }
-
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
-
-        // RODAPÉ
         DashboardBottomBar(
             telaAtual = AppScreen.PerfilAluno,
             onInicio = onDashboard,
@@ -4165,9 +3988,8 @@ fun TelaPerfilAluno(
             onMais = {}
         )
     }
-    // Dialógo exclusão de anamnese
+// Diálogo exclusão de anamnese (com sincronização imediata)
     anamneseParaExcluirId?.let { idAnamnese ->
-
         AlertDialog(
             onDismissRequest = {
                 if (!excluindoAnamnese) {
@@ -4181,13 +4003,11 @@ fun TelaPerfilAluno(
             text = {
                 Column {
                     Text(
-                        "Deseja realmente excluir esta anamnese pendente? " +
-                                "Esta ação não poderá ser desfeita."
+                        "Deseja realmente excluir esta anamnese atribuída? " +
+                                "Ela será removida da lista do professor e do aluno."
                     )
-
                     if (erroExclusaoAnamnese.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
-
                         Text(
                             text = erroExclusaoAnamnese,
                             color = Vermelho,
@@ -4202,21 +4022,25 @@ fun TelaPerfilAluno(
                     onClick = {
                         if (!excluindoAnamnese) {
                             excluindoAnamnese = true
-
                             scope.launch {
                                 try {
                                     anamneseAtribuidaRepository.excluir(
                                         idAnamnese
                                     )
-
+                                    withContext(Dispatchers.IO) {
+                                        val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                                        FirestoreSyncService(
+                                            db.usuarioDao(),
+                                            db
+                                        ).sincronizarAnamnesesAtribuidas()
+                                    }
+                                    AlunoSyncWorker.agendar(contextoEventosPerfil)
                                     anamneseParaExcluirId = null
-
                                     android.widget.Toast.makeText(
                                         contextoEventosPerfil,
                                         "Anamnese excluída com sucesso.",
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
-
                                 } catch (e: Exception) {
                                     erroExclusaoAnamnese = e.message
                                         ?: "Não foi possível excluir a anamnese."
@@ -4250,8 +4074,6 @@ fun TelaPerfilAluno(
             }
         )
     }
-
-    // DIÁLOGO DE EXCLUSÃO DE DOCUMENTO
     if (documentoParaExcluir != null) {
         AlertDialog(
             onDismissRequest = {
@@ -4268,19 +4090,15 @@ fun TelaPerfilAluno(
                     Text(
                         "Deseja realmente excluir este documento? O arquivo será removido permanentemente."
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = documentoParaExcluir?.nomeArquivo.orEmpty(),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
                     )
-
                     if (erroExclusaoDocumento.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
-
                         Text(
                             text = erroExclusaoDocumento,
                             color = Color.Red,
@@ -4294,34 +4112,27 @@ fun TelaPerfilAluno(
                     enabled = !excluindoDocumento,
                     onClick = {
                         val documento = documentoParaExcluir
-
                         if (documento != null && !excluindoDocumento) {
                             excluindoDocumento = true
-
                             scope.launch {
                                 try {
                                     val arquivo = java.io.File(
                                         documento.caminhoArquivo
                                     )
-
                                     if (arquivo.exists() && !arquivo.delete()) {
                                         throw Exception(
                                             "Não foi possível remover o arquivo."
                                         )
                                     }
-
                                     anamneseRepository.excluirDocumento(
                                         documento.id
                                     )
-
                                     documentoParaExcluir = null
-
                                     android.widget.Toast.makeText(
                                         contextoEventosPerfil,
                                         "Documento removido com sucesso.",
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
-
                                 } catch (e: Exception) {
                                     erroExclusaoDocumento =
                                         "Não foi possível excluir o documento. Tente novamente."
@@ -4355,8 +4166,6 @@ fun TelaPerfilAluno(
             }
         )
     }
-
-    // DIÁLOGO DE EXCLUSÃO DO ALUNO
     if (mostrarDialogoExclusao) {
         AlertDialog(
             onDismissRequest = {
@@ -4372,7 +4181,6 @@ fun TelaPerfilAluno(
                     Text(
                         "Deseja excluir definitivamente os dados deste aluno? Esta ação não poderá ser desfeita."
                     )
-
                     if (erroExclusao.isNotBlank()) {
                         Text(
                             text = erroExclusao,
@@ -4387,10 +4195,8 @@ fun TelaPerfilAluno(
                     enabled = !excluindo,
                     onClick = {
                         val aluno = alunoAtual
-
                         if (aluno != null && !excluindo) {
                             excluindo = true
-
                             scope.launch {
                                 try {
                                     repository.excluir(aluno)
@@ -4424,8 +4230,7 @@ fun TelaPerfilAluno(
             }
         )
     }
-
-    // DIÁLOGO DE CRIAÇÃO DE ACESSO
+// Diálogo Criar Acesso do Aluno (já puxa nome e e-mail do cadastro do aluno)
     if (mostrarCadastroAcessoAluno) {
         AlertDialog(
             onDismissRequest = {
@@ -4443,32 +4248,28 @@ fun TelaPerfilAluno(
                     )
                 ) {
                     Text(
-                        text = "Crie os dados de acesso para que este aluno possa entrar no Ícaros FitCare.",
+                        text = "Defina a senha inicial para que ${alunoAtual?.nome ?: "o aluno"} acesse o aplicativo:",
                         fontSize = 13.sp
                     )
-
                     Spacer(modifier = Modifier.height(12.dp))
-
                     OutlinedTextField(
                         value = nomeAcessoAluno,
                         onValueChange = { nomeAcessoAluno = it },
                         label = { Text("Nome") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        readOnly = true
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedTextField(
                         value = emailAcessoAluno,
                         onValueChange = { emailAcessoAluno = it },
                         label = { Text("E-mail de acesso") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        readOnly = true
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedTextField(
                         value = senhaAcessoAluno,
                         onValueChange = { senhaAcessoAluno = it },
@@ -4477,9 +4278,7 @@ fun TelaPerfilAluno(
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation()
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedTextField(
                         value = confirmarSenhaAcessoAluno,
                         onValueChange = { confirmarSenhaAcessoAluno = it },
@@ -4488,20 +4287,16 @@ fun TelaPerfilAluno(
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation()
                     )
-
                     if (erroCadastroAcesso.isNotBlank()) {
                         Spacer(modifier = Modifier.height(10.dp))
-
                         Text(
                             text = erroCadastroAcesso,
                             color = Color.Red,
                             fontSize = 12.sp
                         )
                     }
-
                     if (sucessoCadastroAcesso.isNotBlank()) {
                         Spacer(modifier = Modifier.height(10.dp))
-
                         Text(
                             text = sucessoCadastroAcesso,
                             color = Color(0xFF2E7D32),
@@ -4518,10 +4313,8 @@ fun TelaPerfilAluno(
                             erroCadastroAcesso = "As senhas não coincidem."
                             return@TextButton
                         }
-
                         carregandoCadastroAcesso = true
                         erroCadastroAcesso = ""
-
                         scope.launch {
                             try {
                                 usuarioRepository.cadastrarAluno(
@@ -4530,21 +4323,16 @@ fun TelaPerfilAluno(
                                     senha = senhaAcessoAluno,
                                     alunoId = alunoId
                                 )
-
                                 sucessoCadastroAcesso =
                                     "Acesso do aluno criado com sucesso."
-
                                 senhaAcessoAluno = ""
                                 confirmarSenhaAcessoAluno = ""
-
                                 android.widget.Toast.makeText(
                                     contextoEventosPerfil,
                                     "Conta do aluno criada com sucesso.",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
-
                                 mostrarCadastroAcessoAluno = false
-
                             } catch (e: Exception) {
                                 erroCadastroAcesso = e.message
                                     ?: "Não foi possível criar o acesso."
@@ -4575,8 +4363,7 @@ fun TelaPerfilAluno(
             }
         )
     }
-
-    // DIÁLOGO DE REDEFINIÇÃO DE SENHA
+    // Diálogo Redefinir Senha do Aluno (já exibe nome e e-mail do cadastro do aluno)
     if (mostrarDialogoRedefinirSenha) {
         AlertDialog(
             onDismissRequest = {
@@ -4594,12 +4381,12 @@ fun TelaPerfilAluno(
                     )
                 ) {
                     Text(
-                        text = "Defina uma nova senha para o acesso deste aluno.",
-                        fontSize = 13.sp
+                        text = "Aluno: ${alunoAtual?.nome.orEmpty()}\nE-mail: ${alunoAtual?.email.orEmpty()}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextoPrincipal
                     )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
+                    Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = novaSenhaAluno,
                         onValueChange = { novaSenhaAluno = it },
@@ -4608,9 +4395,7 @@ fun TelaPerfilAluno(
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation()
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedTextField(
                         value = confirmarNovaSenhaAluno,
                         onValueChange = { confirmarNovaSenhaAluno = it },
@@ -4619,20 +4404,16 @@ fun TelaPerfilAluno(
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation()
                     )
-
                     if (erroRedefinicaoSenha.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
-
                         Text(
                             text = erroRedefinicaoSenha,
                             color = Color.Red,
                             fontSize = 12.sp
                         )
                     }
-
                     if (sucessoRedefinicaoSenha.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
-
                         Text(
                             text = sucessoRedefinicaoSenha,
                             color = Color(0xFF2E7D32),
@@ -4646,42 +4427,33 @@ fun TelaPerfilAluno(
                     enabled = !carregandoRedefinicaoSenha,
                     onClick = {
                         erroRedefinicaoSenha = ""
-
                         if (novaSenhaAluno.length < 8) {
                             erroRedefinicaoSenha =
                                 "A senha deve ter pelo menos 8 caracteres."
                             return@TextButton
                         }
-
                         if (novaSenhaAluno != confirmarNovaSenhaAluno) {
                             erroRedefinicaoSenha =
                                 "As senhas não coincidem."
                             return@TextButton
                         }
-
                         carregandoRedefinicaoSenha = true
-
                         scope.launch {
                             try {
                                 usuarioRepository.redefinirSenhaDoAluno(
                                     alunoId = alunoId,
                                     novaSenha = novaSenhaAluno
                                 )
-
                                 sucessoRedefinicaoSenha =
                                     "Senha redefinida com sucesso."
-
                                 novaSenhaAluno = ""
                                 confirmarNovaSenhaAluno = ""
-
                                 android.widget.Toast.makeText(
                                     contextoEventosPerfil,
                                     "Senha do aluno atualizada.",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
-
                                 mostrarDialogoRedefinirSenha = false
-
                             } catch (e: Exception) {
                                 erroRedefinicaoSenha = e.message
                                     ?: "Não foi possível redefinir a senha."
@@ -4778,7 +4550,6 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
             typeface = Typeface.DEFAULT
         }
 
-        // Linhas horizontais e escala de intensidade
         for (nivel in 0..10 step 2) {
 
             val y = margemSuperior +
@@ -4799,7 +4570,6 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
             )
         }
 
-        // Posição horizontal e vertical dos registros
         val coordenadas = pontos.mapIndexed { index, intensidade ->
 
             val x = if (pontos.size == 1) {
@@ -4815,7 +4585,6 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
             Offset(x, y)
         }
 
-        // Linhas que conectam os registros
         for (index in 0 until coordenadas.size - 1) {
 
             drawLine(
@@ -4826,7 +4595,6 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
             )
         }
 
-        // Pontos de intensidade
         coordenadas.forEach { ponto ->
 
             drawCircle(
@@ -4836,7 +4604,6 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
             )
         }
 
-        // Datas dos registros
         val paintData = Paint().apply {
             color = android.graphics.Color.GRAY
             textSize = 8.dp.toPx()
@@ -4898,7 +4665,6 @@ fun TelaLinhaDoTempoAluno(
             .background(FundoApp)
     ) {
 
-// CABEÇALHO PADRÃO COM LOGO E BOTÃO VOLTAR
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -4911,7 +4677,7 @@ fun TelaLinhaDoTempoAluno(
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 4.dp, bottom = 12.dp)
+                .padding(top = 4.dp, bottom = 10.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -4920,18 +4686,16 @@ fun TelaLinhaDoTempoAluno(
                 contentAlignment = Alignment.Center
             ) {
 
-                // LOGO CENTRALIZADA
                 Image(
                     painter = painterResource(
                         id = R.drawable.logo_fitcare
                     ),
                     contentDescription = "Logo Ícaro's FitCare",
                     modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                        .width(145.dp)
+                        .height(70.dp)
                 )
 
-                // BOTÃO VOLTAR À ESQUERDA
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
@@ -4942,7 +4706,6 @@ fun TelaLinhaDoTempoAluno(
             }
         }
 
-        // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -5064,7 +4827,6 @@ fun TelaLinhaDoTempoAluno(
                             Column(
                                 modifier = Modifier.padding(14.dp)
                             ) {
-
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -5075,26 +4837,21 @@ fun TelaLinhaDoTempoAluno(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
-
                                     Text(
                                         evento.data,
                                         color = TextoSecundario,
                                         fontSize = 11.sp
                                     )
                                 }
-
                                 Spacer(modifier = Modifier.height(5.dp))
-
                                 Text(
                                     evento.titulo,
                                     color = TextoPrincipal,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-
                                 if (evento.descricao.isNotBlank()) {
                                     Spacer(modifier = Modifier.height(4.dp))
-
                                     Text(
                                         evento.descricao,
                                         color = TextoSecundario,
@@ -5102,19 +4859,15 @@ fun TelaLinhaDoTempoAluno(
                                         maxLines = 3
                                     )
                                 }
-
                                 if (evento.intensidade != null) {
                                     Spacer(modifier = Modifier.height(5.dp))
-
                                     Text(
                                         "Intensidade: ${evento.intensidade}/10",
                                         color = TextoPrincipal,
                                         fontSize = 12.sp
                                     )
                                 }
-
                                 Spacer(modifier = Modifier.height(4.dp))
-
                                 Text(
                                     "Toque para consultar os detalhes",
                                     color = AzulClaro,
@@ -5126,8 +4879,6 @@ fun TelaLinhaDoTempoAluno(
                 }
             }
         }
-
-        // RODAPÉ PADRÃO
         DashboardBottomBar(
             telaAtual = AppScreen.LinhaDoTempoAluno,
             onInicio = onDashboard,
@@ -5137,79 +4888,61 @@ fun TelaLinhaDoTempoAluno(
             onMais = onMais
         )
     }
-
-    // DIÁLOGO DE DETALHES DO EVENTO
     eventoSelecionado?.let { evento ->
-
         AlertDialog(
             onDismissRequest = {
                 eventoSelecionado = null
             },
-
             title = {
                 Text(
                     evento.titulo,
                     color = TextoPrincipal
                 )
             },
-
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(
                         rememberScrollState()
                     )
                 ) {
-
                     Text(
                         "Tipo: ${evento.tipo}",
                         fontWeight = FontWeight.Bold,
                         color = AzulPrincipal
                     )
-
                     Text(
                         "Data: ${evento.data}",
                         color = TextoSecundario
                     )
-
                     EventoDetalhe("Descrição", evento.descricao)
-
                     EventoDetalhe(
                         "Intensidade",
                         evento.intensidade?.let { "$it/10" } ?: ""
                     )
-
                     EventoDetalhe("Localização", evento.localizacao)
-
                     EventoDetalhe(
                         "Momento da ocorrência",
                         evento.momentoOcorrencia
                     )
-
                     EventoDetalhe(
                         "Relação com o treinamento",
                         evento.relacaoTreinamento
                     )
-
                     EventoDetalhe("Limitações", evento.limitacoes)
-
                     EventoDetalhe(
                         "Próxima avaliação",
                         evento.proximaAvaliacao
                     )
-
                     EventoDetalhe(
                         "Contato / ação",
                         evento.contatoAcao
                     )
                 }
             },
-
             confirmButton = {
-
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
                     TextButton(
                         onClick = {
                             storage.excluir(evento.id)
@@ -5217,36 +4950,29 @@ fun TelaLinhaDoTempoAluno(
                             eventoSelecionado = null
                         }
                     ) {
-
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Excluir registro",
                             tint = Color(0xFFC62828)
                         )
-
                         Spacer(modifier = Modifier.width(4.dp))
-
                         Text(
                             "Excluir",
                             color = Color(0xFFC62828)
                         )
                     }
-
                     TextButton(
                         onClick = {
                             eventoSelecionado = null
                             onEditarRegistro(evento)
                         }
                     ) {
-
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "Editar registro",
                             tint = AzulPrincipal
                         )
-
                         Spacer(modifier = Modifier.width(4.dp))
-
                         Text(
                             "Editar",
                             color = AzulPrincipal
@@ -5265,7 +4991,6 @@ fun EventoDetalhe(
 ) {
     if (valor.isNotBlank()) {
         Spacer(modifier = Modifier.height(8.dp))
-
         Column {
             Text(
                 text = rotulo,
@@ -5273,9 +4998,7 @@ fun EventoDetalhe(
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             Spacer(modifier = Modifier.height(2.dp))
-
             Text(
                 text = valor,
                 fontSize = 13.sp,
@@ -5285,7 +5008,6 @@ fun EventoDetalhe(
     }
 }
 
-// Tela de edição de registro da linha do tempo
 @Composable
 fun TelaRegistroEventoAluno(
     alunoId: Long,
@@ -5302,62 +5024,49 @@ fun TelaRegistroEventoAluno(
     var tipo by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.tipo ?: tipos.first())
     }
-
     var data by remember(eventoParaEditar) {
         mutableStateOf(
             eventoParaEditar?.data
                 ?: SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         )
     }
-
     var titulo by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.titulo ?: "")
     }
-
     var descricao by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.descricao ?: "")
     }
-
     var intensidadeTexto by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.intensidade?.toString() ?: "")
     }
-
     var localizacao by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.localizacao ?: "")
     }
-
     var momento by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.momentoOcorrencia ?: "")
     }
-
     var relacaoTreino by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.relacaoTreinamento ?: "")
     }
-
     var limitacoes by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.limitacoes ?: "")
     }
-
     var proximaAvaliacao by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.proximaAvaliacao ?: "")
     }
-
     var contatoAcao by remember(eventoParaEditar) {
         mutableStateOf(eventoParaEditar?.contatoAcao ?: "")
     }
     val context = LocalContext.current
     val storage = remember { EventoAlunoStorage(context) }
-
-
     var erro by remember { mutableStateOf("") }
-
     val scroll = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
+            .navigationBarsPadding()
     ) {
-// CABEÇALHO PADRÃO COM LOGO E BOTÃO VOLTAR
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -5370,7 +5079,7 @@ fun TelaRegistroEventoAluno(
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 4.dp, bottom = 12.dp)
+                .padding(top = 4.dp, bottom = 10.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -5384,10 +5093,9 @@ fun TelaRegistroEventoAluno(
                     ),
                     contentDescription = "Logo Ícaro's FitCare",
                     modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                        .width(145.dp)
+                        .height(70.dp)
                 )
-
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
@@ -5428,7 +5136,6 @@ fun TelaRegistroEventoAluno(
             CampoEvento("Descrição / observação", descricao, minLines = 3) {
                 descricao = it
             }
-
             if (tipo == "Dor / desconforto") {
                 CampoEvento(
                     label = "Intensidade (0 a 10)",
@@ -5438,7 +5145,6 @@ fun TelaRegistroEventoAluno(
                 ) {
                     intensidadeTexto = it.filter(Char::isDigit).take(2)
                 }
-
                 CampoEvento(
                     label = "Localização da dor",
                     value = localizacao,
@@ -5446,7 +5152,6 @@ fun TelaRegistroEventoAluno(
                 ) {
                     localizacao = it
                 }
-
                 CampoEvento(
                     label = "Momento da ocorrência",
                     value = momento,
@@ -5454,7 +5159,6 @@ fun TelaRegistroEventoAluno(
                 ) {
                     momento = it
                 }
-
                 CampoEvento(
                     label = "Relação com o treinamento",
                     value = relacaoTreino,
@@ -5462,7 +5166,6 @@ fun TelaRegistroEventoAluno(
                 ) {
                     relacaoTreino = it
                 }
-
                 CampoEvento(
                     label = "Limitações",
                     value = limitacoes,
@@ -5483,7 +5186,6 @@ fun TelaRegistroEventoAluno(
                     contatoAcao = it
                 }
             }
-
             if (erro.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(erro, color = Vermelho, fontSize = 12.sp)
@@ -5588,38 +5290,34 @@ fun CabecalhoPadrao(
                 start = 8.dp,
                 end = 18.dp,
                 top = 4.dp,
-                bottom = 12.dp
+                bottom = 10.dp
             )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(65.dp),
+                .height(60.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Logo centralizada
             Image(
                 painter = painterResource(
                     id = R.drawable.logo_fitcare
                 ),
                 contentDescription = "Logo Ícaro's FitCare",
                 modifier = Modifier
-                    .width(145.dp)
-                    .height(65.dp)
+                    .width(140.dp)
+                    .height(60.dp)
             )
-
-            // Botão voltar alinhado à esquerda
             BotaoVoltarPadrao(
                 onVoltar = onVoltar,
                 modifier = Modifier.align(Alignment.CenterStart)
             )
         }
-
         Text(
             text = titulo,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 5.dp),
+                .padding(top = 4.dp),
             textAlign = TextAlign.Center,
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
@@ -5639,7 +5337,6 @@ private fun calcularStatusAcompanhamento(
 
     val total =
         contarItens(condicoes) + contarItens(restricoes)
-
     return when {
         total == 0 -> "Normal"
         total == 1 -> "Atenção"
@@ -5647,94 +5344,6 @@ private fun calcularStatusAcompanhamento(
     }
 }
 
-@Composable
-private fun ItemAvaliacaoHistorica(
-    data: String,
-    regiao: String,
-    nota: String,
-    colorNota: Color
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(Color(0xFFFBF9FE), RoundedCornerShape(10.dp))
-            .padding(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .background(Color(0xFFEBE6F7), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "📋", fontSize = 14.sp)
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = data,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
-                )
-                Text(text = regiao, fontSize = 11.sp, color = TextoSecundario)
-            }
-            Text(
-                text = nota,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = colorNota
-            )
-        }
-    }
-}
-
-@Composable
-private fun GraficoHistoricoCustomizado() {
-    val valoresProporcionais = listOf(0.7f, 0.5f, 0.6f, 0.4f)
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFFCFAFF), RoundedCornerShape(8.dp))
-            .padding(start = 14.dp, top = 6.dp, end = 14.dp, bottom = 6.dp)
-    ) {
-        val largura = size.width
-        val altura = size.height
-        for (i in 0..4) {
-            val y = altura * i / 4f
-            drawLine(
-                color = Color(0xFFF0EBF7),
-                start = androidx.compose.ui.geometry.Offset(0f, y),
-                end = androidx.compose.ui.geometry.Offset(largura, y),
-                strokeWidth = 1.dp.toPx()
-            )
-        }
-        val pontos = valoresProporcionais.mapIndexed { index, valor ->
-            androidx.compose.ui.geometry.Offset(
-                x = largura * index / (valoresProporcionais.size - 1).toFloat(),
-                y = altura * (1f - valor)
-            )
-        }
-        for (i in 0 until pontos.lastIndex) {
-            drawLine(
-                color = Color(0xFFE34B63),
-                start = pontos[i],
-                end = pontos[i + 1],
-                strokeWidth = 2.5.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-        }
-        pontos.forEach { ponto ->
-            drawCircle(color = Color(0xFFE34B63), radius = 4.5.dp.toPx(), center = ponto)
-        }
-    }
-}
-
-// Tela do formulário de edição do aluno
 @Composable
 fun TelaEditarAluno(
     alunoId: Long,
@@ -5748,124 +5357,97 @@ fun TelaEditarAluno(
     var alunoOriginal by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
     }
-
     var carregando by remember { mutableStateOf(true) }
-
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var objetivo by remember { mutableStateOf("") }
     var observacoes by remember { mutableStateOf("") }
-
-    val opcoesCondicoes = listOf(
-        "Hipertensão",
-        "Diabetes",
-        "Dor lombar",
-        "Dor no joelho",
-        "Dor no ombro",
-        "Problema cardíaco"
-    )
-
-    val opcoesRestricoes = listOf(
-        "Evitar exercícios de alto impacto",
-        "Evitar agachamentos profundos",
-        "Limitar cargas elevadas",
-        "Evitar exercícios acima da cabeça",
-        "Limitar amplitude de movimento"
-    )
-
+    val opcoesCondicoes = OPCOES_CONDICOES_PADRAO
+    val opcoesRestricoes = OPCOES_RESTRICOES_PADRAO
     var condicoesSelecionadas by remember {
         mutableStateOf(setOf<String>())
     }
-
     var restricoesSelecionadas by remember {
         mutableStateOf(setOf<String>())
     }
-
     var outraCondicao by remember {
         mutableStateOf("")
     }
-
     var outraRestricao by remember {
         mutableStateOf("")
     }
-
     var erro by remember { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) }
-
     val scope = rememberCoroutineScope()
-
     val requesterObservacoes = remember {
         BringIntoViewRequester()
     }
-
     val requesterOutraCondicao = remember {
         BringIntoViewRequester()
     }
-
     val requesterOutraRestricao = remember {
         BringIntoViewRequester()
     }
-
-    // CARREGAR DADOS DO ALUNO
     LaunchedEffect(alunoId) {
         repository.buscarPorId(alunoId).collect { aluno ->
-
             if (alunoOriginal == null && aluno != null) {
-
                 alunoOriginal = aluno
-
                 nome = aluno.nome
                 email = aluno.email
                 objetivo = aluno.objetivo
                 observacoes = aluno.observacoesProfissionais
-
-                val condicoesSalvas = aluno.condicoes
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-
-                val restricoesSalvas = aluno.restricoes
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-
+                val condicoesSalvas =
+                    condicoesSelecionadas
+                        .filter { it != "Outro" }
+                        .toMutableList()
+                if (
+                    condicoesSelecionadas.contains("Outro") &&
+                    outraCondicao.isNotBlank()
+                ) {
+                    condicoesSalvas.add(
+                        outraCondicao.trim()
+                    )
+                }
+                val restricoesSalvas =
+                    restricoesSelecionadas
+                        .filter { it != "Outro" }
+                        .toMutableList()
+                if (
+                    restricoesSelecionadas.contains("Outro") &&
+                    outraRestricao.isNotBlank()
+                ) {
+                    restricoesSalvas.add(
+                        outraRestricao.trim()
+                    )
+                }
                 val condicoesPadrao = condicoesSalvas
                     .filter { opcoesCondicoes.contains(it) }
                     .toSet()
-
                 val outrasCondicoes = condicoesSalvas
                     .filter { !opcoesCondicoes.contains(it) }
-
                 val restricoesPadrao = restricoesSalvas
                     .filter { opcoesRestricoes.contains(it) }
                     .toSet()
-
                 val outrasRestricoes = restricoesSalvas
                     .filter { !opcoesRestricoes.contains(it) }
-
                 condicoesSelecionadas =
                     if (outrasCondicoes.isNotEmpty()) {
                         condicoesPadrao + "Outro"
                     } else {
                         condicoesPadrao
                     }
-
                 restricoesSelecionadas =
                     if (outrasRestricoes.isNotEmpty()) {
                         restricoesPadrao + "Outro"
                     } else {
                         restricoesPadrao
                     }
-
                 outraCondicao = outrasCondicoes.joinToString(", ")
                 outraRestricao = outrasRestricoes.joinToString(", ")
             }
-
             carregando = false
         }
     }
-
-    // TELA DE CARREGAMENTO
     if (carregando) {
         Box(
             modifier = Modifier
@@ -5875,20 +5457,14 @@ fun TelaEditarAluno(
         ) {
             CircularProgressIndicator(color = AzulPrincipal)
         }
-
         return
     }
-
     val original = alunoOriginal ?: return
-
-    // ESTRUTURA PRINCIPAL
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
     ) {
-
-        // CABEÇALHO COM LOGO E BOTÃO VOLTAR
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -5901,28 +5477,23 @@ fun TelaEditarAluno(
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 4.dp, bottom = 12.dp)
+                .padding(top = 4.dp, bottom = 10.dp)
         ) {
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
-
-                // LOGO CENTRALIZADA
                 Image(
                     painter = painterResource(
                         id = R.drawable.logo_fitcare
                     ),
                     contentDescription = "Logo Ícaro's FitCare",
                     modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                        .width(145.dp)
+                        .height(70.dp)
                 )
-
-                // BOTÃO VOLTAR À ESQUERDA
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
@@ -5932,8 +5503,6 @@ fun TelaEditarAluno(
                 }
             }
         }
-
-        // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -5963,7 +5532,6 @@ fun TelaEditarAluno(
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
-
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -5972,7 +5540,6 @@ fun TelaEditarAluno(
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
-
             OutlinedTextField(
                 value = objetivo,
                 onValueChange = { objetivo = it },
@@ -5982,24 +5549,19 @@ fun TelaEditarAluno(
                 maxLines = 4,
                 shape = RoundedCornerShape(10.dp)
             )
-
             Spacer(modifier = Modifier.height(4.dp))
-
             Text(
                 text = "Condições",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             Text(
-                text = "Selecione as condições que se aplicam ao aluno.",
+                text = "Selecione as condições que se aplicam ao aluno (sincronizado com a anamnese).",
                 fontSize = 12.sp,
                 color = TextoSecundario
             )
-
             opcoesCondicoes.forEach { condicao ->
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -6025,7 +5587,6 @@ fun TelaEditarAluno(
                                 }
                         }
                     )
-
                     Text(
                         text = condicao,
                         fontSize = 14.sp,
@@ -6033,8 +5594,6 @@ fun TelaEditarAluno(
                     )
                 }
             }
-
-            // OUTRA CONDIÇÃO
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -6060,16 +5619,13 @@ fun TelaEditarAluno(
                             }
                     }
                 )
-
                 Text(
                     text = "Outro",
                     fontSize = 14.sp,
                     color = TextoPrincipal
                 )
             }
-
             if (condicoesSelecionadas.contains("Outro")) {
-
                 OutlinedTextField(
                     value = outraCondicao,
                     onValueChange = { outraCondicao = it },
@@ -6091,25 +5647,19 @@ fun TelaEditarAluno(
                     shape = RoundedCornerShape(10.dp)
                 )
             }
-
             Spacer(modifier = Modifier.height(4.dp))
-
-            // RESTRIÇÕES
             Text(
                 text = "Restrições",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             Text(
                 text = "Selecione as restrições que devem ser consideradas durante os treinos.",
                 fontSize = 12.sp,
                 color = TextoSecundario
             )
-
             opcoesRestricoes.forEach { restricao ->
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -6135,7 +5685,6 @@ fun TelaEditarAluno(
                                 }
                         }
                     )
-
                     Text(
                         text = restricao,
                         fontSize = 14.sp,
@@ -6143,8 +5692,6 @@ fun TelaEditarAluno(
                     )
                 }
             }
-
-            // OUTRA RESTRIÇÃO
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -6170,16 +5717,13 @@ fun TelaEditarAluno(
                             }
                     }
                 )
-
                 Text(
                     text = "Outro",
                     fontSize = 14.sp,
                     color = TextoPrincipal
                 )
             }
-
             if (restricoesSelecionadas.contains("Outro")) {
-
                 OutlinedTextField(
                     value = outraRestricao,
                     onValueChange = {
@@ -6206,8 +5750,6 @@ fun TelaEditarAluno(
                     shape = RoundedCornerShape(10.dp)
                 )
             }
-
-            // OBSERVAÇÕES PROFISSIONAIS
             OutlinedTextField(
                 value = observacoes,
                 onValueChange = {
@@ -6230,8 +5772,6 @@ fun TelaEditarAluno(
                 maxLines = 6,
                 shape = RoundedCornerShape(10.dp)
             )
-
-            // MENSAGEM DE ERRO
             if (erro.isNotBlank()) {
                 Text(
                     text = erro,
@@ -6240,16 +5780,12 @@ fun TelaEditarAluno(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-
-            // SALVAR ALTERAÇÕES
             Button(
                 onClick = {
-
                     if (nome.isBlank()) {
                         erro = "Informe o nome do aluno."
                         return@Button
                     }
-
                     if (
                         condicoesSelecionadas.contains("Outro") &&
                         outraCondicao.isBlank()
@@ -6257,7 +5793,6 @@ fun TelaEditarAluno(
                         erro = "Descreva a outra condição selecionada."
                         return@Button
                     }
-
                     if (
                         restricoesSelecionadas.contains("Outro") &&
                         outraRestricao.isBlank()
@@ -6265,19 +5800,14 @@ fun TelaEditarAluno(
                         erro = "Descreva a outra restrição selecionada."
                         return@Button
                     }
-
                     erro = ""
-
                     scope.launch {
                         salvando = true
-
                         try {
-
                             val condicoesSalvas =
                                 condicoesSelecionadas
                                     .filter { it != "Outro" }
                                     .toMutableList()
-
                             if (
                                 condicoesSelecionadas.contains("Outro") &&
                                 outraCondicao.isNotBlank()
@@ -6286,12 +5816,10 @@ fun TelaEditarAluno(
                                     outraCondicao.trim()
                                 )
                             }
-
                             val restricoesSalvas =
                                 restricoesSelecionadas
                                     .filter { it != "Outro" }
                                     .toMutableList()
-
                             if (
                                 restricoesSelecionadas.contains("Outro") &&
                                 outraRestricao.isNotBlank()
@@ -6300,18 +5828,14 @@ fun TelaEditarAluno(
                                     outraRestricao.trim()
                                 )
                             }
-
                             val condicoesTexto =
                                 condicoesSalvas.joinToString(", ")
-
                             val restricoesTexto =
                                 restricoesSalvas.joinToString(", ")
-
                             val status = calcularStatusAcompanhamento(
                                 condicoes = condicoesTexto,
                                 restricoes = restricoesTexto
                             )
-
                             repository.atualizar(
                                 original.copy(
                                     nome = nome.trim(),
@@ -6323,15 +5847,11 @@ fun TelaEditarAluno(
                                     status = status
                                 )
                             )
-
                             onSalvo()
-
                         } catch (e: Exception) {
-
                             erro =
                                 "Não foi possível salvar as alterações: " +
                                         (e.message ?: "erro desconhecido")
-
                         } finally {
                             salvando = false
                         }
@@ -6357,11 +5877,8 @@ fun TelaEditarAluno(
                     fontWeight = FontWeight.Bold
                 )
             }
-
             Spacer(modifier = Modifier.height(12.dp))
         }
-
-        // RODAPÉ FIXADO NA PARTE INFERIOR
         DashboardBottomBar(
             telaAtual = AppScreen.EditarAluno,
             onInicio = onDashboard,
@@ -6373,20 +5890,10 @@ fun TelaEditarAluno(
     }
 }
 
-private data class RowTreinoData(
-    val aluno: String,
-    val nomeTreino: String,
-    val periodo: String,
-    val frequencia: String,
-    val progresso: Float,
-    val statusTxt: String,
-    val corStatus: Color,
-    val corTxt: Color
-)
-
+// Rodapé com navigationBarsPadding() para não ficar atrás das teclas de navegação (Motorola)
 @Composable
 private fun DashboardBottomBar(
-    telaAtual: AppScreen, // CORRIGIDO: Adicionado explicitamente o tipo do parâmetro ': AppScreen'
+    telaAtual: AppScreen,
     onInicio: () -> Unit,
     onAlunos: () -> Unit,
     onTreinos: () -> Unit,
@@ -6394,14 +5901,16 @@ private fun DashboardBottomBar(
     onMais: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
         color = Color.White,
         shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(68.dp),
+                .height(64.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
@@ -6496,15 +6005,12 @@ fun TelaTreinos(
     var pesquisa by remember {
         mutableStateOf("")
     }
-
     val treinos by treinoRepository
         .listarTodosTreinos()
         .collectAsState(initial = emptyList())
-
     val alunos by repository
         .listarAlunos()
         .collectAsState(initial = emptyList())
-
     val formatoData = remember {
         java.text.SimpleDateFormat(
             "dd/MM/yyyy",
@@ -6513,7 +6019,6 @@ fun TelaTreinos(
             isLenient = false
         }
     }
-
     val hoje = remember {
         java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, 0)
@@ -6522,7 +6027,6 @@ fun TelaTreinos(
             set(java.util.Calendar.MILLISECOND, 0)
         }.time
     }
-
     val limiteVencimento = remember {
         java.util.Calendar.getInstance().apply {
             time = hoje
@@ -6530,10 +6034,8 @@ fun TelaTreinos(
         }.time
     }
 
-    // CONVERTE A DATA PARA COMPARAÇÃO
     fun converterData(dataTexto: String): java.util.Date? {
         if (dataTexto.isBlank()) return null
-
         return try {
             formatoData.parse(dataTexto)
         } catch (_: Exception) {
@@ -6541,39 +6043,27 @@ fun TelaTreinos(
         }
     }
 
-    // TREINOS ATIVOS
     val treinosAtivos = treinos.count { treino ->
         val dataFim = converterData(treino.dataFim)
-
         dataFim == null || !dataFim.before(hoje)
     }
-
-    // TREINOS A VENCER NOS PRÓXIMOS 7 DIAS
     val treinosAVencer = treinos.count { treino ->
         val dataFim = converterData(treino.dataFim)
-
         dataFim != null &&
                 !dataFim.before(hoje) &&
                 !dataFim.after(limiteVencimento)
     }
-
-    // TREINOS VENCIDOS
     val treinosVencidos = treinos.count { treino ->
         val dataFim = converterData(treino.dataFim)
-
         dataFim != null && dataFim.before(hoje)
     }
-
-    // FILTRO DE TREINOS
     val treinosFiltrados = treinos.filter { treino ->
-
         val nomeAluno = alunos
             .firstOrNull { aluno ->
                 aluno.id == treino.alunoId
             }
             ?.nome
             .orEmpty()
-
         nomeAluno.contains(
             pesquisa,
             ignoreCase = true
@@ -6582,15 +6072,11 @@ fun TelaTreinos(
             ignoreCase = true
         )
     }
-
-    // ESTRUTURA PRINCIPAL
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
     ) {
-
-        // CABEÇALHO COM LOGO ABAIXO DA BARRA DE STATUS
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -6603,10 +6089,8 @@ fun TelaTreinos(
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 4.dp, bottom = 12.dp)
+                .padding(top = 4.dp, bottom = 10.dp)
         ) {
-
-            // BOTÃO VOLTAR
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -6616,8 +6100,6 @@ fun TelaTreinos(
                     onVoltar = onVoltar
                 )
             }
-
-            // LOGO CENTRALIZADA
             Image(
                 painter = painterResource(
                     id = R.drawable.logo_fitcare
@@ -6625,19 +6107,16 @@ fun TelaTreinos(
                 contentDescription = "Logo Ícaro's FitCare",
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .width(160.dp)
-                    .height(80.dp)
+                    .width(145.dp)
+                    .height(70.dp)
             )
         }
-
-        // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -6646,15 +6125,12 @@ fun TelaTreinos(
                         vertical = 14.dp
                     )
             ) {
-
-                // TÍTULO E BOTÃO NOVO TREINO
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
                     Column(
                         modifier = Modifier.weight(1f)
                     ) {
@@ -6664,14 +6140,12 @@ fun TelaTreinos(
                             fontWeight = FontWeight.Bold,
                             color = TextoPrincipal
                         )
-
                         Text(
                             text = "Gerencie os planejamentos dos seus alunos.",
                             color = TextoSecundario,
                             fontSize = 13.sp
                         )
                     }
-
                     Button(
                         onClick = onNovoTreino,
                         colors = ButtonDefaults.buttonColors(
@@ -6691,8 +6165,6 @@ fun TelaTreinos(
                         )
                     }
                 }
-
-                // CAMPO DE PESQUISA
                 OutlinedTextField(
                     value = pesquisa,
                     onValueChange = {
@@ -6729,17 +6201,13 @@ fun TelaTreinos(
                         unfocusedBorderColor = AzulMuitoClaro
                     )
                 )
-
                 Spacer(
                     modifier = Modifier.height(14.dp)
                 )
-
-                // INDICADORES
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-
                     DashboardIndicador(
                         modifier = Modifier.weight(1f),
                         titulo = "Treinos ativos",
@@ -6747,7 +6215,6 @@ fun TelaTreinos(
                         corFundo = Color(0xFFDCEBFF),
                         corTexto = Color(0xFF416C93)
                     )
-
                     DashboardIndicador(
                         modifier = Modifier.weight(1f),
                         titulo = "A vencer (7 dias)",
@@ -6755,7 +6222,6 @@ fun TelaTreinos(
                         corFundo = Color(0xFFFFEAB5),
                         corTexto = Color(0xFFB17B00)
                     )
-
                     DashboardIndicador(
                         modifier = Modifier.weight(1f),
                         titulo = "Vencidos",
@@ -6764,12 +6230,9 @@ fun TelaTreinos(
                         corTexto = Color(0xFF9C4350)
                     )
                 }
-
                 Spacer(
                     modifier = Modifier.height(20.dp)
                 )
-
-                // TÍTULO DA LISTA
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -6780,21 +6243,16 @@ fun TelaTreinos(
                         fontWeight = FontWeight.Bold,
                         color = TextoPrincipal
                     )
-
                     Text(
                         text = "Filtrar por situação",
                         fontSize = 12.sp,
                         color = TextoSecundario
                     )
                 }
-
                 Spacer(
                     modifier = Modifier.height(10.dp)
                 )
-
-                // LISTA VAZIA
                 if (treinosFiltrados.isEmpty()) {
-
                     Text(
                         text = if (pesquisa.isBlank()) {
                             "Nenhum treino cadastrado ainda."
@@ -6808,41 +6266,32 @@ fun TelaTreinos(
                         color = TextoSecundario,
                         fontSize = 14.sp
                     )
-
                 } else {
-
-                    // CARTÕES DOS TREINOS
                     treinosFiltrados.forEach { item ->
-
                         val nomeAluno = alunos
                             .firstOrNull { aluno ->
                                 aluno.id == item.alunoId
                             }
                             ?.nome
                             ?: "Aluno não encontrado"
-
                         val dataFim = item.dataFim.trim()
                         val dataFimConvertida = converterData(dataFim)
-
                         val status = when {
                             dataFim.isBlank() -> "Sem prazo"
                             dataFimConvertida == null -> "Data inválida"
                             dataFimConvertida.before(hoje) -> "Vencido"
                             else -> "Ativo"
                         }
-
                         val corStatus = when (status) {
                             "Vencido" -> Color(0xFFFFD9DC)
                             "Ativo" -> Color(0xFFD8F3DF)
                             else -> Color(0xFFE5EAF0)
                         }
-
                         val corTextoStatus = when (status) {
                             "Vencido" -> Color(0xFF9C4350)
                             "Ativo" -> Color(0xFF36844A)
                             else -> TextoSecundario
                         }
-
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -6858,17 +6307,13 @@ fun TelaTreinos(
                                 defaultElevation = 2.dp
                             )
                         ) {
-
                             Column(
                                 modifier = Modifier.padding(14.dp)
                             ) {
-
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
-                                    // ÍCONE DO ALUNO
                                     Box(
                                         modifier = Modifier
                                             .size(40.dp)
@@ -6883,34 +6328,28 @@ fun TelaTreinos(
                                             fontSize = 16.sp
                                         )
                                     }
-
                                     Spacer(
                                         modifier = Modifier.width(12.dp)
                                     )
-
                                     Column(
                                         modifier = Modifier.weight(1f)
                                     ) {
-
                                         Text(
                                             text = "Aluno: $nomeAluno",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
                                             color = TextoPrincipal
                                         )
-
                                         Text(
                                             text = "Treino: ${item.nome}",
                                             fontSize = 13.sp,
                                             color = TextoPrincipal
                                         )
-
                                         Text(
                                             text = "Início: ${item.dataInicio}",
                                             fontSize = 11.sp,
                                             color = TextoSecundario
                                         )
-
                                         Text(
                                             text = "Término: ${
                                                 if (dataFim.isBlank()) {
@@ -6923,12 +6362,9 @@ fun TelaTreinos(
                                             color = TextoSecundario
                                         )
                                     }
-
                                     Spacer(
                                         modifier = Modifier.width(8.dp)
                                     )
-
-                                    // STATUS
                                     Box(
                                         modifier = Modifier
                                             .background(
@@ -6948,39 +6384,29 @@ fun TelaTreinos(
                                         )
                                     }
                                 }
-
-                                // DESCRIÇÃO
                                 if (item.descricao.isNotBlank()) {
-
                                     Spacer(
                                         modifier = Modifier.height(12.dp)
                                     )
-
                                     Text(
                                         text = item.descricao,
                                         fontSize = 12.sp,
                                         color = TextoSecundario
                                     )
                                 }
-
-                                // OBSERVAÇÕES
                                 if (item.observacoes.isNotBlank()) {
-
                                     Spacer(
                                         modifier = Modifier.height(6.dp)
                                     )
-
                                     Text(
                                         text = "Observações: ${item.observacoes}",
                                         fontSize = 12.sp,
                                         color = TextoSecundario
                                     )
                                 }
-
                                 Spacer(
                                     modifier = Modifier.height(12.dp)
                                 )
-
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.End
@@ -6996,14 +6422,11 @@ fun TelaTreinos(
                         }
                     }
                 }
-
                 Spacer(
                     modifier = Modifier.height(12.dp)
                 )
             }
         }
-
-        // RODAPÉ FIXADO NA PARTE INFERIOR
         DashboardBottomBar(
             telaAtual = AppScreen.Treinos,
             onInicio = onVoltar,
@@ -7029,40 +6452,30 @@ fun TelaFormularioTreino(
     var dataInicio by remember { mutableStateOf("") }
     var dataFim by remember { mutableStateOf("") }
     var observacoes by remember { mutableStateOf("") }
-
     var mensagemErro by remember { mutableStateOf<String?>(null) }
     var salvando by remember { mutableStateOf(false) }
     var mostrarDialogoExcluir by remember { mutableStateOf(false) }
-
     val exercicios = remember {
         mutableStateListOf(ExercicioFormulario())
     }
-
     val scope = rememberCoroutineScope()
     val contextoEventos = LocalContext.current
-
     val eventoStorage = remember(contextoEventos) {
         EventoAlunoStorage(contextoEventos)
     }
-
-    // CARREGA OS DADOS DO TREINO EXISTENTE
     LaunchedEffect(treinoId) {
         if (treinoId != null) {
             val treino = treinoRepository.buscarTreinoPorId(treinoId)
-
             if (treino != null) {
                 nome = treino.nome
                 descricao = treino.descricao
                 dataInicio = treino.dataInicio
                 dataFim = treino.dataFim
                 observacoes = treino.observacoes
-
                 val exerciciosExistentes = treinoRepository
                     .listarExercicios(treinoId)
                     .first()
-
                 exercicios.clear()
-
                 exerciciosExistentes
                     .sortedBy { it.ordem }
                     .forEach { exercicio ->
@@ -7076,15 +6489,12 @@ fun TelaFormularioTreino(
                             )
                         )
                     }
-
                 if (exercicios.isEmpty()) {
                     exercicios.add(ExercicioFormulario())
                 }
             }
         }
     }
-
-    // DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO
     if (mostrarDialogoExcluir && treinoId != null) {
         AlertDialog(
             onDismissRequest = {
@@ -7107,24 +6517,18 @@ fun TelaFormularioTreino(
                         scope.launch {
                             try {
                                 salvando = true
-
                                 val treino = treinoRepository
                                     .buscarTreinoPorId(treinoId)
-
                                 if (treino != null) {
                                     treinoRepository.excluirTreino(treino)
                                 }
-
                                 mostrarDialogoExcluir = false
                                 onSalvo()
-
                             } catch (e: Exception) {
                                 mensagemErro =
                                     "Não foi possível excluir o treino: " +
                                             (e.message ?: "erro inesperado.")
-
                                 mostrarDialogoExcluir = false
-
                             } finally {
                                 salvando = false
                             }
@@ -7150,15 +6554,12 @@ fun TelaFormularioTreino(
             }
         )
     }
-
-    // ESTRUTURA PRINCIPAL
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
+            .navigationBarsPadding()
     ) {
-
-        // CABEÇALHO COM LOGO ABAIXO DA BARRA DE STATUS
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -7171,10 +6572,8 @@ fun TelaFormularioTreino(
                     )
                 )
                 .statusBarsPadding()
-                .padding(vertical = 12.dp)
+                .padding(vertical = 10.dp)
         ) {
-
-            // BOTÃO VOLTAR
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -7184,8 +6583,6 @@ fun TelaFormularioTreino(
                     onVoltar = onVoltar
                 )
             }
-
-            // LOGO CENTRALIZADA
             Image(
                 painter = painterResource(
                     id = R.drawable.logo_fitcare
@@ -7193,11 +6590,9 @@ fun TelaFormularioTreino(
                 contentDescription = "Logo Ícaro's FitCare",
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .width(160.dp)
-                    .height(80.dp)
+                    .width(145.dp)
+                    .height(70.dp)
             )
-
-            // LIXEIRA
             if (treinoId != null) {
                 IconButton(
                     onClick = {
@@ -7216,8 +6611,6 @@ fun TelaFormularioTreino(
                 }
             }
         }
-
-        // CONTEÚDO ROLÁVEL
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -7226,7 +6619,6 @@ fun TelaFormularioTreino(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-
             Text(
                 text = if (treinoId == null) {
                     "Novo treino"
@@ -7237,7 +6629,6 @@ fun TelaFormularioTreino(
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             Text(
                 text = if (treinoId == null) {
                     "Cadastre o planejamento e os exercícios do aluno."
@@ -7247,8 +6638,6 @@ fun TelaFormularioTreino(
                 fontSize = 14.sp,
                 color = TextoSecundario
             )
-
-            // NOME DO TREINO
             OutlinedTextField(
                 value = nome,
                 onValueChange = {
@@ -7264,8 +6653,6 @@ fun TelaFormularioTreino(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-
-            // DESCRIÇÃO
             OutlinedTextField(
                 value = descricao,
                 onValueChange = {
@@ -7277,8 +6664,6 @@ fun TelaFormularioTreino(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
-
-            // DATA DE INÍCIO
             OutlinedTextField(
                 value = dataInicio,
                 onValueChange = {
@@ -7297,8 +6682,6 @@ fun TelaFormularioTreino(
                     keyboardType = KeyboardType.Ascii
                 )
             )
-
-            // DATA DE TÉRMINO
             OutlinedTextField(
                 value = dataFim,
                 onValueChange = {
@@ -7317,8 +6700,6 @@ fun TelaFormularioTreino(
                     keyboardType = KeyboardType.Ascii
                 )
             )
-
-            // OBSERVAÇÕES
             OutlinedTextField(
                 value = observacoes,
                 onValueChange = {
@@ -7330,19 +6711,14 @@ fun TelaFormularioTreino(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
-
             HorizontalDivider()
-
-            // EXERCÍCIOS
             Text(
                 text = "Exercícios",
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
             )
-
             exercicios.forEachIndexed { index, exercicio ->
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -7352,24 +6728,20 @@ fun TelaFormularioTreino(
                         defaultElevation = 2.dp
                     )
                 ) {
-
                     Column(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-
                             Text(
                                 text = "Exercício ${index + 1}",
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.Bold,
                                 color = TextoPrincipal
                             )
-
                             if (exercicios.size > 1) {
                                 TextButton(
                                     onClick = {
@@ -7383,8 +6755,6 @@ fun TelaFormularioTreino(
                                 }
                             }
                         }
-
-                        // NOME DO EXERCÍCIO
                         OutlinedTextField(
                             value = exercicio.nome,
                             onValueChange = {
@@ -7400,13 +6770,10 @@ fun TelaFormularioTreino(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
-
-                        // SÉRIES E REPETIÇÕES
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-
                             OutlinedTextField(
                                 value = exercicio.series,
                                 onValueChange = {
@@ -7422,7 +6789,6 @@ fun TelaFormularioTreino(
                                     keyboardType = KeyboardType.Number
                                 )
                             )
-
                             OutlinedTextField(
                                 value = exercicio.repeticoes,
                                 onValueChange = {
@@ -7436,8 +6802,6 @@ fun TelaFormularioTreino(
                                 singleLine = true
                             )
                         }
-
-                        // CARGA
                         OutlinedTextField(
                             value = exercicio.carga,
                             onValueChange = {
@@ -7453,8 +6817,6 @@ fun TelaFormularioTreino(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
-
-                        // OBSERVAÇÕES DO EXERCÍCIO
                         OutlinedTextField(
                             value = exercicio.observacoes,
                             onValueChange = {
@@ -7470,8 +6832,6 @@ fun TelaFormularioTreino(
                     }
                 }
             }
-
-            // ADICIONAR EXERCÍCIO
             OutlinedButton(
                 onClick = {
                     exercicios.add(ExercicioFormulario())
@@ -7480,11 +6840,8 @@ fun TelaFormularioTreino(
             ) {
                 Text("+ Adicionar exercício")
             }
-
-            // EXCLUIR TREINO
             if (treinoId != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-
                 OutlinedButton(
                     onClick = {
                         mostrarDialogoExcluir = true
@@ -7503,9 +6860,7 @@ fun TelaFormularioTreino(
                         contentDescription = null,
                         tint = Color(0xFFC62828)
                     )
-
                     Spacer(modifier = Modifier.width(8.dp))
-
                     Text(
                         text = "Excluir treino",
                         color = Color(0xFFC62828),
@@ -7513,8 +6868,6 @@ fun TelaFormularioTreino(
                     )
                 }
             }
-
-            // MENSAGEM DE ERRO
             if (mensagemErro != null) {
                 Text(
                     text = mensagemErro.orEmpty(),
@@ -7522,11 +6875,8 @@ fun TelaFormularioTreino(
                     fontSize = 13.sp
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
         }
-
-        // RODAPÉ COM BOTÕES
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -7534,7 +6884,6 @@ fun TelaFormularioTreino(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-
             OutlinedButton(
                 onClick = onVoltar,
                 enabled = !salvando,
@@ -7542,22 +6891,16 @@ fun TelaFormularioTreino(
             ) {
                 Text("Cancelar")
             }
-
             Button(
                 onClick = {
-
-                    // VALIDAÇÃO DO NOME
                     if (nome.isBlank()) {
                         mensagemErro = "Informe o nome do treino."
                         return@Button
                     }
-
-                    // VALIDAÇÃO DA DATA DE INÍCIO
                     if (dataInicio.isBlank()) {
                         mensagemErro = "Informe a data de início."
                         return@Button
                     }
-
                     val formatoData =
                         java.text.SimpleDateFormat(
                             "dd/MM/yyyy",
@@ -7565,43 +6908,33 @@ fun TelaFormularioTreino(
                         ).apply {
                             isLenient = false
                         }
-
                     val inicioValido = try {
                         val data = formatoData.parse(dataInicio)
-
                         data != null &&
                                 formatoData.format(data) == dataInicio
                     } catch (_: Exception) {
                         false
                     }
-
                     if (!inicioValido) {
                         mensagemErro =
                             "A data de início deve ser válida no formato dd/MM/aaaa."
                         return@Button
                     }
-
-                    // VALIDAÇÃO DA DATA DE TÉRMINO
                     if (dataFim.isNotBlank()) {
-
                         val fimValido = try {
                             val data = formatoData.parse(dataFim)
-
                             data != null &&
                                     formatoData.format(data) == dataFim
                         } catch (_: Exception) {
                             false
                         }
-
                         if (!fimValido) {
                             mensagemErro =
                                 "A data de término deve ser válida no formato dd/MM/aaaa."
                             return@Button
                         }
-
                         val inicio = formatoData.parse(dataInicio)
                         val fim = formatoData.parse(dataFim)
-
                         if (
                             inicio != null &&
                             fim != null &&
@@ -7612,31 +6945,23 @@ fun TelaFormularioTreino(
                             return@Button
                         }
                     }
-
-                    // VALIDAÇÃO DOS EXERCÍCIOS
                     val exerciciosInvalidos = exercicios.any { exercicio ->
                         exercicio.nome.isBlank() ||
                                 exercicio.series.toIntOrNull() == null ||
                                 exercicio.series.toIntOrNull()!! <= 0 ||
                                 exercicio.repeticoes.isBlank()
                     }
-
                     if (exerciciosInvalidos) {
                         mensagemErro =
                             "Preencha o nome, as séries válidas e as repetições de todos os exercícios."
                         return@Button
                     }
-
                     mensagemErro = null
                     salvando = true
-
-                    // SALVAR TREINO
                     scope.launch {
                         try {
-
                             val idTreinoSalvo =
                                 if (treinoId == null) {
-
                                     treinoRepository.inserirTreino(
                                         TreinoEntity(
                                             alunoId = alunoId,
@@ -7647,9 +6972,7 @@ fun TelaFormularioTreino(
                                             observacoes = observacoes.trim()
                                         )
                                     )
-
                                 } else {
-
                                     treinoRepository.atualizarTreino(
                                         TreinoEntity(
                                             id = treinoId,
@@ -7661,20 +6984,14 @@ fun TelaFormularioTreino(
                                             observacoes = observacoes.trim()
                                         )
                                     )
-
                                     treinoId
                                 }
-
-                            // ATUALIZA OS EXERCÍCIOS NA EDIÇÃO
                             if (treinoId != null) {
                                 treinoRepository.excluirExerciciosDoTreino(
                                     treinoId
                                 )
                             }
-
-                            // CADASTRA OS EXERCÍCIOS
                             exercicios.forEachIndexed { index, exercicio ->
-
                                 treinoRepository.inserirExercicio(
                                     ExercicioEntity(
                                         treinoId = idTreinoSalvo,
@@ -7687,8 +7004,6 @@ fun TelaFormularioTreino(
                                     )
                                 )
                             }
-
-                            // REGISTRA EVENTO NA LINHA DO TEMPO
                             if (treinoId == null) {
                                 eventoStorage.inserir(
                                     EventoAluno(
@@ -7704,15 +7019,11 @@ fun TelaFormularioTreino(
                                     )
                                 )
                             }
-
                             onSalvo()
-
                         } catch (e: Exception) {
-
                             mensagemErro =
                                 "Não foi possível salvar o treino: " +
                                         (e.message ?: "erro inesperado.")
-
                         } finally {
                             salvando = false
                         }
@@ -7745,27 +7056,20 @@ fun TelaDetalhesTreino(
     repository: AlunoRepository,
     onVoltar: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-
     var treino by remember {
         mutableStateOf<br.com.icaros.fitcare.data.TreinoEntity?>(null)
     }
-
     val exercicios by treinoRepository
         .listarExercicios(treinoId)
         .collectAsState(initial = emptyList())
-
     var carregando by remember {
         mutableStateOf(true)
     }
-
     LaunchedEffect(treinoId) {
         treino = treinoRepository.buscarTreinoPorId(treinoId)
         carregando = false
     }
-
     val alunoId = treino?.alunoId
-
     val aluno by if (alunoId != null) {
         repository.buscarPorId(alunoId)
             .collectAsState(initial = null)
@@ -7774,14 +7078,12 @@ fun TelaDetalhesTreino(
             mutableStateOf(null)
         }
     }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FundoApp)
+            .navigationBarsPadding()
     ) {
-
-        // Cabeçalho padrão
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -7793,7 +7095,8 @@ fun TelaDetalhesTreino(
                         )
                     )
                 )
-                .padding(vertical = 12.dp)
+                .statusBarsPadding()
+                .padding(vertical = 10.dp)
         ) {
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -7805,12 +7108,11 @@ fun TelaDetalhesTreino(
                     ),
                     contentDescription = "Logo Ícaro's FitCare",
                     modifier = Modifier
-                        .width(160.dp)
-                        .height(80.dp)
+                        .width(145.dp)
+                        .height(70.dp)
                 )
             }
         }
-
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -7818,7 +7120,6 @@ fun TelaDetalhesTreino(
                 .verticalScroll(rememberScrollState())
                 .padding(18.dp)
         ) {
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -7830,7 +7131,6 @@ fun TelaDetalhesTreino(
                     fontWeight = FontWeight.Bold,
                     color = TextoPrincipal
                 )
-
                 TextButton(
                     onClick = onVoltar
                 ) {
@@ -7839,9 +7139,7 @@ fun TelaDetalhesTreino(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(12.dp))
-
             if (carregando) {
                 Box(
                     modifier = Modifier
@@ -7859,9 +7157,7 @@ fun TelaDetalhesTreino(
                     color = TextoSecundario
                 )
             } else {
-
                 val treinoAtual = treino!!
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
@@ -7875,30 +7171,25 @@ fun TelaDetalhesTreino(
                     Column(
                         modifier = Modifier.padding(16.dp)
                     ) {
-
                         Text(
                             text = treinoAtual.nome,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextoPrincipal
                         )
-
                         Spacer(
                             modifier = Modifier.height(8.dp)
                         )
-
                         Text(
                             text = "Aluno: ${aluno?.nome ?: "Aluno não encontrado"}",
                             fontSize = 14.sp,
                             color = TextoPrincipal
                         )
-
                         Text(
                             text = "Data de início: ${treinoAtual.dataInicio}",
                             fontSize = 13.sp,
                             color = TextoSecundario
                         )
-
                         if (treinoAtual.dataFim.isNotBlank()) {
                             Text(
                                 text = "Data de término: ${treinoAtual.dataFim}",
@@ -7906,24 +7197,20 @@ fun TelaDetalhesTreino(
                                 color = TextoSecundario
                             )
                         }
-
                         if (treinoAtual.descricao.isNotBlank()) {
                             Spacer(
                                 modifier = Modifier.height(10.dp)
                             )
-
                             Text(
                                 text = treinoAtual.descricao,
                                 fontSize = 13.sp,
                                 color = TextoSecundario
                             )
                         }
-
                         if (treinoAtual.observacoes.isNotBlank()) {
                             Spacer(
                                 modifier = Modifier.height(8.dp)
                             )
-
                             Text(
                                 text = "Observações: ${treinoAtual.observacoes}",
                                 fontSize = 13.sp,
@@ -7932,22 +7219,18 @@ fun TelaDetalhesTreino(
                         }
                     }
                 }
-
                 Spacer(
                     modifier = Modifier.height(18.dp)
                 )
-
                 Text(
                     text = "Exercícios",
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextoPrincipal
                 )
-
                 Spacer(
                     modifier = Modifier.height(10.dp)
                 )
-
                 if (exercicios.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -7963,7 +7246,6 @@ fun TelaDetalhesTreino(
                     }
                 } else {
                     exercicios.forEachIndexed { index, exercicio ->
-
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -7976,24 +7258,20 @@ fun TelaDetalhesTreino(
                             Column(
                                 modifier = Modifier.padding(14.dp)
                             ) {
-
                                 Text(
-                                    text = "${index + 1}. ${exercicio.nome}",
+                                    text = "index + 1. {exercicio.nome}",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextoPrincipal
                                 )
-
                                 Spacer(
                                     modifier = Modifier.height(6.dp)
                                 )
-
                                 Text(
-                                    text = "${exercicio.series} séries × ${exercicio.repeticoes}",
+                                    text = "exercicio.series séries × {exercicio.repeticoes}",
                                     fontSize = 13.sp,
                                     color = TextoPrincipal
                                 )
-
                                 if (exercicio.carga.isNotBlank()) {
                                     Text(
                                         text = "Carga: ${exercicio.carga}",
@@ -8001,7 +7279,6 @@ fun TelaDetalhesTreino(
                                         color = TextoSecundario
                                     )
                                 }
-
                                 if (exercicio.observacoes.isNotBlank()) {
                                     Text(
                                         text = "Observações: ${exercicio.observacoes}",

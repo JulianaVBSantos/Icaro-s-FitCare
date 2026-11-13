@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import java.text.SimpleDateFormat
@@ -17,9 +16,7 @@ class RespostaAnamneseRepository(
             Locale.getDefault()
         ).format(Date())
 
-    private fun exigirAlunoId(): Long {
-        return SessaoUsuario.exigirAlunoId()
-    }
+    private fun agoraMillis(): Long = System.currentTimeMillis()
 
     fun listarPorAnamnese(anamneseId: Long) =
         when {
@@ -118,7 +115,8 @@ class RespostaAnamneseRepository(
                 id = anamnese.id,
                 status = "EM_ANDAMENTO",
                 dataInicioResposta = agora(),
-                alunoId = alunoAutenticado
+                alunoId = alunoAutenticado,
+                updatedAtMillis = agoraMillis()
             )
         }
     }
@@ -184,7 +182,8 @@ class RespostaAnamneseRepository(
             id = anamneseId,
             status = "RESPONDIDA",
             dataResposta = agora(),
-            alunoId = alunoAutenticado
+            alunoId = alunoAutenticado,
+            updatedAtMillis = agoraMillis()
         )
     }
 
@@ -230,5 +229,9 @@ class RespostaAnamneseRepository(
                 "Perfil sem permissão para consultar respostas."
             )
         }
+    }
+
+    private fun exigirAlunoId(): Long {
+        return SessaoUsuario.exigirAlunoId()
     }
 }

@@ -1,9 +1,8 @@
-
 package br.com.icaros.fitcare.data
 
-import androidx.room.OnConflictStrategy
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
@@ -54,29 +53,38 @@ abstract class AnamneseAtribuidaDao {
         return inserirInterno(anamnese)
     }
 
+    // Exclusão lógica: mantém o registro e as respostas preservadas no banco,
+    // oculta das telas e permite sincronizar a exclusão com outros dispositivos.
     @Query("""
-    DELETE FROM anamneses_atribuidas
-    WHERE id = :id
-    AND status = 'PENDENTE'
-    AND alunoId IN (
-        SELECT id
-        FROM alunos
-        WHERE professorId = :professorId
-    )
-""")
-    abstract suspend fun excluirDoProfessor(
+        UPDATE anamneses_atribuidas
+        SET excluida = 1,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+        AND excluida = 0
+        AND alunoId IN (
+            SELECT id
+            FROM alunos
+            WHERE professorId = :professorId
+        )
+    """)
+    abstract suspend fun excluirLogicamenteDoProfessor(
         id: Long,
-        professorId: Long
+        professorId: Long,
+        updatedAtMillis: Long
     ): Int
 
     @Query("""
-        DELETE FROM anamneses_atribuidas
+        UPDATE anamneses_atribuidas
+        SET excluida = 1,
+            updatedAtMillis = :updatedAtMillis
         WHERE id = :id
         AND alunoId = :alunoId
+        AND excluida = 0
     """)
-    abstract suspend fun excluirDoAluno(
+    abstract suspend fun excluirLogicamenteDoAluno(
         id: Long,
-        alunoId: Long
+        alunoId: Long,
+        updatedAtMillis: Long
     ): Int
 
     @Query("""
@@ -85,6 +93,7 @@ abstract class AnamneseAtribuidaDao {
         INNER JOIN alunos a ON a.id = aa.alunoId
         WHERE aa.alunoId = :alunoId
         AND a.professorId = :professorId
+        AND aa.excluida = 0
         ORDER BY aa.id DESC
     """)
     abstract fun listarPorAlunoDoProfessor(
@@ -96,6 +105,7 @@ abstract class AnamneseAtribuidaDao {
         SELECT *
         FROM anamneses_atribuidas
         WHERE alunoId = :alunoId
+        AND excluida = 0
         ORDER BY id DESC
     """)
     abstract fun listarPorAluno(
@@ -108,6 +118,7 @@ abstract class AnamneseAtribuidaDao {
         INNER JOIN alunos a ON a.id = aa.alunoId
         WHERE aa.id = :id
         AND a.professorId = :professorId
+        AND aa.excluida = 0
         LIMIT 1
     """)
     abstract suspend fun buscarPorIdDoProfessor(
@@ -120,6 +131,7 @@ abstract class AnamneseAtribuidaDao {
         FROM anamneses_atribuidas
         WHERE id = :id
         AND alunoId = :alunoId
+        AND excluida = 0
         LIMIT 1
     """)
     abstract suspend fun buscarPorIdDoAluno(
@@ -133,6 +145,7 @@ abstract class AnamneseAtribuidaDao {
         INNER JOIN alunos a ON a.id = aa.alunoId
         WHERE aa.status = :status
         AND a.professorId = :professorId
+        AND aa.excluida = 0
         ORDER BY aa.id DESC
     """)
     abstract fun listarPorStatusDoProfessor(
@@ -145,6 +158,7 @@ abstract class AnamneseAtribuidaDao {
         FROM anamneses_atribuidas
         WHERE status = :status
         AND alunoId = :alunoId
+        AND excluida = 0
         ORDER BY id DESC
     """)
     abstract fun listarPorStatusDoAluno(
@@ -155,10 +169,12 @@ abstract class AnamneseAtribuidaDao {
     @Query("""
         UPDATE anamneses_atribuidas
         SET status = 'PENDENTE',
-            dataEnvio = :dataEnvio
+            dataEnvio = :dataEnvio,
+            updatedAtMillis = :updatedAtMillis
         WHERE id = :id
         AND :status = 'PENDENTE'
         AND status = 'NAO_ENVIADA'
+        AND excluida = 0
         AND alunoId IN (
             SELECT id
             FROM alunos
@@ -169,7 +185,8 @@ abstract class AnamneseAtribuidaDao {
         id: Long,
         status: String,
         dataEnvio: String,
-        professorId: Long
+        professorId: Long,
+        updatedAtMillis: Long
     ): Int
 
     @Query("""
@@ -178,71 +195,77 @@ abstract class AnamneseAtribuidaDao {
             dataInicioResposta = CASE
                 WHEN dataInicioResposta = '' THEN :dataInicioResposta
                 ELSE dataInicioResposta
-            END
+            END,
+            updatedAtMillis = :updatedAtMillis
         WHERE id = :id
         AND :status = 'EM_ANDAMENTO'
         AND status IN ('PENDENTE', 'EM_ANDAMENTO')
+        AND excluida = 0
         AND alunoId = :alunoId
     """)
     abstract suspend fun atualizarInicioRespostaDoAluno(
         id: Long,
         status: String,
         dataInicioResposta: String,
-        alunoId: Long
+        alunoId: Long,
+        updatedAtMillis: Long
     ): Int
 
     @Query("""
         UPDATE anamneses_atribuidas
         SET status = 'RESPONDIDA',
-            dataResposta = :dataResposta
+            dataResposta = :dataResposta,
+            updatedAtMillis = :updatedAtMillis
         WHERE id = :id
         AND :status = 'RESPONDIDA'
         AND status IN ('PENDENTE', 'EM_ANDAMENTO')
+        AND excluida = 0
         AND alunoId = :alunoId
     """)
     abstract suspend fun atualizarConclusaoDoAluno(
         id: Long,
         status: String,
         dataResposta: String,
-        alunoId: Long
+        alunoId: Long,
+        updatedAtMillis: Long
     ): Int
+
+    // Inclui também as excluídas para propagar a exclusão ao Firestore
     @Query("""
-    SELECT aa.*
-    FROM anamneses_atribuidas aa
-    INNER JOIN alunos a ON a.id = aa.alunoId
-    WHERE a.professorId = :professorId
-      AND aa.excluida = 0
-""")
+        SELECT aa.*
+        FROM anamneses_atribuidas aa
+        INNER JOIN alunos a ON a.id = aa.alunoId
+        WHERE a.professorId = :professorId
+    """)
     abstract suspend fun listarTodasParaSincronizacaoDoProfessor(
         professorId: Long
     ): List<AnamneseAtribuidaEntity>
 
     @Query("""
-    SELECT *
-    FROM anamneses_atribuidas
-    WHERE alunoId = :alunoId
-      AND excluida = 0
-""")
+        SELECT *
+        FROM anamneses_atribuidas
+        WHERE alunoId = :alunoId
+    """)
     abstract suspend fun listarTodasParaSincronizacaoDoAluno(
         alunoId: Long
     ): List<AnamneseAtribuidaEntity>
 
     @Query("""
-    SELECT *
-    FROM anamneses_atribuidas
-    WHERE firestoreId = :firestoreId
-    LIMIT 1
-""")
+        SELECT *
+        FROM anamneses_atribuidas
+        WHERE firestoreId = :firestoreId
+        LIMIT 1
+    """)
     abstract suspend fun buscarPorFirestoreId(
         firestoreId: String
     ): AnamneseAtribuidaEntity?
 
     @Query("""
-    UPDATE anamneses_atribuidas
-    SET firestoreId = :firestoreId,
-        updatedAtMillis = :updatedAtMillis
-    WHERE id = :id
-""")
+        UPDATE anamneses_atribuidas
+        SET firestoreId = :firestoreId,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+    """)
     abstract suspend fun atualizarIdentificadoresSincronizacao(
         id: Long,
         firestoreId: String,
@@ -268,12 +291,13 @@ abstract class AnamneseAtribuidaDao {
 
         return inserirRecebidaDoFirestoreInterno(anamnese)
     }
+
     @Query("""
-    UPDATE anamneses_atribuidas
-    SET firestoreId = :firestoreId,
-        updatedAtMillis = :updatedAtMillis
-    WHERE id = :id
-""")
+        UPDATE anamneses_atribuidas
+        SET firestoreId = :firestoreId,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+    """)
     abstract suspend fun atualizarFirestoreId(
         id: Long,
         firestoreId: String,
@@ -281,19 +305,19 @@ abstract class AnamneseAtribuidaDao {
     ): Int
 
     @Query("""
-    UPDATE anamneses_atribuidas
-    SET nomeModelo = :nomeModelo,
-        status = :status,
-        dataCriacao = :dataCriacao,
-        dataEnvio = :dataEnvio,
-        dataInicioResposta = :dataInicioResposta,
-        dataResposta = :dataResposta,
-        profissionalResponsavel = :profissionalResponsavel,
-        identificadorExterno = :identificadorExterno,
-        updatedAtMillis = :updatedAtMillis,
-        excluida = :excluida
-    WHERE firestoreId = :firestoreId
-""")
+        UPDATE anamneses_atribuidas
+        SET nomeModelo = :nomeModelo,
+            status = :status,
+            dataCriacao = :dataCriacao,
+            dataEnvio = :dataEnvio,
+            dataInicioResposta = :dataInicioResposta,
+            dataResposta = :dataResposta,
+            profissionalResponsavel = :profissionalResponsavel,
+            identificadorExterno = :identificadorExterno,
+            updatedAtMillis = :updatedAtMillis,
+            excluida = :excluida
+        WHERE firestoreId = :firestoreId
+    """)
     abstract suspend fun atualizarRecebidaDoFirestore(
         firestoreId: String,
         nomeModelo: String,
@@ -309,13 +333,13 @@ abstract class AnamneseAtribuidaDao {
     ): Int
 
     @Query("""
-    UPDATE anamneses_atribuidas
-    SET status = :status,
-        dataInicioResposta = :dataInicioResposta,
-        dataResposta = :dataResposta,
-        updatedAtMillis = :updatedAtMillis
-    WHERE firestoreId = :firestoreId
-""")
+        UPDATE anamneses_atribuidas
+        SET status = :status,
+            dataInicioResposta = :dataInicioResposta,
+            dataResposta = :dataResposta,
+            updatedAtMillis = :updatedAtMillis
+        WHERE firestoreId = :firestoreId
+    """)
     abstract suspend fun atualizarStatusSincronizado(
         firestoreId: String,
         status: String,

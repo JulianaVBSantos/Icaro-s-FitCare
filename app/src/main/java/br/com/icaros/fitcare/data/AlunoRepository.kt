@@ -355,7 +355,19 @@ class AlunoRepository(
             alunoAtualizado.copy(status = classificacao)
         )
     }
+    suspend fun buscarPorIdDireto(id: Long): AlunoEntity? {
+        if (id <= 0) return null
+        return alunoDao.buscarPorIdDireto(id)
+    }
 
+    suspend fun atualizarDireto(aluno: AlunoEntity) {
+        atualizarAcompanhamentoPorAnamnese(
+            alunoId = aluno.id,
+            condicoes = aluno.condicoes,
+            restricoes = aluno.restricoes,
+            observacoes = aluno.observacoesProfissionais
+        )
+    }
     private fun validarAluno(aluno: AlunoEntity) {
         require(aluno.nome.isNotBlank()) {
             "O nome do aluno é obrigatório."

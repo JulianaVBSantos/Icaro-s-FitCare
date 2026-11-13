@@ -1,10 +1,10 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.withTransaction
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class AnamneseAtribuidaRepository(
     private val database: FitCareDatabase,
@@ -19,6 +19,8 @@ class AnamneseAtribuidaRepository(
             "dd/MM/yyyy HH:mm:ss",
             Locale.getDefault()
         ).format(Date())
+
+    private fun agoraMillis(): Long = System.currentTimeMillis()
 
     fun listarPorAluno(alunoId: Long) = when {
         SessaoUsuario.ehProfessor() -> {
@@ -186,6 +188,7 @@ class AnamneseAtribuidaRepository(
             }
 
             val data = agora()
+            val millis = agoraMillis()
 
             val anamnese = AnamneseAtribuidaEntity(
                 alunoId = alunoId,
@@ -193,7 +196,10 @@ class AnamneseAtribuidaRepository(
                 nomeModelo = modelo.nome,
                 status = "NAO_ENVIADA",
                 dataCriacao = data,
-                profissionalResponsavel = profissionalResponsavel
+                profissionalResponsavel = profissionalResponsavel,
+                firestoreId = UUID.randomUUID().toString(),
+                updatedAtMillis = millis,
+                excluida = false
             )
 
             val anamneseId = anamneseDao.inserirDoProfessor(
@@ -209,7 +215,8 @@ class AnamneseAtribuidaRepository(
                     tipoResposta = pergunta.tipoResposta,
                     opcoes = pergunta.opcoes,
                     obrigatoria = pergunta.obrigatoria,
-                    ordem = pergunta.ordem
+                    ordem = pergunta.ordem,
+                    firestoreId = UUID.randomUUID().toString()
                 )
             }
 
@@ -245,7 +252,8 @@ class AnamneseAtribuidaRepository(
             id = id,
             status = "PENDENTE",
             dataEnvio = agora(),
-            professorId = professorId
+            professorId = professorId,
+            updatedAtMillis = agoraMillis()
         )
 
         check(linhasAfetadas == 1) {
@@ -253,6 +261,8 @@ class AnamneseAtribuidaRepository(
         }
     }
 
+    // Exclusão lógica permitida em qualquer status (incluindo RESPONDIDA),
+    // preservando os registros de respostas no banco e sincronizando a exclusão.
     suspend fun excluir(id: Long) {
 
         val professorId = SessaoUsuario.exigirProfessorId()
@@ -268,17 +278,14 @@ class AnamneseAtribuidaRepository(
             "Anamnese não encontrada ou sem permissão para excluí-la."
         )
 
-        require(anamnese.status == "PENDENTE") {
-            "Somente anamneses pendentes podem ser excluídas."
-        }
-
-        val linhasAfetadas = anamneseDao.excluirDoProfessor(
-            anamnese.id,
-            professorId
+        val linhasAfetadas = anamneseDao.excluirLogicamenteDoProfessor(
+            id = anamnese.id,
+            professorId = professorId,
+            updatedAtMillis = agoraMillis()
         )
 
         check(linhasAfetadas == 1) {
-            "Não foi possível excluir a anamnese. Verifique se ela ainda está pendente."
+            "Não foi possível excluir a anamnese."
         }
     }
 
