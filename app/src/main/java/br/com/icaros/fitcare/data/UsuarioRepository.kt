@@ -1,7 +1,9 @@
 
 package br.com.icaros.fitcare.data
 
+import android.content.Context
 import android.util.Base64
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.firestore.FirebaseFirestore
@@ -12,13 +14,18 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
 class UsuarioRepository(
-    private val usuarioDao: UsuarioDao
+    private val usuarioDao: UsuarioDao,
+    private val context: Context
 ) {
 
     companion object {
         private const val PERFIL_PROFESSOR = "PROFESSOR"
         private const val PERFIL_ALUNO = "ALUNO"
         private const val PERFIL_ADMIN = "ADMIN"
+
+        // UID administrativo autorizado nas regras do Firestore.
+        private const val UID_ADMIN_AUTORIZADO = "Bcqsue17eVVdJ4Ajc9EhoTQfJ8b2"
+        private const val NOME_FIREBASE_APP_SECUNDARIO = "FitCareTeacherProvisioning"
 
         private const val EMAIL_PROFESSOR_INICIAL =
             "icaroalvesdasilva2005@gmail.com"
@@ -269,6 +276,121 @@ class UsuarioRepository(
         }
     }
 
+    /** Inicializa um FirebaseApp isolado para provisionar contas sem trocar
+     * o usuário autenticado na instância principal do aplicativo.
+     */
+    private fun obterFirebaseAppSecundario(): FirebaseApp {
+        return try {
+            FirebaseApp.getInstance(NOME_FIREBASE_APP_SECUNDARIO)
+        } catch (_: IllegalStateException) {
+            FirebaseApp.initializeApp(
+                context.applicationContext,
+                FirebaseApp.getInstance().options,
+                NOME_FIREBASE_APP_SECUNDARIO
+            ) ?: throw IllegalStateException(
+                "Não foi possível inicializar o Firebase Authentication secundário."
+            )
+        }
+    }
+
+    /**
+     * Login administrativo em qualquer dispositivo.
+     * A identidade administrativa é validada pelo UID fixo no Firebase;
+     * o Room local é criado automaticamente quando ainda não existe.
+     */
+    private suspend fun entrarAdminFirebase(
+        email: String,
+        senha: String
+    ): UsuarioEntity {
+        val auth = FirebaseAuth.getInstance()
+        val firebaseUser = try {
+            auth.signInWithEmailAndPassword(email, senha).await().user
+        } catch (e: Exception) {
+            auth.signOut()
+            throw e
+        } ?: throw IllegalStateException(
+            "O Firebase Authentication não retornou a conta administrativa."
+        )
+
+        try {
+            require(firebaseUser.uid == UID_ADMIN_AUTORIZADO) {
+                "Esta conta não está autorizada como administradora do Ícaros FitCare."
+            }
+            require(email == EMAIL_ADMIN_INICIAL) {
+                "E-mail administrativo inválido."
+            }
+
+            val usuarioPorEmail = usuarioDao.buscarPorEmail(EMAIL_ADMIN_INICIAL)
+            val usuarioPorUid = usuarioDao.buscarPorFirebaseUid(UID_ADMIN_AUTORIZADO)
+
+            val usuarioLocal = usuarioPorEmail ?: usuarioPorUid
+            val usuarioAutenticado = if (usuarioLocal != null) {
+                require(
+                    usuarioLocal.perfil == PERFIL_ADMIN &&
+                            usuarioLocal.ativo &&
+                            usuarioLocal.email == EMAIL_ADMIN_INICIAL
+                ) {
+                    "Já existe um cadastro local incompatível com a conta administrativa."
+                }
+                require(
+                    usuarioLocal.firebaseUid.isNullOrBlank() ||
+                            usuarioLocal.firebaseUid == UID_ADMIN_AUTORIZADO
+                ) {
+                    "O cadastro administrativo está vinculado a outro UID do Firebase."
+                }
+
+                if (usuarioLocal.firebaseUid.isNullOrBlank()) {
+                    val atualizados = usuarioDao.atualizarFirebaseUid(
+                        usuarioId = usuarioLocal.id,
+                        firebaseUid = UID_ADMIN_AUTORIZADO
+                    )
+                    check(atualizados == 1) {
+                        "Não foi possível vincular o administrador ao Firebase."
+                    }
+                }
+                usuarioLocal.copy(firebaseUid = UID_ADMIN_AUTORIZADO)
+            } else {
+                val novoAdmin = UsuarioEntity(
+                    nome = firebaseUser.displayName?.takeIf { it.isNotBlank() }
+                        ?: "Administrador",
+                    email = EMAIL_ADMIN_INICIAL,
+                    senhaHash = gerarHashSenha(senha),
+                    perfil = PERFIL_ADMIN,
+                    ativo = true,
+                    firebaseUid = UID_ADMIN_AUTORIZADO
+                )
+                val novoId = usuarioDao.inserir(novoAdmin)
+                novoAdmin.copy(id = novoId)
+            }
+
+            registrarConfiguracaoAdmin(UID_ADMIN_AUTORIZADO)
+            SessaoUsuario.iniciar(usuarioAutenticado)
+            return usuarioAutenticado
+        } catch (e: Exception) {
+            auth.signOut()
+            throw e
+        }
+    }
+
+    /** Publica um marcador sem dados pessoais para os demais dispositivos
+     * saberem que a configuração administrativa inicial já foi concluída.
+     */
+    private suspend fun registrarConfiguracaoAdmin(uid: String) {
+        require(uid == UID_ADMIN_AUTORIZADO) {
+            "UID administrativo não autorizado."
+        }
+        FirebaseFirestore.getInstance()
+            .collection("configuracao")
+            .document("admin")
+            .set(
+                mapOf(
+                    "uid" to UID_ADMIN_AUTORIZADO,
+                    "configurado" to true
+                )
+            )
+            .await()
+    }
+
     // CRIAÇÃO DO ADMINISTRADOR INICIAL
 
     suspend fun criarAdminInicial(
@@ -344,6 +466,10 @@ class UsuarioRepository(
             senha = senha
         )
 
+        require(adminAutenticado.firebaseUid == UID_ADMIN_AUTORIZADO) {
+            "A conta autenticada não corresponde ao UID administrativo autorizado."
+        }
+        registrarConfiguracaoAdmin(UID_ADMIN_AUTORIZADO)
         SessaoUsuario.iniciar(adminAutenticado)
 
         return adminAutenticado
@@ -357,11 +483,18 @@ class UsuarioRepository(
         senha: String
     ): UsuarioEntity {
 
-        exigirAdminAtivo()
+        val admin = exigirAdminAtivo()
 
         validarCadastro(nome, email, senha)
 
         val emailNormalizado = email.trim().lowercase()
+
+        require(
+            admin.firebaseUid == UID_ADMIN_AUTORIZADO &&
+                    FirebaseAuth.getInstance().currentUser?.uid == UID_ADMIN_AUTORIZADO
+        ) {
+            "A sessão administrativa do Firebase não está autorizada para cadastrar professores."
+        }
 
         require(
             usuarioDao.buscarPorEmail(emailNormalizado) == null
@@ -369,17 +502,74 @@ class UsuarioRepository(
             "Este e-mail já está cadastrado."
         }
 
-        val usuario = UsuarioEntity(
-            nome = nome.trim(),
-            email = emailNormalizado,
-            senhaHash = gerarHashSenha(senha),
-            perfil = PERFIL_PROFESSOR,
-            ativo = false
+        // Cria a conta usando uma instância secundária do Firebase Auth.
+        // Assim, a sessão principal do administrador permanece intacta.
+        val appSecundario = obterFirebaseAppSecundario()
+        val authSecundario = FirebaseAuth.getInstance(appSecundario)
+        var contaCriadaAgora = false
+
+        val firebaseUser = try {
+            authSecundario.createUserWithEmailAndPassword(
+                emailNormalizado,
+                senha
+            ).await().user.also {
+                contaCriadaAgora = true
+            }
+        } catch (e: FirebaseAuthUserCollisionException) {
+            // Permite retomar um cadastro interrompido, desde que a senha
+            // fornecida corresponda à conta que já existe no Authentication.
+            authSecundario.signInWithEmailAndPassword(
+                emailNormalizado,
+                senha
+            ).await().user
+        } ?: throw IllegalStateException(
+            "O Firebase Authentication não retornou a conta do professor."
         )
 
-        val id = usuarioDao.inserir(usuario)
+        val uidProfessor = firebaseUser.uid
 
-        return usuario.copy(id = id)
+        try {
+            FirebaseFirestore.getInstance()
+                .collection("usuarios")
+                .document(uidProfessor)
+                .set(
+                    mapOf(
+                        "nome" to nome.trim(),
+                        "email" to emailNormalizado,
+                        "perfil" to PERFIL_PROFESSOR,
+                        "ativo" to true,
+                        "dataCadastro" to System.currentTimeMillis(),
+                        "criadoPor" to UID_ADMIN_AUTORIZADO
+                    )
+                )
+                .await()
+
+            val usuario = UsuarioEntity(
+                nome = nome.trim(),
+                email = emailNormalizado,
+                senhaHash = gerarHashSenha(senha),
+                perfil = PERFIL_PROFESSOR,
+                ativo = true,
+                firebaseUid = uidProfessor
+            )
+
+            val id = usuarioDao.inserir(usuario)
+            return usuario.copy(id = id)
+
+        } catch (e: Exception) {
+            // Só remove a conta se ela foi criada nesta tentativa. Se já existia,
+            // preservamos a conta para não apagar um acesso válido.
+            if (contaCriadaAgora) {
+                try {
+                    authSecundario.currentUser?.delete()?.await()
+                } catch (_: Exception) {
+                    // Mantém o erro original para diagnóstico.
+                }
+            }
+            throw e
+        } finally {
+            authSecundario.signOut()
+        }
     }
 
     // CADASTRO DE ALUNO
@@ -473,7 +663,15 @@ class UsuarioRepository(
             )
         }
 
-        // ADMIN e ALUNO continuam utilizando o fluxo local atual.
+        // O administrador autentica pelo Firebase e é provisionado no Room
+        // automaticamente em dispositivos novos. Alunos seguem o fluxo local.
+        if (perfilEsperado == PERFIL_ADMIN) {
+            return entrarAdminFirebase(
+                email = emailNormalizado,
+                senha = senha
+            )
+        }
+
         val usuario = usuarioDao.buscarPorEmail(emailNormalizado)
             ?: throw IllegalArgumentException(
                 "E-mail ou senha incorretos."
@@ -634,7 +832,113 @@ class UsuarioRepository(
     // ADMINISTRAÇÃO DE PROFESSORES
 
     suspend fun listarProfissionaisParaAdmin(): List<UsuarioEntity> {
+
         exigirAdminAtivo()
+
+        val firestore = FirebaseFirestore.getInstance()
+
+        // Busca todos os professores cadastrados no Firestore.
+        val resultado = firestore
+            .collection("usuarios")
+            .whereEqualTo("perfil", PERFIL_PROFESSOR)
+            .get()
+            .await()
+
+        // Importa ou atualiza os professores no Room.
+        for (documento in resultado.documents) {
+
+            val uid = documento.id
+
+            val nome = documento.getString("nome")
+                ?.trim()
+                .orEmpty()
+
+            val email = documento.getString("email")
+                ?.trim()
+                ?.lowercase()
+                .orEmpty()
+
+            val ativo = documento.getBoolean("ativo") ?: false
+
+            if (uid.isBlank() || nome.isBlank() || email.isBlank()) {
+
+                val camposAusentes = buildList {
+                    if (uid.isBlank()) add("UID")
+                    if (nome.isBlank()) add("nome")
+                    if (email.isBlank()) add("email")
+                }
+
+                android.util.Log.w(
+                    "FitCareSync",
+                    "Professor ignorado. Documento: ${documento.id}. " +
+                            "Campos ausentes: ${camposAusentes.joinToString()}. " +
+                            "Dados: ${documento.data}"
+                )
+
+                continue
+            }
+
+            val usuarioPorUid =
+                usuarioDao.buscarPorFirebaseUid(uid)
+
+            val usuarioPorEmail =
+                usuarioDao.buscarPorEmail(email)
+
+            // Evita associar dois registros locais diferentes à mesma conta.
+            require(
+                usuarioPorUid == null ||
+                        usuarioPorEmail == null ||
+                        usuarioPorUid.id == usuarioPorEmail.id
+            ) {
+                "Existem cadastros locais conflitantes para o professor $email."
+            }
+
+            val usuarioLocal = usuarioPorUid ?: usuarioPorEmail
+
+            if (usuarioLocal != null) {
+
+                require(usuarioLocal.perfil == PERFIL_PROFESSOR) {
+                    "O e-mail $email já pertence a outro perfil."
+                }
+
+                require(
+                    usuarioLocal.firebaseUid.isNullOrBlank() ||
+                            usuarioLocal.firebaseUid == uid
+                ) {
+                    "O professor $email está vinculado a outra conta Firebase."
+                }
+
+                val atualizado =
+                    usuarioDao.atualizarProfessorComDadosFirebase(
+                        usuarioId = usuarioLocal.id,
+                        nome = nome,
+                        email = email,
+                        ativo = ativo,
+                        firebaseUid = uid
+                    )
+
+                check(atualizado == 1) {
+                    "Não foi possível atualizar o professor $email no banco local."
+                }
+
+            } else {
+
+                // Primeiro cadastro deste professor neste dispositivo.
+                // A autenticação e a senha continuam sob responsabilidade do Firebase.
+                val novoProfessor = UsuarioEntity(
+                    nome = nome,
+                    email = email,
+                    senhaHash = "",
+                    perfil = PERFIL_PROFESSOR,
+                    ativo = ativo,
+                    firebaseUid = uid
+                )
+
+                usuarioDao.inserir(novoProfessor)
+            }
+        }
+
+        // Retorna a lista atualizada do Room.
         return usuarioDao.listarProfissionaisParaAdmin()
     }
 
@@ -663,6 +967,18 @@ class UsuarioRepository(
         ) {
             "A conta do professor inicial não pode ser bloqueada."
         }
+
+        // Atualiza primeiro a autorização remota. Assim, um bloqueio feito
+        // pelo administrador também impede o login em outros dispositivos.
+        professor.firebaseUid
+            ?.takeIf { it.isNotBlank() }
+            ?.let { uid ->
+                FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .update("ativo", ativo)
+                    .await()
+            }
 
         val alterados = usuarioDao.atualizarStatus(
             id = professorId,
@@ -736,6 +1052,17 @@ class UsuarioRepository(
         ) {
             "Transfira os alunos deste professor antes de excluir sua conta."
         }
+
+        // Revoga o acesso remoto antes de remover o cadastro local.
+        professor.firebaseUid
+            ?.takeIf { it.isNotBlank() }
+            ?.let { uid ->
+                FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .update("ativo", false)
+                    .await()
+            }
 
         val excluidos = usuarioDao.excluirProfessor(professorId)
 
@@ -1034,6 +1361,25 @@ class UsuarioRepository(
     // ADMINISTRADOR
 
     suspend fun existeAdministrador(): Boolean {
-        return usuarioDao.contarAdmins() > 0
+        // Se já existe administrador no Room, não solicitar configuração inicial.
+        if (usuarioDao.contarAdmins() > 0) {
+            return true
+        }
+
+        return try {
+            val documento = FirebaseFirestore.getInstance()
+                .collection("configuracao")
+                .document("admin")
+                .get()
+                .await()
+
+            // A existência do documento é suficiente.
+            documento.exists()
+
+        } catch (e: Exception) {
+            // Em caso de falha de rede ou leitura, nunca oferecer
+            // a criação de um segundo administrador.
+            true
+        }
     }
 }

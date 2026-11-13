@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val database = FitCareDatabase.getDatabase(applicationContext)
-        val usuarioRepository = UsuarioRepository(database.usuarioDao())
+        val usuarioRepository = UsuarioRepository(database.usuarioDao(), applicationContext)
 
         // Repositórios existentes
         val repository = AlunoRepository(
@@ -426,23 +426,8 @@ fun FitCareApp(
                             TelaEscolherPerfil(
                                 onSelecionarPerfil = { perfil ->
                                     if (perfil == "ADMIN") {
-                                        scope.launch {
-                                            try {
-                                                val existeAdmin =
-                                                    usuarioRepository.existeAdministrador()
-
-                                                if (existeAdmin) {
-                                                    perfilSelecionado = "ADMIN"
-                                                    tela = AppScreen.Login
-                                                } else {
-                                                    perfilSelecionado = null
-                                                    tela = AppScreen.CadastroAdminInicial
-                                                }
-                                            } catch (e: Exception) {
-                                                perfilSelecionado = null
-                                                tela = AppScreen.Login
-                                            }
-                                        }
+                                        perfilSelecionado = "ADMIN"
+                                        tela = AppScreen.Login
                                     } else {
                                         perfilSelecionado = perfil
                                     }

@@ -195,4 +195,21 @@ interface UsuarioDao {
     suspend fun buscarPorFirebaseUid(
         firebaseUid: String
     ): UsuarioEntity?
+
+    @Query("""
+    UPDATE usuarios
+    SET nome = :nome,
+        email = :email,
+        ativo = :ativo,
+        firebaseUid = :firebaseUid
+    WHERE id = :usuarioId
+    AND perfil = 'PROFESSOR'
+""")
+    suspend fun atualizarProfessorComDadosFirebase(
+        usuarioId: Long,
+        nome: String,
+        email: String,
+        ativo: Boolean,
+        firebaseUid: String
+    ): Int
 }
