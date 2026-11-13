@@ -1,9 +1,31 @@
 
 package br.com.icaros.fitcare.data
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 class PerguntaModeloAnamneseRepository(
     private val dao: PerguntaModeloAnamneseDao
 ) {
+
+    private fun agora(): String =
+        SimpleDateFormat(
+            "dd/MM/yyyy HH:mm:ss",
+            Locale.getDefault()
+        ).format(Date())
+
+    private suspend fun marcarModeloAlterado(
+        modeloId: Long,
+        professorId: Long
+    ) {
+        dao.marcarModeloAlterado(
+            modeloId = modeloId,
+            professorId = professorId,
+            dataAtualizacao = agora(),
+            updatedAtMillis = System.currentTimeMillis()
+        )
+    }
 
     fun listarPorModelo(modeloId: Long) =
         dao.listarPorModeloDoProfessor(
@@ -33,10 +55,8 @@ class PerguntaModeloAnamneseRepository(
             "Informe o texto da pergunta."
         }
 
-        val modeloRepository = dao
-
         val perguntasDoModelo =
-            modeloRepository.buscarPorModeloDoProfessor(
+            dao.buscarPorModeloDoProfessor(
                 pergunta.modeloId,
                 professorId
             )
@@ -48,7 +68,7 @@ class PerguntaModeloAnamneseRepository(
             "Pergunta não encontrada ou você não tem permissão para editá-la."
         }
 
-        return if (pergunta.id == 0L) {
+        val id = if (pergunta.id == 0L) {
 
             dao.inserir(
                 pergunta.copy(
@@ -66,6 +86,13 @@ class PerguntaModeloAnamneseRepository(
 
             pergunta.id
         }
+
+        marcarModeloAlterado(
+            pergunta.modeloId,
+            professorId
+        )
+
+        return id
     }
 
     suspend fun excluir(
@@ -101,6 +128,11 @@ class PerguntaModeloAnamneseRepository(
         }
 
         dao.excluir(perguntaExistente)
+
+        marcarModeloAlterado(
+            perguntaExistente.modeloId,
+            professorId
+        )
     }
 
     suspend fun salvarOrdenacao(
@@ -125,7 +157,8 @@ class PerguntaModeloAnamneseRepository(
                 professorId
             )
 
-        val idsPermitidos = perguntasPermitidas.map { it.id }.toSet()
+        val idsPermitidos =
+            perguntasPermitidas.map { it.id }.toSet()
 
         require(
             perguntas.all { it.id in idsPermitidos }
@@ -138,6 +171,11 @@ class PerguntaModeloAnamneseRepository(
         }
 
         dao.atualizarTodas(ordenadas)
+
+        marcarModeloAlterado(
+            modeloId,
+            professorId
+        )
     }
 
     suspend fun excluirTodas(modeloId: Long) {
@@ -157,6 +195,11 @@ class PerguntaModeloAnamneseRepository(
         dao.excluirTodasDoModeloDoProfessor(
             modeloId = modeloId,
             professorId = professorId
+        )
+
+        marcarModeloAlterado(
+            modeloId,
+            professorId
         )
     }
 }

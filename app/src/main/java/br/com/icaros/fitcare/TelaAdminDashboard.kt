@@ -774,7 +774,7 @@ fun TelaAdminDashboard(
             },
             title = {
                 Text(
-                    "Dispositivos de ${profissionalSelecionado?.nome ?: "professor"}"
+                    "Dispositivos do professor ${profissionalSelecionado?.nome ?: "professor"}"
                 )
             },
             text = {

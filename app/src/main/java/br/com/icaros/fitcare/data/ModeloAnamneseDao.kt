@@ -11,53 +11,51 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ModeloAnamneseDao {
 
-    // INSERIR
     @Insert
-    suspend fun inserir(
-        modelo: ModeloAnamneseEntity
-    ): Long
-
-    // ATUALIZAR
+    suspend fun inserir(modelo: ModeloAnamneseEntity): Long
 
     @Update
-    suspend fun atualizar(
-        modelo: ModeloAnamneseEntity
-    )
+    suspend fun atualizar(modelo: ModeloAnamneseEntity)
 
-    // EXCLUIR
     @Delete
-    suspend fun excluir(
-        modelo: ModeloAnamneseEntity
-    )
+    suspend fun excluir(modelo: ModeloAnamneseEntity)
 
+    // EXCLUSÃO FÍSICA SOMENTE DE MODELOS PADRÃO
     @Query("""
-    DELETE FROM modelos_anamnese
-    WHERE id = :id
-    AND professorId = :professorId
-    AND categoria = 'PERSONALIZADO'
-""")
-    suspend fun excluirPersonalizado(
+        DELETE FROM modelos_anamnese
+        WHERE id = :id
+        AND categoria = 'PADRAO'
+    """)
+    suspend fun excluirModeloPadrao(id: Long): Int
+
+    // EXCLUSÃO LÓGICA DE MODELOS PERSONALIZADOS
+    @Query("""
+        UPDATE modelos_anamnese
+        SET excluido = 1,
+            ativo = 0,
+            dataAtualizacao = :dataAtualizacao,
+            updatedAtMillis = :updatedAtMillis,
+            deletedAtMillis = :updatedAtMillis
+        WHERE id = :id
+          AND professorId = :professorId
+          AND categoria = 'PERSONALIZADO'
+          AND excluido = 0
+    """)
+    suspend fun marcarPersonalizadoComoExcluido(
         id: Long,
-        professorId: Long
+        professorId: Long,
+        dataAtualizacao: String,
+        updatedAtMillis: Long
     ): Int
 
-    @Query("""
-    DELETE FROM modelos_anamnese
-    WHERE id = :id
-    AND categoria = 'PADRAO'
-""")
-    suspend fun excluirModeloPadrao(
-        id: Long
-    ): Int
-
-    // LISTAR TODOS OS MODELOS VISÍVEIS AO PROFESSOR
-
+    // LISTAR TODOS OS MODELOS VISÍVEIS
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE categoria = 'PADRAO'
         OR (
             categoria = 'PERSONALIZADO'
             AND professorId = :professorId
+            AND excluido = 0
         )
         ORDER BY nome COLLATE NOCASE ASC
     """)
@@ -65,7 +63,7 @@ interface ModeloAnamneseDao {
         professorId: Long
     ): Flow<List<ModeloAnamneseEntity>>
 
-    // LISTAR MODELOS ATIVOS DO PROFESSOR
+    // LISTAR MODELOS ATIVOS
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE ativo = 1
@@ -74,6 +72,7 @@ interface ModeloAnamneseDao {
             OR (
                 categoria = 'PERSONALIZADO'
                 AND professorId = :professorId
+                AND excluido = 0
             )
         )
         ORDER BY nome COLLATE NOCASE ASC
@@ -82,10 +81,7 @@ interface ModeloAnamneseDao {
         professorId: Long
     ): Flow<List<ModeloAnamneseEntity>>
 
-    // =====================================================
     // LISTAR MODELOS PADRÃO
-    // =====================================================
-
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE categoria = 'PADRAO'
@@ -94,24 +90,19 @@ interface ModeloAnamneseDao {
     """)
     fun listarModelosPadrao(): Flow<List<ModeloAnamneseEntity>>
 
-    // =====================================================
-    // LISTAR MODELOS PERSONALIZADOS DO PROFESSOR
-    // =====================================================
-
+    // LISTAR PERSONALIZADOS NÃO EXCLUÍDOS
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE categoria = 'PERSONALIZADO'
         AND professorId = :professorId
+        AND excluido = 0
         ORDER BY nome COLLATE NOCASE ASC
     """)
     fun listarPersonalizadosDoProfessor(
         professorId: Long
     ): Flow<List<ModeloAnamneseEntity>>
 
-    // =====================================================
-    // BUSCAR MODELO VISÍVEL AO PROFESSOR
-    // =====================================================
-
+    // BUSCAR MODELO VISÍVEL
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE id = :id
@@ -120,6 +111,7 @@ interface ModeloAnamneseDao {
             OR (
                 categoria = 'PERSONALIZADO'
                 AND professorId = :professorId
+                AND excluido = 0
             )
         )
         LIMIT 1
@@ -129,10 +121,7 @@ interface ModeloAnamneseDao {
         professorId: Long
     ): ModeloAnamneseEntity?
 
-    // =====================================================
     // BUSCAR MODELO PADRÃO
-    // =====================================================
-
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE id = :id
@@ -143,15 +132,13 @@ interface ModeloAnamneseDao {
         id: Long
     ): ModeloAnamneseEntity?
 
-    // =====================================================
-    // BUSCAR MODELO PERSONALIZADO DO PROFESSOR
-    // =====================================================
-
+    // BUSCAR PERSONALIZADO NÃO EXCLUÍDO
     @Query("""
         SELECT * FROM modelos_anamnese
         WHERE id = :id
         AND categoria = 'PERSONALIZADO'
         AND professorId = :professorId
+        AND excluido = 0
         LIMIT 1
     """)
     suspend fun buscarPersonalizadoDoProfessor(
@@ -159,10 +146,7 @@ interface ModeloAnamneseDao {
         professorId: Long
     ): ModeloAnamneseEntity?
 
-    // =====================================================
-    // ATUALIZAR STATUS DE MODELO PERSONALIZADO
-    // =====================================================
-
+    // ATUALIZAR STATUS
     @Query("""
         UPDATE modelos_anamnese
         SET ativo = :ativo,
@@ -170,6 +154,7 @@ interface ModeloAnamneseDao {
         WHERE id = :id
         AND professorId = :professorId
         AND categoria = 'PERSONALIZADO'
+        AND excluido = 0
     """)
     suspend fun atualizarStatusPersonalizado(
         id: Long,
@@ -178,18 +163,81 @@ interface ModeloAnamneseDao {
         professorId: Long
     )
 
-    // VERIFICAR PROPRIEDADE DO MODELO
-
+    // VERIFICAR PROPRIEDADE
     @Query("""
         SELECT EXISTS(
             SELECT 1 FROM modelos_anamnese
             WHERE id = :id
             AND categoria = 'PERSONALIZADO'
             AND professorId = :professorId
+            AND excluido = 0
         )
     """)
     suspend fun pertenceAoProfessor(
         id: Long,
         professorId: Long
     ): Boolean
+
+    // BUSCAR PELO IDENTIFICADOR FIRESTORE
+    @Query("""
+        SELECT * FROM modelos_anamnese
+        WHERE firestoreId = :firestoreId
+        LIMIT 1
+    """)
+    suspend fun buscarPorFirestoreId(
+        firestoreId: String
+    ): ModeloAnamneseEntity?
+
+    // MODELOS PARA SINCRONIZAÇÃO, INCLUSIVE EXCLUÍDOS
+    @Query("""
+        SELECT * FROM modelos_anamnese
+        WHERE categoria = 'PERSONALIZADO'
+        AND professorId = :professorId
+        AND firestoreId IS NOT NULL
+    """)
+    suspend fun listarPersonalizadosParaSincronizacao(
+        professorId: Long
+    ): List<ModeloAnamneseEntity>
+
+    // ATUALIZAR DATA DE ALTERAÇÃO
+    @Query("""
+        UPDATE modelos_anamnese
+        SET dataAtualizacao = :dataAtualizacao,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :modeloId
+        AND professorId = :professorId
+        AND categoria = 'PERSONALIZADO'
+        AND excluido = 0
+    """)
+    suspend fun atualizarDataAlteracaoParaSincronizacao(
+        modeloId: Long,
+        professorId: Long,
+        dataAtualizacao: String,
+        updatedAtMillis: Long
+    )
+
+
+    @Query("""
+    SELECT * FROM modelos_anamnese
+    WHERE id = :id
+      AND professorId = :professorId
+      AND excluido = 0
+      AND categoria IN ('PADRAO', 'PERSONALIZADO')
+    LIMIT 1
+""")
+    suspend fun buscarModeloEditavelDoProfessor(
+        id: Long,
+        professorId: Long
+    ): ModeloAnamneseEntity?
+
+    @Query("""
+    SELECT * FROM modelos_anamnese
+    WHERE professorId = :professorId
+      AND firestoreId IS NOT NULL
+    ORDER BY id ASC
+""")
+    suspend fun listarModelosParaSincronizacao(
+        professorId: Long
+    ): List<ModeloAnamneseEntity>
+
 }

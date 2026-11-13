@@ -16,7 +16,8 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
-        Index(value = ["anamneseAtribuidaId"])
+        Index(value = ["anamneseAtribuidaId"]),
+        Index(value = ["firestoreId"], unique = true)
     ]
 )
 data class PerguntaAnamneseAtribuidaEntity(
@@ -28,5 +29,6 @@ data class PerguntaAnamneseAtribuidaEntity(
     val tipoResposta: String = "TEXTO",
     val opcoes: String = "",
     val obrigatoria: Boolean = false,
-    val ordem: Int = 0
+    val ordem: Int = 0,
+    val firestoreId: String? = null
 )

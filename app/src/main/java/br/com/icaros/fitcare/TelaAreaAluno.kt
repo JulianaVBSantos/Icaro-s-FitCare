@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare
 
 import androidx.compose.foundation.Image
@@ -372,8 +371,23 @@ fun TelaAreaAluno(
                                     carregando = true
                                     mensagemErro = ""
 
+                                    // Aguarda os salvamentos automáticos.
                                     aguardarSalvamentos()
 
+                                    // Salva novamente todas as respostas atuais.
+                                    // A gravação é sequencial e aguardada.
+                                    for (pergunta in perguntas) {
+                                        val respostaAtual =
+                                            respostas[pergunta.id] ?: ""
+
+                                        respostaRepository.salvarRespostaDoAluno(
+                                            alunoId = idAluno,
+                                            perguntaId = pergunta.id,
+                                            resposta = respostaAtual
+                                        )
+                                    }
+
+                                    // Conclui somente depois de salvar tudo.
                                     respostaRepository.concluirDoAluno(
                                         alunoId = idAluno,
                                         anamneseId = anamneseSelecionadaId!!

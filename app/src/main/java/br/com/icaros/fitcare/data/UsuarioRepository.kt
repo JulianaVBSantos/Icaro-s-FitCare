@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import android.content.Context
@@ -23,7 +22,6 @@ class UsuarioRepository(
         private const val PERFIL_ALUNO = "ALUNO"
         private const val PERFIL_ADMIN = "ADMIN"
 
-        // UID administrativo autorizado nas regras do Firestore.
         private const val UID_ADMIN_AUTORIZADO = "Bcqsue17eVVdJ4Ajc9EhoTQfJ8b2"
         private const val NOME_FIREBASE_APP_SECUNDARIO = "FitCareTeacherProvisioning"
 
@@ -36,12 +34,6 @@ class UsuarioRepository(
 
     // FIREBASE AUTHENTICATION
 
-    /**
-     * Autentica uma conta já migrada ou migra uma conta antiga
-     * do Room para o Firebase Authentication.
-     *
-     * A senha nunca é enviada como hash PBKDF2 ao Firebase.
-     */
     private suspend fun autenticarFirebase(
         usuario: UsuarioEntity,
         senha: String
@@ -50,23 +42,18 @@ class UsuarioRepository(
         val auth = FirebaseAuth.getInstance()
 
         val firebaseUser = if (usuario.firebaseUid.isNullOrBlank()) {
-
             try {
                 auth.createUserWithEmailAndPassword(
                     usuario.email,
                     senha
                 ).await().user
-
             } catch (e: FirebaseAuthUserCollisionException) {
-
                 auth.signInWithEmailAndPassword(
                     usuario.email,
                     senha
                 ).await().user
             }
-
         } else {
-
             auth.signInWithEmailAndPassword(
                 usuario.email,
                 senha
@@ -77,47 +64,107 @@ class UsuarioRepository(
 
         val uid = firebaseUser.uid
 
-        if (
-            !usuario.firebaseUid.isNullOrBlank() &&
-            usuario.firebaseUid != uid
-        ) {
-            auth.signOut()
-
-            throw IllegalStateException(
-                "A identificação da conta no Firebase não corresponde ao cadastro local."
-            )
-        }
-
-        if (usuario.firebaseUid.isNullOrBlank()) {
-
-            val alterados = usuarioDao.atualizarFirebaseUid(
-                usuarioId = usuario.id,
-                firebaseUid = uid
-            )
-
-            if (alterados != 1) {
-                auth.signOut()
-
+        try {
+            if (
+                !usuario.firebaseUid.isNullOrBlank() &&
+                usuario.firebaseUid != uid
+            ) {
                 throw IllegalStateException(
-                    "Não foi possível associar a conta ao Firebase no banco local."
+                    "A identificação da conta no Firebase não corresponde ao cadastro local."
                 )
             }
 
-            return usuario.copy(firebaseUid = uid)
+            var usuarioAtualizado = usuario
+
+            if (usuario.firebaseUid.isNullOrBlank()) {
+                val alterados = usuarioDao.atualizarFirebaseUid(
+                    usuarioId = usuario.id,
+                    firebaseUid = uid
+                )
+
+                check(alterados == 1) {
+                    "Não foi possível associar a conta ao Firebase no banco local."
+                }
+
+                usuarioAtualizado = usuario.copy(firebaseUid = uid)
+            }
+
+            if (usuarioAtualizado.perfil == PERFIL_ALUNO) {
+                vincularAlunoAoFirebase(
+                    usuario = usuarioAtualizado,
+                    uid = uid
+                )
+            }
+
+            return usuarioAtualizado
+
+        } catch (e: Exception) {
+            auth.signOut()
+            throw e
+        }
+    }
+
+    /**
+     * Vincula a conta autenticada do aluno ao documento remoto.
+     *
+     * O documento precisa existir previamente na coleção alunos.
+     * O UID nunca é associado apenas pela existência do e-mail:
+     * também é verificado se já existe outro vínculo.
+     */
+    private suspend fun vincularAlunoAoFirebase(
+        usuario: UsuarioEntity,
+        uid: String
+    ) {
+        require(usuario.perfil == PERFIL_ALUNO) {
+            "Operação permitida somente para alunos."
         }
 
-        return usuario
+        require(usuario.email.isNotBlank()) {
+            "O aluno não possui e-mail cadastrado."
+        }
+
+        require(uid.isNotBlank()) {
+            "UID Firebase inválido."
+        }
+
+        val emailNormalizado = usuario.email.trim().lowercase()
+
+        val resultado = FirebaseFirestore.getInstance()
+            .collection("alunos")
+            .whereEqualTo("email", emailNormalizado)
+            .get()
+            .await()
+
+        require(resultado.documents.size == 1) {
+            "Não foi encontrado um cadastro remoto único para este aluno. Sincronize o cadastro com o professor."
+        }
+
+        val documento = resultado.documents.first()
+
+        val emailRemoto = documento.getString("email")
+            ?.trim()
+            ?.lowercase()
+
+        require(emailRemoto == emailNormalizado) {
+            "O e-mail do cadastro remoto não corresponde ao aluno autenticado."
+        }
+
+        val uidExistente = documento.getString("alunoAuthUid")
+
+        require(uidExistente.isNullOrBlank() || uidExistente == uid) {
+            "Este cadastro de aluno já está vinculado a outra conta Firebase."
+        }
+
+        if (uidExistente.isNullOrBlank()) {
+            documento.reference.update(
+                "alunoAuthUid",
+                uid
+            ).await()
+        }
     }
 
     // LOGIN DO PROFESSOR PELO FIREBASE
 
-    /**
-     * Permite autenticar o professor em um dispositivo
-     * que ainda não possui seu cadastro no Room.
-     *
-     * A autorização é consultada diretamente no Firestore.
-     * O aplicativo não cria contas Firebase neste fluxo.
-     */
     private suspend fun entrarProfessorFirebase(
         email: String,
         senha: String
@@ -125,7 +172,6 @@ class UsuarioRepository(
 
         val auth = FirebaseAuth.getInstance()
 
-        // 1. Autentica no Firebase Authentication.
         val firebaseUser = auth.signInWithEmailAndPassword(
             email,
             senha
@@ -136,8 +182,6 @@ class UsuarioRepository(
         val uid = firebaseUser.uid
 
         try {
-
-            // 2. Consulta o documento de autorização remoto.
             val documento = FirebaseFirestore.getInstance()
                 .collection("usuarios")
                 .document(uid)
@@ -162,15 +206,12 @@ class UsuarioRepository(
                 )
             }
 
-            // 3. Busca o cadastro local pelo UID e pelo e-mail.
             val usuarioPorUid =
                 usuarioDao.buscarPorFirebaseUid(uid)
 
             val usuarioPorEmail =
                 usuarioDao.buscarPorEmail(email)
 
-            // Impede que dois registros locais diferentes
-            // sejam associados à mesma conta.
             if (
                 usuarioPorUid != null &&
                 usuarioPorEmail != null &&
@@ -185,16 +226,13 @@ class UsuarioRepository(
 
             val usuarioFinal = if (usuarioLocal != null) {
 
-                // 4. Já existe cadastro local.
                 if (usuarioLocal.perfil != PERFIL_PROFESSOR) {
                     throw IllegalStateException(
                         "O cadastro local não pertence ao perfil de professor."
                     )
                 }
 
-                if (
-                    usuarioLocal.email != email
-                ) {
+                if (usuarioLocal.email != email) {
                     throw IllegalStateException(
                         "O e-mail do cadastro local não corresponde à conta autenticada."
                     )
@@ -209,9 +247,7 @@ class UsuarioRepository(
                     )
                 }
 
-                // Atualiza o status local conforme a autorização remota.
                 if (!usuarioLocal.ativo) {
-
                     val alterados = usuarioDao.atualizarStatus(
                         id = usuarioLocal.id,
                         ativo = true
@@ -222,9 +258,7 @@ class UsuarioRepository(
                     }
                 }
 
-                // Associa o UID caso ainda não esteja vinculado.
                 if (usuarioLocal.firebaseUid.isNullOrBlank()) {
-
                     val alterados = usuarioDao.atualizarFirebaseUid(
                         usuarioId = usuarioLocal.id,
                         firebaseUid = uid
@@ -242,9 +276,6 @@ class UsuarioRepository(
 
             } else {
 
-                // 5. Primeiro acesso deste professor neste dispositivo.
-                // A senha já foi validada pelo Firebase Authentication.
-                // Não criamos um hash PBKDF2 fictício.
                 val novoUsuario = UsuarioEntity(
                     nome = firebaseUser.displayName
                         ?.takeIf { it.isNotBlank() }
@@ -261,24 +292,16 @@ class UsuarioRepository(
                 novoUsuario.copy(id = novoId)
             }
 
-            // 6. Inicia a sessão somente após validar a autorização.
             SessaoUsuario.iniciar(usuarioFinal)
 
             return usuarioFinal
 
         } catch (e: Exception) {
-
-            // Não mantém uma sessão autenticada se a validação
-            // ou a criação do registro local falhar.
             auth.signOut()
-
             throw e
         }
     }
 
-    /** Inicializa um FirebaseApp isolado para provisionar contas sem trocar
-     * o usuário autenticado na instância principal do aplicativo.
-     */
     private fun obterFirebaseAppSecundario(): FirebaseApp {
         return try {
             FirebaseApp.getInstance(NOME_FIREBASE_APP_SECUNDARIO)
@@ -293,16 +316,15 @@ class UsuarioRepository(
         }
     }
 
-    /**
-     * Login administrativo em qualquer dispositivo.
-     * A identidade administrativa é validada pelo UID fixo no Firebase;
-     * o Room local é criado automaticamente quando ainda não existe.
-     */
+    // LOGIN ADMINISTRATIVO
+
     private suspend fun entrarAdminFirebase(
         email: String,
         senha: String
     ): UsuarioEntity {
+
         val auth = FirebaseAuth.getInstance()
+
         val firebaseUser = try {
             auth.signInWithEmailAndPassword(email, senha).await().user
         } catch (e: Exception) {
@@ -316,15 +338,21 @@ class UsuarioRepository(
             require(firebaseUser.uid == UID_ADMIN_AUTORIZADO) {
                 "Esta conta não está autorizada como administradora do Ícaros FitCare."
             }
+
             require(email == EMAIL_ADMIN_INICIAL) {
                 "E-mail administrativo inválido."
             }
 
-            val usuarioPorEmail = usuarioDao.buscarPorEmail(EMAIL_ADMIN_INICIAL)
-            val usuarioPorUid = usuarioDao.buscarPorFirebaseUid(UID_ADMIN_AUTORIZADO)
+            val usuarioPorEmail =
+                usuarioDao.buscarPorEmail(EMAIL_ADMIN_INICIAL)
+
+            val usuarioPorUid =
+                usuarioDao.buscarPorFirebaseUid(UID_ADMIN_AUTORIZADO)
 
             val usuarioLocal = usuarioPorEmail ?: usuarioPorUid
+
             val usuarioAutenticado = if (usuarioLocal != null) {
+
                 require(
                     usuarioLocal.perfil == PERFIL_ADMIN &&
                             usuarioLocal.ativo &&
@@ -332,6 +360,7 @@ class UsuarioRepository(
                 ) {
                     "Já existe um cadastro local incompatível com a conta administrativa."
                 }
+
                 require(
                     usuarioLocal.firebaseUid.isNullOrBlank() ||
                             usuarioLocal.firebaseUid == UID_ADMIN_AUTORIZADO
@@ -344,14 +373,21 @@ class UsuarioRepository(
                         usuarioId = usuarioLocal.id,
                         firebaseUid = UID_ADMIN_AUTORIZADO
                     )
+
                     check(atualizados == 1) {
                         "Não foi possível vincular o administrador ao Firebase."
                     }
                 }
-                usuarioLocal.copy(firebaseUid = UID_ADMIN_AUTORIZADO)
+
+                usuarioLocal.copy(
+                    firebaseUid = UID_ADMIN_AUTORIZADO
+                )
+
             } else {
+
                 val novoAdmin = UsuarioEntity(
-                    nome = firebaseUser.displayName?.takeIf { it.isNotBlank() }
+                    nome = firebaseUser.displayName
+                        ?.takeIf { it.isNotBlank() }
                         ?: "Administrador",
                     email = EMAIL_ADMIN_INICIAL,
                     senhaHash = gerarHashSenha(senha),
@@ -359,26 +395,28 @@ class UsuarioRepository(
                     ativo = true,
                     firebaseUid = UID_ADMIN_AUTORIZADO
                 )
+
                 val novoId = usuarioDao.inserir(novoAdmin)
+
                 novoAdmin.copy(id = novoId)
             }
 
             registrarConfiguracaoAdmin(UID_ADMIN_AUTORIZADO)
             SessaoUsuario.iniciar(usuarioAutenticado)
+
             return usuarioAutenticado
+
         } catch (e: Exception) {
             auth.signOut()
             throw e
         }
     }
 
-    /** Publica um marcador sem dados pessoais para os demais dispositivos
-     * saberem que a configuração administrativa inicial já foi concluída.
-     */
     private suspend fun registrarConfiguracaoAdmin(uid: String) {
         require(uid == UID_ADMIN_AUTORIZADO) {
             "UID administrativo não autorizado."
         }
+
         FirebaseFirestore.getInstance()
             .collection("configuracao")
             .document("admin")
@@ -404,7 +442,6 @@ class UsuarioRepository(
         validarCadastro(nome, email, senha)
 
         val emailNormalizado = email.trim().lowercase()
-
         val emailProfessorNormalizado =
             emailProfessorInicial.trim().lowercase()
 
@@ -412,9 +449,7 @@ class UsuarioRepository(
             "O e-mail informado não está autorizado para a conta administrativa."
         }
 
-        require(
-            emailProfessorNormalizado == EMAIL_PROFESSOR_INICIAL
-        ) {
+        require(emailProfessorNormalizado == EMAIL_PROFESSOR_INICIAL) {
             "Informe o e-mail do professor inicial."
         }
 
@@ -469,6 +504,7 @@ class UsuarioRepository(
         require(adminAutenticado.firebaseUid == UID_ADMIN_AUTORIZADO) {
             "A conta autenticada não corresponde ao UID administrativo autorizado."
         }
+
         registrarConfiguracaoAdmin(UID_ADMIN_AUTORIZADO)
         SessaoUsuario.iniciar(adminAutenticado)
 
@@ -483,15 +519,13 @@ class UsuarioRepository(
         senha: String
     ): UsuarioEntity {
 
-        val admin = exigirAdminAtivo()
-
+        exigirAdminAtivo()
         validarCadastro(nome, email, senha)
 
         val emailNormalizado = email.trim().lowercase()
 
         require(
-            admin.firebaseUid == UID_ADMIN_AUTORIZADO &&
-                    FirebaseAuth.getInstance().currentUser?.uid == UID_ADMIN_AUTORIZADO
+            FirebaseAuth.getInstance().currentUser?.uid == UID_ADMIN_AUTORIZADO
         ) {
             "A sessão administrativa do Firebase não está autorizada para cadastrar professores."
         }
@@ -502,10 +536,9 @@ class UsuarioRepository(
             "Este e-mail já está cadastrado."
         }
 
-        // Cria a conta usando uma instância secundária do Firebase Auth.
-        // Assim, a sessão principal do administrador permanece intacta.
         val appSecundario = obterFirebaseAppSecundario()
         val authSecundario = FirebaseAuth.getInstance(appSecundario)
+
         var contaCriadaAgora = false
 
         val firebaseUser = try {
@@ -516,8 +549,6 @@ class UsuarioRepository(
                 contaCriadaAgora = true
             }
         } catch (e: FirebaseAuthUserCollisionException) {
-            // Permite retomar um cadastro interrompido, desde que a senha
-            // fornecida corresponda à conta que já existe no Authentication.
             authSecundario.signInWithEmailAndPassword(
                 emailNormalizado,
                 senha
@@ -554,19 +585,20 @@ class UsuarioRepository(
             )
 
             val id = usuarioDao.inserir(usuario)
+
             return usuario.copy(id = id)
 
         } catch (e: Exception) {
-            // Só remove a conta se ela foi criada nesta tentativa. Se já existia,
-            // preservamos a conta para não apagar um acesso válido.
             if (contaCriadaAgora) {
                 try {
                     authSecundario.currentUser?.delete()?.await()
                 } catch (_: Exception) {
-                    // Mantém o erro original para diagnóstico.
+                    // Mantém o erro original.
                 }
             }
+
             throw e
+
         } finally {
             authSecundario.signOut()
         }
@@ -652,19 +684,13 @@ class UsuarioRepository(
             "Perfil inválido."
         }
 
-        // PROFESSOR:
-        // Autentica primeiro no Firebase, permitindo acesso
-        // mesmo quando o Room ainda não possui o cadastro.
         if (perfilEsperado == PERFIL_PROFESSOR) {
-
             return entrarProfessorFirebase(
                 email = emailNormalizado,
                 senha = senha
             )
         }
 
-        // O administrador autentica pelo Firebase e é provisionado no Room
-        // automaticamente em dispositivos novos. Alunos seguem o fluxo local.
         if (perfilEsperado == PERFIL_ADMIN) {
             return entrarAdminFirebase(
                 email = emailNormalizado,
@@ -723,8 +749,7 @@ class UsuarioRepository(
                     )
                 }
 
-                val professor =
-                    usuarioDao.buscarPorId(professorId)
+                val professor = usuarioDao.buscarPorId(professorId)
 
                 if (
                     professor == null ||
@@ -733,15 +758,6 @@ class UsuarioRepository(
                 ) {
                     throw IllegalArgumentException(
                         "O professor responsável por esta conta está inativo."
-                    )
-                }
-            }
-
-            PERFIL_ADMIN -> {
-
-                if (usuario.email != EMAIL_ADMIN_INICIAL) {
-                    throw IllegalArgumentException(
-                        "Conta administrativa inválida."
                     )
                 }
             }
@@ -762,13 +778,8 @@ class UsuarioRepository(
         senha: String,
         perfilEsperado: String
     ): UsuarioEntity? {
-
         return try {
             entrar(email, senha, perfilEsperado)
-        } catch (e: IllegalArgumentException) {
-            null
-        } catch (e: IllegalStateException) {
-            null
         } catch (e: Exception) {
             null
         }
@@ -801,7 +812,6 @@ class UsuarioRepository(
         ) return null
 
         if (usuario.perfil == PERFIL_ALUNO) {
-
             val alunoId = usuario.alunoId ?: return null
             val professorId = usuario.professorId ?: return null
 
@@ -837,14 +847,12 @@ class UsuarioRepository(
 
         val firestore = FirebaseFirestore.getInstance()
 
-        // Busca todos os professores cadastrados no Firestore.
         val resultado = firestore
             .collection("usuarios")
             .whereEqualTo("perfil", PERFIL_PROFESSOR)
             .get()
             .await()
 
-        // Importa ou atualiza os professores no Room.
         for (documento in resultado.documents) {
 
             val uid = documento.id
@@ -861,20 +869,10 @@ class UsuarioRepository(
             val ativo = documento.getBoolean("ativo") ?: false
 
             if (uid.isBlank() || nome.isBlank() || email.isBlank()) {
-
-                val camposAusentes = buildList {
-                    if (uid.isBlank()) add("UID")
-                    if (nome.isBlank()) add("nome")
-                    if (email.isBlank()) add("email")
-                }
-
                 android.util.Log.w(
                     "FitCareSync",
-                    "Professor ignorado. Documento: ${documento.id}. " +
-                            "Campos ausentes: ${camposAusentes.joinToString()}. " +
-                            "Dados: ${documento.data}"
+                    "Professor ignorado. Documento: ${documento.id}. Dados: ${documento.data}"
                 )
-
                 continue
             }
 
@@ -884,7 +882,6 @@ class UsuarioRepository(
             val usuarioPorEmail =
                 usuarioDao.buscarPorEmail(email)
 
-            // Evita associar dois registros locais diferentes à mesma conta.
             require(
                 usuarioPorUid == null ||
                         usuarioPorEmail == null ||
@@ -923,8 +920,6 @@ class UsuarioRepository(
 
             } else {
 
-                // Primeiro cadastro deste professor neste dispositivo.
-                // A autenticação e a senha continuam sob responsabilidade do Firebase.
                 val novoProfessor = UsuarioEntity(
                     nome = nome,
                     email = email,
@@ -938,7 +933,6 @@ class UsuarioRepository(
             }
         }
 
-        // Retorna a lista atualizada do Room.
         return usuarioDao.listarProfissionaisParaAdmin()
     }
 
@@ -968,8 +962,6 @@ class UsuarioRepository(
             "A conta do professor inicial não pode ser bloqueada."
         }
 
-        // Atualiza primeiro a autorização remota. Assim, um bloqueio feito
-        // pelo administrador também impede o login em outros dispositivos.
         professor.firebaseUid
             ?.takeIf { it.isNotBlank() }
             ?.let { uid ->
@@ -1047,13 +1039,10 @@ class UsuarioRepository(
             "A conta do professor inicial não pode ser excluída."
         }
 
-        require(
-            !usuarioDao.professorPossuiAlunos(professorId)
-        ) {
+        require(!usuarioDao.professorPossuiAlunos(professorId)) {
             "Transfira os alunos deste professor antes de excluir sua conta."
         }
 
-        // Revoga o acesso remoto antes de remover o cadastro local.
         professor.firebaseUid
             ?.takeIf { it.isNotBlank() }
             ?.let { uid ->
@@ -1361,7 +1350,7 @@ class UsuarioRepository(
     // ADMINISTRADOR
 
     suspend fun existeAdministrador(): Boolean {
-        // Se já existe administrador no Room, não solicitar configuração inicial.
+
         if (usuarioDao.contarAdmins() > 0) {
             return true
         }
@@ -1373,12 +1362,9 @@ class UsuarioRepository(
                 .get()
                 .await()
 
-            // A existência do documento é suficiente.
             documento.exists()
 
         } catch (e: Exception) {
-            // Em caso de falha de rede ou leitura, nunca oferecer
-            // a criação de um segundo administrador.
             true
         }
     }

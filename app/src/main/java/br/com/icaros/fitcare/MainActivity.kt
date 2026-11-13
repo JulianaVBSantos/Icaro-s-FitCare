@@ -387,8 +387,9 @@ fun FitCareApp(
                     }
                 }
 
-                // Retoma a sincronização imediata e periódica do professor.
-                if (usuario.perfil == "PROFESSOR") {
+                // Retoma a sincronização imediata e periódica
+                // tanto para o professor quanto para o aluno.
+                if (usuario.perfil == "PROFESSOR" || usuario.perfil == "ALUNO") {
                     AlunoSyncWorker.agendar(context)
                     AlunoSyncWorker.agendarPeriodica(context)
                 }
@@ -492,6 +493,8 @@ fun FitCareApp(
                                 documentoRepository = anamneseRepository,
                                 alunoRepository = repository,
                                 onSair = {
+                                    AlunoSyncWorker.cancelarPeriodica(context)
+
                                     preferenciasSessao.edit()
                                         .remove(CHAVE_USUARIO_ID)
                                         .remove(CHAVE_PERFIL)
@@ -534,8 +537,9 @@ fun FitCareApp(
                                             DispositivoRepository(context).registrarAtividade(uid)
                                         }
                                     }
-                                    // Agenda a sincronização imediata e periódica do professor.
-                                    if (usuario.perfil == "PROFESSOR") {
+                                    // Agenda a sincronização imediata e periódica
+                                    // tanto para o professor quanto para o aluno.
+                                    if (usuario.perfil == "PROFESSOR" || usuario.perfil == "ALUNO") {
                                         AlunoSyncWorker.agendar(context)
                                         AlunoSyncWorker.agendarPeriodica(context)
                                     }

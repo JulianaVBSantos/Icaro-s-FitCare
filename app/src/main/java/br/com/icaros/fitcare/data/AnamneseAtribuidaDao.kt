@@ -1,6 +1,7 @@
 
 package br.com.icaros.fitcare.data
 
+import androidx.room.OnConflictStrategy
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
@@ -204,5 +205,122 @@ abstract class AnamneseAtribuidaDao {
         status: String,
         dataResposta: String,
         alunoId: Long
+    ): Int
+    @Query("""
+    SELECT aa.*
+    FROM anamneses_atribuidas aa
+    INNER JOIN alunos a ON a.id = aa.alunoId
+    WHERE a.professorId = :professorId
+      AND aa.excluida = 0
+""")
+    abstract suspend fun listarTodasParaSincronizacaoDoProfessor(
+        professorId: Long
+    ): List<AnamneseAtribuidaEntity>
+
+    @Query("""
+    SELECT *
+    FROM anamneses_atribuidas
+    WHERE alunoId = :alunoId
+      AND excluida = 0
+""")
+    abstract suspend fun listarTodasParaSincronizacaoDoAluno(
+        alunoId: Long
+    ): List<AnamneseAtribuidaEntity>
+
+    @Query("""
+    SELECT *
+    FROM anamneses_atribuidas
+    WHERE firestoreId = :firestoreId
+    LIMIT 1
+""")
+    abstract suspend fun buscarPorFirestoreId(
+        firestoreId: String
+    ): AnamneseAtribuidaEntity?
+
+    @Query("""
+    UPDATE anamneses_atribuidas
+    SET firestoreId = :firestoreId,
+        updatedAtMillis = :updatedAtMillis
+    WHERE id = :id
+""")
+    abstract suspend fun atualizarIdentificadoresSincronizacao(
+        id: Long,
+        firestoreId: String,
+        updatedAtMillis: Long
+    )
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun inserirRecebidaDoFirestoreInterno(
+        anamnese: AnamneseAtribuidaEntity
+    ): Long
+
+    @Transaction
+    open suspend fun inserirRecebidaDoFirestore(
+        anamnese: AnamneseAtribuidaEntity
+    ): Long {
+        val existente = buscarPorFirestoreId(
+            anamnese.firestoreId ?: return -1L
+        )
+
+        if (existente != null) {
+            return existente.id
+        }
+
+        return inserirRecebidaDoFirestoreInterno(anamnese)
+    }
+    @Query("""
+    UPDATE anamneses_atribuidas
+    SET firestoreId = :firestoreId,
+        updatedAtMillis = :updatedAtMillis
+    WHERE id = :id
+""")
+    abstract suspend fun atualizarFirestoreId(
+        id: Long,
+        firestoreId: String,
+        updatedAtMillis: Long
+    ): Int
+
+    @Query("""
+    UPDATE anamneses_atribuidas
+    SET nomeModelo = :nomeModelo,
+        status = :status,
+        dataCriacao = :dataCriacao,
+        dataEnvio = :dataEnvio,
+        dataInicioResposta = :dataInicioResposta,
+        dataResposta = :dataResposta,
+        profissionalResponsavel = :profissionalResponsavel,
+        identificadorExterno = :identificadorExterno,
+        updatedAtMillis = :updatedAtMillis,
+        excluida = :excluida
+    WHERE firestoreId = :firestoreId
+""")
+    abstract suspend fun atualizarRecebidaDoFirestore(
+        firestoreId: String,
+        nomeModelo: String,
+        status: String,
+        dataCriacao: String,
+        dataEnvio: String,
+        dataInicioResposta: String,
+        dataResposta: String,
+        profissionalResponsavel: String,
+        identificadorExterno: String,
+        updatedAtMillis: Long,
+        excluida: Boolean
+    ): Int
+
+    @Query("""
+    UPDATE anamneses_atribuidas
+    SET status = :status,
+        dataInicioResposta = :dataInicioResposta,
+        dataResposta = :dataResposta,
+        updatedAtMillis = :updatedAtMillis
+    WHERE firestoreId = :firestoreId
+""")
+    abstract suspend fun atualizarStatusSincronizado(
+        firestoreId: String,
+        status: String,
+        dataInicioResposta: String,
+        dataResposta: String,
+        updatedAtMillis: Long
     ): Int
 }

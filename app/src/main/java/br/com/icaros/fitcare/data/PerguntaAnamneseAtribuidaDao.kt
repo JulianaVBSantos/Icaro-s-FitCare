@@ -36,6 +36,96 @@ abstract class PerguntaAnamneseAtribuidaDao {
         perguntas: List<PerguntaAnamneseAtribuidaEntity>
     ): List<Long>
 
+    // Inserção interna para sincronização.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    protected abstract suspend fun inserirParaSincronizacaoInterno(
+        pergunta: PerguntaAnamneseAtribuidaEntity
+    ): Long
+
+    // Atualiza uma pergunta usando seu identificador remoto.
+    @Query("""
+        UPDATE perguntas_anamnese_atribuidas
+        SET anamneseAtribuidaId = :anamneseAtribuidaId,
+            perguntaModeloId = :perguntaModeloId,
+            texto = :texto,
+            tipoResposta = :tipoResposta,
+            opcoes = :opcoes,
+            obrigatoria = :obrigatoria,
+            ordem = :ordem
+        WHERE firestoreId = :firestoreId
+    """)
+    protected abstract suspend fun atualizarPorFirestoreIdInterno(
+        firestoreId: String,
+        anamneseAtribuidaId: Long,
+        perguntaModeloId: Long?,
+        texto: String,
+        tipoResposta: String,
+        opcoes: String,
+        obrigatoria: Boolean,
+        ordem: Int
+    ): Int
+
+    // Insere ou atualiza sem substituir o registro existente.
+    // Isso preserva o ID local usado pela tabela de respostas.
+    @Transaction
+    open suspend fun inserirOuAtualizarParaSincronizacao(
+        pergunta: PerguntaAnamneseAtribuidaEntity
+    ): Long {
+        require(!pergunta.firestoreId.isNullOrBlank()) {
+            "A pergunta precisa possuir um firestoreId."
+        }
+
+        inserirParaSincronizacaoInterno(pergunta)
+
+        atualizarPorFirestoreIdInterno(
+            firestoreId = pergunta.firestoreId,
+            anamneseAtribuidaId = pergunta.anamneseAtribuidaId,
+            perguntaModeloId = pergunta.perguntaModeloId,
+            texto = pergunta.texto,
+            tipoResposta = pergunta.tipoResposta,
+            opcoes = pergunta.opcoes,
+            obrigatoria = pergunta.obrigatoria,
+            ordem = pergunta.ordem
+        )
+
+        return buscarPorFirestoreIdInterno(pergunta.firestoreId)?.id
+            ?: throw IllegalStateException(
+                "Não foi possível salvar a pergunta sincronizada."
+            )
+    }
+
+    @Query("""
+        SELECT *
+        FROM perguntas_anamnese_atribuidas
+        WHERE firestoreId = :firestoreId
+        LIMIT 1
+    """)
+    protected abstract suspend fun buscarPorFirestoreIdInterno(
+        firestoreId: String
+    ): PerguntaAnamneseAtribuidaEntity?
+
+    // Busca pública para uso pelo serviço de sincronização.
+    @Query("""
+        SELECT *
+        FROM perguntas_anamnese_atribuidas
+        WHERE firestoreId = :firestoreId
+        LIMIT 1
+    """)
+    abstract suspend fun buscarPorFirestoreId(
+        firestoreId: String
+    ): PerguntaAnamneseAtribuidaEntity?
+
+    // Lista perguntas de uma anamnese para sincronização.
+    @Query("""
+        SELECT *
+        FROM perguntas_anamnese_atribuidas
+        WHERE anamneseAtribuidaId = :anamneseId
+        ORDER BY ordem ASC, id ASC
+    """)
+    abstract suspend fun listarParaSincronizacao(
+        anamneseId: Long
+    ): List<PerguntaAnamneseAtribuidaEntity>
+
     @Transaction
     open suspend fun inserirDoProfessor(
         pergunta: PerguntaAnamneseAtribuidaEntity,
@@ -245,5 +335,15 @@ abstract class PerguntaAnamneseAtribuidaDao {
     abstract suspend fun excluirTodasDaAnamneseDoProfessor(
         anamneseId: Long,
         professorId: Long
+    ): Int
+    @Query("""
+    UPDATE perguntas_anamnese_atribuidas
+    SET firestoreId = :firestoreId
+    WHERE id = :id
+      AND (firestoreId IS NULL OR firestoreId = '')
+""")
+    abstract suspend fun atribuirFirestoreId(
+        id: Long,
+        firestoreId: String
     ): Int
 }

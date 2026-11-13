@@ -1,8 +1,10 @@
+
 package br.com.icaros.fitcare.data
 
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 class ModeloAnamneseRepository(
@@ -15,7 +17,7 @@ class ModeloAnamneseRepository(
             Locale.getDefault()
         ).format(Date())
 
-    // LISTAR MODELOS
+    private fun agoraMillis(): Long = System.currentTimeMillis()
 
     fun listarTodos(): Flow<List<ModeloAnamneseEntity>> {
         return dao.listarTodosDoProfessor(
@@ -35,15 +37,8 @@ class ModeloAnamneseRepository(
         )
     }
 
-    // BUSCAR MODELO
-
-    suspend fun buscarPorId(
-        id: Long
-    ): ModeloAnamneseEntity? {
-
-        require(id > 0) {
-            "Modelo inválido."
-        }
+    suspend fun buscarPorId(id: Long): ModeloAnamneseEntity? {
+        require(id > 0) { "Modelo inválido." }
 
         return dao.buscarPorIdDoProfessor(
             id,
@@ -51,11 +46,7 @@ class ModeloAnamneseRepository(
         )
     }
 
-    // SALVAR MODELO
-
-    suspend fun salvar(
-        modelo: ModeloAnamneseEntity
-    ): Long {
+    suspend fun salvar(modelo: ModeloAnamneseEntity): Long {
 
         val professorId = SessaoUsuario.exigirProfessorId()
 
@@ -71,50 +62,48 @@ class ModeloAnamneseRepository(
         }
 
         val data = agora()
+        val millis = agoraMillis()
 
         return if (modelo.id == 0L) {
 
-            // Permite criar vários modelos padrão ou personalizados.
             val novoModelo = modelo.copy(
                 id = 0L,
                 nome = modelo.nome.trim(),
-                categoria = modelo.categoria,
                 professorId = professorId,
                 dataCriacao = data,
-                dataAtualizacao = data
+                dataAtualizacao = data,
+                firestoreId = UUID.randomUUID().toString(),
+                excluido = false,
+                updatedAtMillis = millis,
+                deletedAtMillis = null
             )
 
             dao.inserir(novoModelo)
 
         } else {
 
-            // Somente modelos personalizados podem ser editados.
-            val modeloExistente =
-                dao.buscarPersonalizadoDoProfessor(
-                    modelo.id,
-                    professorId
-                ) ?: throw IllegalArgumentException(
-                    "Modelo não encontrado ou você não tem permissão para editá-lo."
-                )
+            val existente = dao.buscarModeloEditavelDoProfessor(
+                modelo.id,
+                professorId
+            ) ?: throw IllegalArgumentException(
+                "Modelo não encontrado ou você não tem permissão para editá-lo."
+            )
 
-            val modeloAtualizado = modeloExistente.copy(
+            val atualizado = existente.copy(
                 nome = modelo.nome.trim(),
                 descricao = modelo.descricao,
                 ativo = modelo.ativo,
-                dataAtualizacao = data
+                dataAtualizacao = data,
+                updatedAtMillis = millis
             )
 
-            dao.atualizar(modeloAtualizado)
+            dao.atualizar(atualizado)
 
-            modeloExistente.id
+            existente.id
         }
     }
 
-    // EXCLUIR MODELO PADRÃO OU PERSONALIZADO
-
-    suspend fun excluir(
-        modelo: ModeloAnamneseEntity
-    ) {
+    suspend fun excluir(modelo: ModeloAnamneseEntity) {
 
         val professorId = SessaoUsuario.exigirProfessorId()
 
@@ -122,29 +111,37 @@ class ModeloAnamneseRepository(
             "Modelo inválido."
         }
 
-        // Confere se o modelo está disponível para este professor.
-        val modeloExistente =
-            dao.buscarPorIdDoProfessor(
-                modelo.id,
-                professorId
-            ) ?: throw IllegalArgumentException(
-                "Modelo não encontrado ou indisponível."
-            )
+        val existente = dao.buscarPorIdDoProfessor(
+            modelo.id,
+            professorId
+        ) ?: throw IllegalArgumentException(
+            "Modelo não encontrado ou indisponível."
+        )
 
-        // Exclui conforme a categoria.
-        val linhasAfetadas = when (modeloExistente.categoria) {
+        when (existente.categoria) {
 
             "PADRAO" -> {
-                dao.excluirModeloPadrao(
-                    modeloExistente.id
-                )
+                val linhas = dao.excluirModeloPadrao(existente.id)
+
+                check(linhas > 0) {
+                    "Não foi possível excluir o modelo padrão."
+                }
             }
 
             "PERSONALIZADO" -> {
-                dao.excluirPersonalizado(
-                    modeloExistente.id,
-                    professorId
+                val data = agora()
+                val millis = agoraMillis()
+
+                val linhas = dao.marcarPersonalizadoComoExcluido(
+                    id = existente.id,
+                    professorId = professorId,
+                    dataAtualizacao = data,
+                    updatedAtMillis = millis
                 )
+
+                check(linhas > 0) {
+                    "Não foi possível excluir o modelo."
+                }
             }
 
             else -> {
@@ -153,13 +150,7 @@ class ModeloAnamneseRepository(
                 )
             }
         }
-
-        check(linhasAfetadas > 0) {
-            "Não foi possível excluir o modelo."
-        }
     }
-
-    // ATIVAR OU DESATIVAR MODELO PERSONALIZADO
 
     suspend fun alterarAtivo(
         id: Long,
@@ -172,19 +163,28 @@ class ModeloAnamneseRepository(
             "Modelo inválido."
         }
 
-        val modelo =
-            dao.buscarPersonalizadoDoProfessor(
-                id,
-                professorId
-            ) ?: throw IllegalArgumentException(
-                "Modelo não encontrado ou você não tem permissão para alterá-lo."
-            )
+        val modelo = dao.buscarPersonalizadoDoProfessor(
+            id,
+            professorId
+        ) ?: throw IllegalArgumentException(
+            "Modelo não encontrado ou você não tem permissão para alterá-lo."
+        )
+
+        val data = agora()
+        val millis = agoraMillis()
 
         dao.atualizarStatusPersonalizado(
             id = modelo.id,
             ativo = ativo,
-            dataAtualizacao = agora(),
+            dataAtualizacao = data,
             professorId = professorId
+        )
+
+        dao.atualizarDataAlteracaoParaSincronizacao(
+            modeloId = modelo.id,
+            professorId = professorId,
+            dataAtualizacao = data,
+            updatedAtMillis = millis
         )
     }
 }

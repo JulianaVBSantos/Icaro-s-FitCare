@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RespostaAnamneseEntity::class,
         SyncOperationEntity::class
     ],
-    version = 10,
+    version = 15,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -693,6 +693,143 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                // Adiciona o identificador remoto sem apagar os modelos existentes.
+                db.execSQL(
+                    "ALTER TABLE modelos_anamnese ADD COLUMN firestoreId TEXT"
+                )
+
+                // Gera um identificador único para cada modelo personalizado antigo.
+                // Modelos PADRAO continuam sem identificador remoto.
+                db.execSQL(
+                    """
+            UPDATE modelos_anamnese
+            SET firestoreId = lower(hex(randomblob(16)))
+            WHERE categoria = 'PERSONALIZADO'
+              AND firestoreId IS NULL
+            """.trimIndent()
+                )
+
+                // Impede que dois modelos locais utilizem o mesmo identificador remoto.
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_modelos_anamnese_firestoreId
+            ON modelos_anamnese(firestoreId)
+            """.trimIndent()
+                )
+            }
+        }
+
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                db.execSQL(
+                    "ALTER TABLE modelos_anamnese ADD COLUMN excluido INTEGER NOT NULL DEFAULT 0"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE modelos_anamnese ADD COLUMN updatedAtMillis INTEGER NOT NULL DEFAULT 0"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE modelos_anamnese ADD COLUMN deletedAtMillis INTEGER"
+                )
+
+                // Inicializa a referência temporal dos modelos existentes.
+                db.execSQL(
+                    """
+            UPDATE modelos_anamnese
+            SET updatedAtMillis = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+            WHERE updatedAtMillis = 0
+            """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+            ALTER TABLE anamneses_atribuidas
+            ADD COLUMN firestoreId TEXT
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            ALTER TABLE anamneses_atribuidas
+            ADD COLUMN updatedAtMillis INTEGER NOT NULL DEFAULT 0
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            ALTER TABLE anamneses_atribuidas
+            ADD COLUMN excluida INTEGER NOT NULL DEFAULT 0
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_anamneses_atribuidas_firestoreId
+            ON anamneses_atribuidas(firestoreId)
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            UPDATE anamneses_atribuidas
+            SET updatedAtMillis = CAST(strftime('%s','now') AS INTEGER) * 1000
+            WHERE updatedAtMillis = 0
+            """.trimIndent()
+                )
+            }
+        }
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+
+                db.execSQL(
+                    """
+            ALTER TABLE perguntas_anamnese_atribuidas
+            ADD COLUMN firestoreId TEXT
+            """.trimIndent()
+                )
+
+                // Gera identificadores remotos únicos para as perguntas existentes.
+                db.execSQL(
+                    """
+            UPDATE perguntas_anamnese_atribuidas
+            SET firestoreId = lower(hex(randomblob(16)))
+            WHERE firestoreId IS NULL
+            """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_perguntas_anamnese_atribuidas_firestoreId
+            ON perguntas_anamnese_atribuidas(firestoreId)
+            """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+            UPDATE anamneses_atribuidas
+            SET firestoreId = lower(hex(randomblob(16)))
+            WHERE firestoreId IS NULL OR firestoreId = ''
+        """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -709,7 +846,12 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
-                        MIGRATION_9_10
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
                     )
                     .build()
 

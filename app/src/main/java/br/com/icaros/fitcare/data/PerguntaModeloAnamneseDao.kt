@@ -11,10 +11,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PerguntaModeloAnamneseDao {
 
-    // =====================================================
     // INSERIR
-    // =====================================================
-
     @Insert
     suspend fun inserir(
         pergunta: PerguntaModeloAnamneseEntity
@@ -25,10 +22,7 @@ interface PerguntaModeloAnamneseDao {
         perguntas: List<PerguntaModeloAnamneseEntity>
     ): List<Long>
 
-    // =====================================================
     // ATUALIZAR
-    // =====================================================
-
     @Update
     suspend fun atualizar(
         pergunta: PerguntaModeloAnamneseEntity
@@ -39,10 +33,7 @@ interface PerguntaModeloAnamneseDao {
         perguntas: List<PerguntaModeloAnamneseEntity>
     )
 
-    // =====================================================
     // EXCLUIR
-    // =====================================================
-
     @Delete
     suspend fun excluir(
         pergunta: PerguntaModeloAnamneseEntity
@@ -64,10 +55,7 @@ interface PerguntaModeloAnamneseDao {
         professorId: Long
     )
 
-    // =====================================================
     // LISTAR PERGUNTAS
-    // =====================================================
-
     @Query("""
         SELECT perguntas_modelo_anamnese.*
         FROM perguntas_modelo_anamnese
@@ -110,10 +98,7 @@ interface PerguntaModeloAnamneseDao {
         professorId: Long
     ): List<PerguntaModeloAnamneseEntity>
 
-    // =====================================================
     // BUSCAR PERGUNTA POR ID
-    // =====================================================
-
     @Query("""
         SELECT perguntas_modelo_anamnese.*
         FROM perguntas_modelo_anamnese
@@ -134,10 +119,7 @@ interface PerguntaModeloAnamneseDao {
         professorId: Long
     ): PerguntaModeloAnamneseEntity?
 
-    // =====================================================
     // OPERAÇÕES INTERNAS
-    // =====================================================
-
     @Query("""
         DELETE FROM perguntas_modelo_anamnese
         WHERE modeloId = :modeloId
@@ -145,4 +127,20 @@ interface PerguntaModeloAnamneseDao {
     suspend fun excluirTodasDoModelo(
         modeloId: Long
     )
+
+    @Query("""
+    UPDATE modelos_anamnese
+    SET dataAtualizacao = :dataAtualizacao,
+        updatedAtMillis = :updatedAtMillis
+    WHERE id = :modeloId
+      AND professorId = :professorId
+      AND categoria = 'PERSONALIZADO'
+      AND excluido = 0
+""")
+    suspend fun marcarModeloAlterado(
+        modeloId: Long,
+        professorId: Long,
+        dataAtualizacao: String,
+        updatedAtMillis: Long
+    ): Int
 }

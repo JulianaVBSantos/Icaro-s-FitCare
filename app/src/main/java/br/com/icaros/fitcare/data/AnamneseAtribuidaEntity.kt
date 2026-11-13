@@ -18,7 +18,8 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["alunoId"]),
         Index(value = ["modeloId"]),
-        Index(value = ["status"])
+        Index(value = ["status"]),
+        Index(value = ["firestoreId"], unique = true)
     ]
 )
 data class AnamneseAtribuidaEntity(
@@ -33,5 +34,10 @@ data class AnamneseAtribuidaEntity(
     val dataInicioResposta: String = "",
     val dataResposta: String = "",
     val profissionalResponsavel: String = "",
-    val identificadorExterno: String = ""
+    val identificadorExterno: String = "",
+
+    // Campos de sincronização
+    val firestoreId: String? = null,
+    val updatedAtMillis: Long = 0L,
+    val excluida: Boolean = false
 )

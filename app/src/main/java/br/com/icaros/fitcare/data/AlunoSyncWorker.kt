@@ -13,6 +13,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 
@@ -23,57 +24,81 @@ class AlunoSyncWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            Log.i(TAG, "Iniciando sincronização de alunos.")
+            Log.i(TAG, "Iniciando sincronização.")
 
-            val database = FitCareDatabase.getDatabase(applicationContext)
+            val database =
+                FitCareDatabase.getDatabase(applicationContext)
+
+            val firebaseUser =
+                FirebaseAuth.getInstance().currentUser
+                    ?: return Result.retry()
+
+            val usuario = database.usuarioDao()
+                .buscarPorFirebaseUid(firebaseUser.uid)
+                ?: return Result.retry()
+
+            if (!usuario.ativo) {
+                Log.w(TAG, "Usuário local inativo.")
+                return Result.failure()
+            }
 
             val syncService = FirestoreSyncService(
                 usuarioDao = database.usuarioDao(),
                 database = database
             )
 
-            // Não encerra como sucesso se a sessão estiver inválida.
-            if (!syncService.validarSessao()) {
-                Log.w(
-                    TAG,
-                    "Sessão Firebase inválida ou usuário local não vinculado. Nova tentativa agendada."
-                )
-                return Result.retry()
-            }
+            when (usuario.perfil.uppercase()) {
 
-            Log.i(TAG, "Sessão validada. Enviando alterações locais.")
+                "PROFESSOR" -> {
+                    if (!syncService.validarSessao()) {
+                        Log.w(TAG, "Sessão do professor inválida.")
+                        return Result.retry()
+                    }
 
-            // Primeiro envia as alterações locais.
-            val escritaConcluida = syncService.sincronizarAlunos()
+                    if (!syncService.sincronizarAlunos()) {
+                        Log.e(TAG, "Falha ao enviar alunos.")
+                        return Result.retry()
+                    }
 
-            if (!escritaConcluida) {
-                Log.e(TAG, "Falha ao enviar alterações locais ao Firestore.")
-                return Result.retry()
-            }
+                    if (!syncService.sincronizarLeituraAlunos()) {
+                        Log.e(TAG, "Falha ao receber alunos.")
+                        return Result.retry()
+                    }
 
-            Log.i(TAG, "Envio local concluído. Iniciando leitura remota.")
+                    if (!syncService.sincronizarModelosAnamnese()) {
+                        Log.e(TAG, "Falha ao sincronizar modelos.")
+                        return Result.retry()
+                    }
 
-            // Depois recebe as alterações feitas em outros dispositivos.
-            val leituraConcluida = syncService.sincronizarLeituraAlunos()
+                    if (!syncService.sincronizarAnamnesesAtribuidas()) {
+                        Log.e(TAG, "Falha ao sincronizar anamneses atribuídas.")
+                        return Result.retry()
+                    }
+                }
 
-            if (!leituraConcluida) {
-                Log.e(TAG, "Falha ao receber alterações do Firestore.")
-                return Result.retry()
+                "ALUNO" -> {
+                    if (!syncService.sincronizarAnamnesesAtribuidasDoAluno()) {
+                        Log.e(TAG, "Falha ao sincronizar anamneses do aluno.")
+                        return Result.retry()
+                    }
+                }
+
+                else -> {
+                    Log.e(
+                        TAG,
+                        "Perfil sem permissão para sincronização: ${usuario.perfil}"
+                    )
+                    return Result.failure()
+                }
             }
 
             Log.i(TAG, "Sincronização concluída com sucesso.")
-
             Result.success()
 
         } catch (e: CancellationException) {
             throw e
-
         } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "Erro inesperado durante a sincronização.",
-                e
-            )
+            Log.e(TAG, "Erro inesperado durante a sincronização.", e)
             Result.retry()
         }
     }
@@ -83,7 +108,6 @@ class AlunoSyncWorker(
         private const val TAG = "AlunoSyncWorker"
 
         const val WORK_NAME = "aluno_sync"
-
         const val PERIODIC_WORK_NAME = "aluno_sync_periodico"
 
         private const val INTERVALO_PERIODICO_MINUTOS = 15L
@@ -94,12 +118,7 @@ class AlunoSyncWorker(
                 .build()
         }
 
-        /**
-         * Agenda uma sincronização imediata.
-         * Utilizada após alterações locais e login.
-         */
         fun agendar(context: Context) {
-
             val requisicao =
                 OneTimeWorkRequestBuilder<AlunoSyncWorker>()
                     .setConstraints(criarRestricoes())
@@ -117,15 +136,10 @@ class AlunoSyncWorker(
                     requisicao
                 )
 
-            Log.i(TAG, "Solicitação de sincronização imediata enviada ao WorkManager.")
+            Log.i(TAG, "Sincronização imediata agendada.")
         }
 
-        /**
-         * Agenda a sincronização periódica.
-         * O intervalo mínimo permitido pelo WorkManager é de 15 minutos.
-         */
         fun agendarPeriodica(context: Context) {
-
             val requisicao =
                 PeriodicWorkRequestBuilder<AlunoSyncWorker>(
                     INTERVALO_PERIODICO_MINUTOS,
@@ -149,12 +163,7 @@ class AlunoSyncWorker(
             Log.i(TAG, "Sincronização periódica agendada.")
         }
 
-        /**
-         * Cancela somente a sincronização periódica.
-         * Não apaga dados locais nem operações pendentes.
-         */
         fun cancelarPeriodica(context: Context) {
-
             WorkManager.getInstance(context.applicationContext)
                 .cancelUniqueWork(PERIODIC_WORK_NAME)
 
