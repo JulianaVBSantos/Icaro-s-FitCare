@@ -66,6 +66,7 @@ import java.util.Date
 import java.util.Locale
 import br.com.icaros.fitcare.data.UsuarioEntity
 
+import kotlinx.coroutines.tasks.await
 import android.database.sqlite.SQLiteConstraintException
 import br.com.icaros.fitcare.data.AlunoRepository
 import br.com.icaros.fitcare.data.FitCareDatabase
@@ -305,6 +306,9 @@ fun FitCareApp(
     var tela by rememberSaveable {
         mutableStateOf(AppScreen.Login)
     }
+    var sessaoVersao by rememberSaveable {
+        mutableIntStateOf(0)
+    }
     var alunoSelecionadoId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
@@ -357,6 +361,7 @@ fun FitCareApp(
             )
             if (usuario != null) {
                 SessaoUsuario.iniciar(usuario)
+                sessaoVersao++
                 if (usuario.perfil == "PROFESSOR") {
                     val uid = FirebaseAuth.getInstance().currentUser?.uid
                     if (!uid.isNullOrBlank()) {
@@ -385,6 +390,7 @@ fun FitCareApp(
 
                     else -> {
                         SessaoUsuario.encerrar()
+                        sessaoVersao++
                         preferenciasSessao.edit()
                             .remove(CHAVE_USUARIO_ID)
                             .remove(CHAVE_PERFIL)
@@ -401,6 +407,69 @@ fun FitCareApp(
             }
         }
     }
+
+    val scopeGlobal = rememberCoroutineScope()
+
+    DisposableEffect(sessaoVersao, tela) {
+        val usuarioLogado = SessaoUsuario.usuarioAtual
+        if (usuarioLogado != null && usuarioLogado.perfil == "PROFESSOR" && tela != AppScreen.Login) {
+            val db = FitCareDatabase.getDatabase(context)
+            val syncService = FirestoreSyncService(db.usuarioDao(), db)
+            var listenersAtivos: List<com.google.firebase.firestore.ListenerRegistration> = emptyList()
+
+            fun ativarSincronizacao() {
+                if (listenersAtivos.isNotEmpty()) return
+                if (FirebaseAuth.getInstance().currentUser == null) return
+
+                scopeGlobal.launch(Dispatchers.IO) {
+                    try {
+                        syncService.sincronizarAlunos()
+                        syncService.sincronizarLeituraAlunos()
+                        syncService.sincronizarModelosAnamnese()
+                        syncService.sincronizarAnamnesesAtribuidas()
+                    } catch (_: Exception) {
+                    }
+                }
+
+                listenersAtivos = syncService.iniciarMonitoramentoTempoRealProfessor(
+                    scope = scopeGlobal,
+                    onContaBloqueada = {
+                        Toast.makeText(
+                            context,
+                            "Seu acesso profissional foi bloqueado pelo administrador.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        preferenciasSessao.edit()
+                            .remove(CHAVE_USUARIO_ID)
+                            .remove(CHAVE_PERFIL)
+                            .apply()
+                        sessaoVersao++
+                        alunoAutenticado = false
+                        perfilSelecionado = "PROFESSOR"
+                        tela = AppScreen.Login
+                    }
+                )
+            }
+
+            val authListener = FirebaseAuth.AuthStateListener { auth ->
+                if (auth.currentUser != null) {
+                    ativarSincronizacao()
+                }
+            }
+
+            FirebaseAuth.getInstance().addAuthStateListener(authListener)
+            ativarSincronizacao()
+
+            onDispose {
+                FirebaseAuth.getInstance().removeAuthStateListener(authListener)
+                listenersAtivos.forEach { it.remove() }
+                listenersAtivos = emptyList()
+            }
+        } else {
+            onDispose { }
+        }
+    }
+
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = AzulPrincipal,
@@ -431,6 +500,7 @@ fun FitCareApp(
                                 tela = AppScreen.Login
                             },
                             onCadastroConcluido = {
+                                sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = "ADMIN"
                                 tela = AppScreen.AdminDashboard
@@ -447,6 +517,7 @@ fun FitCareApp(
                                     .remove(CHAVE_PERFIL)
                                     .apply()
                                 SessaoUsuario.encerrar()
+                                sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = null
                                 tela = AppScreen.Login
@@ -469,6 +540,7 @@ fun FitCareApp(
                                         .remove(CHAVE_PERFIL)
                                         .apply()
                                     SessaoUsuario.encerrar()
+                                    sessaoVersao++
                                     alunoAutenticado = false
                                     perfilSelecionado = "ALUNO"
                                     tela = AppScreen.Login
@@ -494,6 +566,7 @@ fun FitCareApp(
                                 },
                                 onEntrar = { usuario ->
                                     SessaoUsuario.iniciar(usuario)
+                                    sessaoVersao++
                                     if (usuario.perfil == "PROFESSOR") {
                                         val uid = FirebaseAuth.getInstance().currentUser?.uid
                                         if (!uid.isNullOrBlank()) {
@@ -526,18 +599,16 @@ fun FitCareApp(
                                             alunoAutenticado = false
                                             tela = AppScreen.Dashboard
                                         }
-
                                         "ALUNO" -> {
                                             alunoAutenticado = true
                                         }
-
                                         "ADMIN" -> {
                                             alunoAutenticado = false
                                             tela = AppScreen.AdminDashboard
                                         }
-
                                         else -> {
                                             SessaoUsuario.encerrar()
+                                            sessaoVersao++
                                             perfilSelecionado = null
                                             tela = AppScreen.Login
                                         }
@@ -546,7 +617,6 @@ fun FitCareApp(
                             )
                         }
                     }
-
                     AppScreen.CadastroProfessor -> {
                         TelaCadastroProfessor(
                             usuarioRepository = usuarioRepository,
@@ -560,7 +630,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.Dashboard -> {
                         TelaDashboard(
                             repository = repository,
@@ -598,13 +667,13 @@ fun FitCareApp(
                                     .remove(CHAVE_PERFIL)
                                     .apply()
                                 SessaoUsuario.encerrar()
+                                sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = "PROFESSOR"
                                 tela = AppScreen.Login
                             }
                         )
                     }
-
                     AppScreen.CadastroAluno -> {
                         TelaCadastroAluno(
                             repository = repository,
@@ -620,7 +689,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.Alunos -> {
                         TelaAlunos(
                             repository = repository,
@@ -639,7 +707,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.PerfilAluno -> {
                         alunoSelecionadoId?.let { id ->
                             TelaPerfilAluno(
@@ -675,7 +742,6 @@ fun FitCareApp(
                             )
                         }
                     }
-
                     AppScreen.LinhaDoTempoAluno -> {
                         alunoSelecionadoId?.let { id ->
                             TelaLinhaDoTempoAluno(
@@ -706,7 +772,6 @@ fun FitCareApp(
                             )
                         }
                     }
-
                     AppScreen.RegistroEventoAluno -> {
                         alunoSelecionadoId?.let { id ->
                             TelaRegistroEventoAluno(
@@ -723,7 +788,6 @@ fun FitCareApp(
                             )
                         }
                     }
-
                     AppScreen.EditarAluno -> {
                         alunoSelecionadoId?.let { id ->
                             TelaEditarAluno(
@@ -747,7 +811,6 @@ fun FitCareApp(
                             )
                         }
                     }
-
                     AppScreen.Treinos -> {
                         TelaTreinos(
                             repository = repository,
@@ -771,7 +834,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.SelecionarAlunoTreino -> {
                         TelaAlunos(
                             repository = repository,
@@ -791,7 +853,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.FormularioTreino -> {
                         val alunoId = alunoSelecionadoId
                         if (alunoId != null) {
@@ -817,7 +878,6 @@ fun FitCareApp(
                             tela = AppScreen.Alunos
                         }
                     }
-
                     AppScreen.ModelosAnamnese -> {
                         TelaModelosAnamnese(
                             repository = modeloAnamneseRepository,
@@ -858,7 +918,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.CriarModeloAnamnese -> {
                         TelaCriarModeloAnamnese(
                             modeloId = modeloAnamneseSelecionadoId,
@@ -873,7 +932,6 @@ fun FitCareApp(
                             }
                         )
                     }
-
                     AppScreen.FormularioAnamnese -> {
                         val modeloId = modeloAnamneseSelecionadoId
                         if (modeloId != null) {
@@ -907,7 +965,6 @@ fun FitCareApp(
                             }
                         }
                     }
-
                     AppScreen.VisualizarAnamnese -> {
                         val anamneseId = anamneseAtribuidaSelecionadaId
                         if (anamneseId != null) {
@@ -1531,7 +1588,7 @@ fun TelaCadastroAluno(
                                 )
                                 throw e
                             }
-                            withContext(Dispatchers.IO) {
+                            withContext<Unit>(Dispatchers.IO) {
                                 val db = FitCareDatabase.getDatabase(context)
                                 FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()
                             }
@@ -1891,26 +1948,7 @@ fun TelaDashboard(
     var pesquisa by remember { mutableStateOf("") }
     var mostrarNotificacoes by remember { mutableStateOf(false) }
     var mostrarDialogoCentralAtencao by remember { mutableStateOf(false) }
-    val scopeDashboard = rememberCoroutineScope()
 
-    DisposableEffect(Unit) {
-        val db = FitCareDatabase.getDatabase(context)
-        val syncService = FirestoreSyncService(db.usuarioDao(), db)
-        val listeners = syncService.iniciarMonitoramentoTempoRealProfessor(
-            scope = scopeDashboard,
-            onContaBloqueada = {
-                Toast.makeText(
-                    context,
-                    "Seu acesso profissional foi bloqueado pelo administrador.",
-                    Toast.LENGTH_LONG
-                ).show()
-                onSair()
-            }
-        )
-        onDispose {
-            listeners.forEach { it.remove() }
-        }
-    }
     val prefsNotificacoes = remember {
         context.getSharedPreferences("fitcare_notificacoes", Context.MODE_PRIVATE)
     }
@@ -2091,12 +2129,35 @@ fun TelaDashboard(
                     )
                 }
             }
+            var nomeRealProfessor by remember {
+                mutableStateOf(
+                    SessaoUsuario.usuarioAtual?.nome
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() && !it.contains("@") }
+                        .orEmpty()
+                )
+            }
 
-            val primeiroNomeProfessor = SessaoUsuario.usuarioAtual
-                ?.nome
-                ?.trim()
-                ?.substringBefore(" ")
-                .orEmpty()
+            LaunchedEffect(Unit) {
+                val uid = FirebaseAuth.getInstance().currentUser?.uid
+                if (!uid.isNullOrBlank() && nomeRealProfessor.isBlank()) {
+                    try {
+                        val doc = FirebaseFirestore.getInstance()
+                            .collection("usuarios")
+                            .document(uid)
+                            .get()
+                            .await()
+                        val nomeFirestore = doc.getString("nome")?.trim().orEmpty()
+                        if (nomeFirestore.isNotBlank()) {
+                            nomeRealProfessor = nomeFirestore
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            val primeiroNomeProfessor = nomeRealProfessor
+                .substringBefore(" ")
+                .trim()
 
             Text(
                 text = if (primeiroNomeProfessor.isNotBlank()) {
@@ -2617,6 +2678,19 @@ fun TelaAlunos(
         .collectAsState(initial = emptyList())
 
     val termo = pesquisa.trim()
+
+    val contextAlunos = LocalContext.current
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(contextAlunos)
+                val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                syncService.sincronizarAlunos()
+                syncService.sincronizarLeituraAlunos()
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     val filtrados = alunos.filter { aluno ->
 
@@ -5482,6 +5556,8 @@ fun TelaEditarAluno(
     var erro by remember { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    val context = LocalContext.current
     val requesterObservacoes = remember {
         BringIntoViewRequester()
     }
@@ -5929,6 +6005,7 @@ fun TelaEditarAluno(
                                 condicoes = condicoesTexto,
                                 restricoes = restricoesTexto
                             )
+
                             repository.atualizar(
                                 original.copy(
                                     nome = nome.trim(),
@@ -5940,7 +6017,15 @@ fun TelaEditarAluno(
                                     status = status
                                 )
                             )
+                            withContext<Unit>(Dispatchers.IO) {
+                                try {
+                                    val db = FitCareDatabase.getDatabase(context)
+                                    FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()
+                                } catch (_: Exception) {
+                                }
+                            }
                             onSalvo()
+
                         } catch (e: Exception) {
                             erro =
                                 "Não foi possível salvar as alterações: " +

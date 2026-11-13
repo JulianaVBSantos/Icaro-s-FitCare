@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import br.com.icaros.fitcare.data.SessaoUsuario
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -200,19 +201,31 @@ fun TelaAreaAluno(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val idAluno = alunoId
+    val idAluno = alunoId ?: br.com.icaros.fitcare.data.SessaoUsuario.usuarioAtual?.alunoId
 
-    // Sincroniza ao abrir a área do aluno para garantir recebimento imediato das anamneses
-    LaunchedEffect(idAluno) {
+    // Sincroniza e monitora em tempo real novas anamneses enviadas pelo professor
+    DisposableEffect(idAluno) {
+        var registration: com.google.firebase.firestore.ListenerRegistration? = null
         if (idAluno != null && idAluno > 0L) {
-            withContext(Dispatchers.IO) {
+            scope.launch(Dispatchers.IO) {
                 try {
                     val db = FitCareDatabase.getDatabase(context)
                     val syncService = FirestoreSyncService(db.usuarioDao(), db)
                     syncService.sincronizarAnamnesesAtribuidasDoAluno()
+                    val alunoLocal = db.alunoDao().buscarPorIdDireto(idAluno)
+                    val fbId = alunoLocal?.firebaseId
+                    if (!fbId.isNullOrBlank()) {
+                        registration = syncService.iniciarMonitoramentoTempoRealAluno(
+                            scope = scope,
+                            alunoFirebaseId = fbId
+                        )
+                    }
                 } catch (_: Exception) {
                 }
             }
+        }
+        onDispose {
+            registration?.remove()
         }
     }
 
@@ -392,7 +405,25 @@ fun TelaAreaAluno(
                     fontWeight = FontWeight.Bold
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            val primeiroNomeAluno = SessaoUsuario.usuarioAtual
+                ?.nome
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && !it.contains("@") }
+                ?.substringBefore(" ")
+                .orEmpty()
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (primeiroNomeAluno.isNotBlank()) {
+                    "Seja bem-vindo, $primeiroNomeAluno!"
+                } else {
+                    "Seja bem-vindo!"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF002B5C)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Acompanhe suas anamneses e documentos.",
                 style = MaterialTheme.typography.bodySmall,
@@ -1049,7 +1080,7 @@ private fun CampoRespostaAnamnese(
                 OutlinedTextField(
                     value = valor,
                     onValueChange = { novo ->
-                        if (novo.matches(Regex("[0-9]([.,][0-9])?"))) {
+                        if (novo.matches(Regex("[0-9]*([.,][0-9]*)?"))) {
                             onChange(novo)
                         }
                     },

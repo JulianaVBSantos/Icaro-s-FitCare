@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.Dao
@@ -20,6 +19,15 @@ interface AlunoDao {
     fun listarAlunosDoProfessor(
         professorId: Long
     ): Flow<List<AlunoEntity>>
+
+    @Query("""
+        SELECT * FROM alunos
+        WHERE professorId = :professorId
+        ORDER BY nome ASC
+    """)
+    suspend fun listarAlunosDoProfessorDireto(
+        professorId: Long
+    ): List<AlunoEntity>
 
     @Query("""
         SELECT * FROM alunos
@@ -116,5 +124,14 @@ interface AlunoDao {
     """)
     suspend fun buscarPorFirebaseId(
         firebaseId: String
+    ): AlunoEntity?
+
+    @Query("""
+        SELECT * FROM alunos
+        WHERE LOWER(email) = LOWER(:email)
+        LIMIT 1
+    """)
+    suspend fun buscarPorEmail(
+        email: String
     ): AlunoEntity?
 }

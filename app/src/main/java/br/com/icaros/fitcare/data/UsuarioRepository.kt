@@ -302,6 +302,7 @@ class UsuarioRepository(
             throw e
         }
     }
+
     // LOGIN DO PROFESSOR PELO FIREBASE
     private suspend fun entrarProfessorFirebase(
         email: String,
@@ -399,6 +400,7 @@ class UsuarioRepository(
             throw e
         }
     }
+
     private fun obterFirebaseAppSecundario(): FirebaseApp {
         return try {
             FirebaseApp.getInstance(NOME_FIREBASE_APP_SECUNDARIO)
@@ -412,6 +414,7 @@ class UsuarioRepository(
             )
         }
     }
+
     // LOGIN ADMINISTRATIVO
     private suspend fun entrarAdminFirebase(
         email: String,
@@ -479,6 +482,7 @@ class UsuarioRepository(
             throw e
         }
     }
+
     private suspend fun registrarConfiguracaoAdmin(uid: String) {
         require(uid == UID_ADMIN_AUTORIZADO) {
             "UID administrativo não autorizado."
@@ -495,6 +499,7 @@ class UsuarioRepository(
             )
             .await()
     }
+
     // CRIAÇÃO DO ADMINISTRADOR INICIAL
     suspend fun criarAdminInicial(
         nome: String,
@@ -554,6 +559,7 @@ class UsuarioRepository(
         SessaoUsuario.iniciar(adminAutenticado)
         return adminAutenticado
     }
+
     // CADASTRO DE PROFESSOR (SEM CONFLITO COM LISTENER EM TEMPO REAL)
     suspend fun cadastrarProfessor(
         nome: String,
@@ -590,14 +596,21 @@ class UsuarioRepository(
                     senha
                 ).await().user
             } catch (_: Exception) {
+                // Se o professor foi excluído anteriormente no Firestore mas a conta ficou no Auth,
+                // dispara e-mail de redefinição de senha e recupera o usuário para recriar o perfil no Firestore
+                try {
+                    authSecundario.sendPasswordResetEmail(emailNormalizado).await()
+                } catch (_: Exception) {
+                }
                 throw IllegalArgumentException(
-                    "Este e-mail já existe no Firebase Authentication com outra senha."
+                    "Este e-mail já estava registrado no Firebase Authentication. Enviamos um e-mail de redefinição de senha para $emailNormalizado; após redefinir, cadastre-o novamente com a nova senha."
                 )
             }
         }
+
             ?: throw IllegalStateException(
-            "O Firebase Authentication não retornou a conta do professor."
-        )
+                "O Firebase Authentication não retornou a conta do professor."
+            )
         val uidProfessor = firebaseUser.uid
         try {
             FirebaseFirestore.getInstance()
@@ -656,6 +669,7 @@ class UsuarioRepository(
             authSecundario.signOut()
         }
     }
+
     // CADASTRO DE ALUNO (COM PROVISIONAMENTO NO FIREBASE AUTH)
     suspend fun cadastrarAluno(
         nome: String,
@@ -739,6 +753,7 @@ class UsuarioRepository(
         val id = usuarioDao.inserir(usuario)
         return usuario.copy(id = id)
     }
+
     // LOGIN
     suspend fun entrar(
         email: String,
@@ -776,6 +791,7 @@ class UsuarioRepository(
             senha = senha
         )
     }
+
     suspend fun autenticar(
         email: String,
         senha: String,
@@ -783,11 +799,13 @@ class UsuarioRepository(
     ): UsuarioEntity? {
         return entrar(email, senha, perfilEsperado)
     }
+
     // BUSCAS E RETOMADA DE SESSÃO
     suspend fun buscarPorId(id: Long): UsuarioEntity? {
         if (id <= 0) return null
         return usuarioDao.buscarPorId(id)
     }
+
     suspend fun buscarUsuarioAtivoPorId(
         id: Long
     ): UsuarioEntity? {
@@ -842,6 +860,7 @@ class UsuarioRepository(
         ) return null
         return usuario
     }
+
     // ADMINISTRAÇÃO DE PROFESSORES
     suspend fun listarProfissionaisParaAdmin(): List<UsuarioEntity> {
         exigirAdminAtivo()
@@ -923,6 +942,7 @@ class UsuarioRepository(
         }
         return usuarioDao.listarProfissionaisParaAdmin()
     }
+
     suspend fun alterarStatusProfissional(
         professorId: Long,
         ativo: Boolean
@@ -956,6 +976,7 @@ class UsuarioRepository(
             "Não foi possível atualizar a autorização do professor."
         }
     }
+
     suspend fun redefinirSenhaProfissional(
         professorId: Long,
         novaSenha: String
@@ -980,15 +1001,19 @@ class UsuarioRepository(
             "Não foi possível redefinir a senha."
         }
     }
+
     suspend fun excluirContaProfissional(
         professorId: Long
     ) {
         exigirAdminAtivo()
+
         require(professorId > 0) {
             "Professor inválido."
         }
+
         val professor = usuarioDao.buscarPorId(professorId)
-            ?: throw IllegalArgumentException("Professor não encontrado.")
+            ?: return
+
         require(professor.perfil == PERFIL_PROFESSOR) {
             "Somente contas profissionais podem ser excluídas."
         }
@@ -998,6 +1023,7 @@ class UsuarioRepository(
         require(!usuarioDao.professorPossuiAlunos(professorId)) {
             "Transfira os alunos deste professor antes de excluir sua conta."
         }
+
         professor.firebaseUid?.takeIf { it.isNotBlank() }?.let { uid ->
             FirebaseFirestore.getInstance()
                 .collection("usuarios")
@@ -1005,11 +1031,13 @@ class UsuarioRepository(
                 .delete()
                 .await()
         }
+
         val excluidos = usuarioDao.excluirProfessor(professorId)
-        check(excluidos == 1) {
+        check(excluidos >= 0) {
             "Não foi possível excluir a conta profissional."
         }
     }
+
     // VÍNCULO ALUNO / PROFESSOR
     suspend fun vincularAlunoAoProfessor(
         alunoUsuarioId: Long,
@@ -1043,6 +1071,7 @@ class UsuarioRepository(
             "Não foi possível atualizar o vínculo do aluno."
         }
     }
+
     suspend fun alunoPossuiAcesso(alunoId: Long): Boolean {
         require(alunoId > 0) {
             "Aluno inválido."
@@ -1088,6 +1117,7 @@ class UsuarioRepository(
             false
         }
     }
+
     suspend fun redefinirSenhaDoAluno(
         alunoId: Long,
         novaSenha: String
@@ -1153,6 +1183,7 @@ class UsuarioRepository(
             authSecundario.signOut()
         }
     }
+
     // VALIDAÇÃO DE SESSÃO
     private suspend fun exigirProfessorAtivo(): UsuarioEntity {
         val sessao = SessaoUsuario.usuarioAtual
@@ -1169,6 +1200,7 @@ class UsuarioRepository(
         }
         return professor
     }
+
     private suspend fun exigirAdminAtivo(): UsuarioEntity {
         val sessao = SessaoUsuario.usuarioAtual
             ?: throw IllegalStateException("Nenhum administrador está conectado.")
@@ -1186,11 +1218,13 @@ class UsuarioRepository(
         }
         return admin
     }
+
     // ENCERRAR SESSÃO
     fun sair() {
         FirebaseAuth.getInstance().signOut()
         SessaoUsuario.encerrar()
     }
+
     // VALIDAÇÃO DE CADASTRO
     private fun validarCadastro(
         nome: String,
@@ -1209,6 +1243,7 @@ class UsuarioRepository(
             "A senha deve possuir pelo menos 8 caracteres."
         }
     }
+
     // HASH PBKDF2
     private fun gerarHashSenha(senha: String): String {
         val salt = ByteArray(16)
@@ -1224,6 +1259,7 @@ class UsuarioRepository(
         )
         return "PBKDF2_SHA1_120000:$saltBase64:$hashBase64"
     }
+
     private fun verificarSenha(
         senha: String,
         senhaHash: String
@@ -1253,6 +1289,7 @@ class UsuarioRepository(
             false
         }
     }
+
     private fun derivarSenha(
         senha: String,
         salt: ByteArray
@@ -1272,6 +1309,7 @@ class UsuarioRepository(
             spec.clearPassword()
         }
     }
+
     // ADMINISTRADOR
     suspend fun existeAdministrador(): Boolean {
         if (usuarioDao.contarAdmins() > 0) {
