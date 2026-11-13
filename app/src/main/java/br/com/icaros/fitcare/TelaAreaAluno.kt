@@ -104,6 +104,8 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
     var atualizouRestricoes = false
 
     for (pergunta in perguntas) {
+        if (pergunta.tipoResposta == "SIM_NAO") continue
+
         val tituloLower = pergunta.texto.lowercase(Locale.ROOT)
         val respostaBruta = respostas[pergunta.id].orEmpty().trim()
         if (respostaBruta.isBlank()) continue
@@ -121,6 +123,7 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                         !it.equals("Nenhuma", ignoreCase = true) &&
                         !it.equals("Não", ignoreCase = true) &&
                         !it.equals("Nao", ignoreCase = true) &&
+                        !it.equals("Sim", ignoreCase = true) &&
                         !ehOpcaoOutro(it)
             }
 
@@ -131,14 +134,7 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("saude") ||
                     tituloLower.contains("dor") -> {
                 atualizouCondicoes = true
-                if (
-                    pergunta.tipoResposta == "SIM_NAO" &&
-                    respostaBruta.equals("Sim", ignoreCase = true)
-                ) {
-                    condicoesExtraidas.add(pergunta.texto.trim())
-                } else if (pergunta.tipoResposta != "SIM_NAO") {
-                    condicoesExtraidas.addAll(itens)
-                }
+                condicoesExtraidas.addAll(itens)
             }
 
             tituloLower.contains("restriç") ||
@@ -146,14 +142,7 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("limitaç") ||
                     tituloLower.contains("limitac") -> {
                 atualizouRestricoes = true
-                if (
-                    pergunta.tipoResposta == "SIM_NAO" &&
-                    respostaBruta.equals("Sim", ignoreCase = true)
-                ) {
-                    restricoesExtraidas.add(pergunta.texto.trim())
-                } else if (pergunta.tipoResposta != "SIM_NAO") {
-                    restricoesExtraidas.addAll(itens)
-                }
+                restricoesExtraidas.addAll(itens)
             }
         }
     }
@@ -411,7 +400,6 @@ fun TelaAreaAluno(
                 ?.takeIf { it.isNotBlank() && !it.contains("@") }
                 ?.substringBefore(" ")
                 .orEmpty()
-
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (primeiroNomeAluno.isNotBlank()) {
@@ -474,7 +462,6 @@ fun TelaAreaAluno(
             } else if (anamneseSelecionadaId != null) {
                 val modoSomenteLeitura =
                     anamneseSelecionada?.status == "RESPONDIDA"
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -490,9 +477,7 @@ fun TelaAreaAluno(
                             }
                         }
                     )
-
                     Spacer(modifier = Modifier.width(12.dp))
-
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = anamneseSelecionada?.nomeModelo
@@ -1080,7 +1065,7 @@ private fun CampoRespostaAnamnese(
                 OutlinedTextField(
                     value = valor,
                     onValueChange = { novo ->
-                        if (novo.matches(Regex("[0-9]*([.,][0-9]*)?"))) {
+                        if (novo.matches(Regex("[0-9]([.,][0-9])?"))) {
                             onChange(novo)
                         }
                     },

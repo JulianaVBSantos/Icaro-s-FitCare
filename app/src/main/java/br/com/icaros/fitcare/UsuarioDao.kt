@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.Dao
@@ -10,7 +9,7 @@ import androidx.room.Transaction
 @Dao
 interface UsuarioDao {
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun inserir(usuario: UsuarioEntity): Long
 
     @Query("""
@@ -177,34 +176,35 @@ interface UsuarioDao {
 
         return inserir(usuario)
     }
+
     @Query("""
-    UPDATE usuarios
-    SET firebaseUid = :firebaseUid
-    WHERE id = :usuarioId
-""")
+        UPDATE usuarios
+        SET firebaseUid = :firebaseUid
+        WHERE id = :usuarioId
+    """)
     suspend fun atualizarFirebaseUid(
         usuarioId: Long,
         firebaseUid: String
     ): Int
 
     @Query("""
-    SELECT * FROM usuarios
-    WHERE firebaseUid = :firebaseUid
-    LIMIT 1
-""")
+        SELECT * FROM usuarios
+        WHERE firebaseUid = :firebaseUid
+        LIMIT 1
+    """)
     suspend fun buscarPorFirebaseUid(
         firebaseUid: String
     ): UsuarioEntity?
 
     @Query("""
-    UPDATE usuarios
-    SET nome = :nome,
-        email = :email,
-        ativo = :ativo,
-        firebaseUid = :firebaseUid
-    WHERE id = :usuarioId
-    AND perfil = 'PROFESSOR'
-""")
+        UPDATE usuarios
+        SET nome = :nome,
+            email = :email,
+            ativo = :ativo,
+            firebaseUid = :firebaseUid
+        WHERE id = :usuarioId
+        AND perfil = 'PROFESSOR'
+    """)
     suspend fun atualizarProfessorComDadosFirebase(
         usuarioId: Long,
         nome: String,

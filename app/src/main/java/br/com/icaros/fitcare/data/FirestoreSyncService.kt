@@ -115,7 +115,6 @@ class FirestoreSyncService(
 
                     scope.launch(Dispatchers.IO) {
                         sincronizarLeituraAlunos()
-                        sincronizarAnamnesesAtribuidas()
                     }
                 }
             }
@@ -180,6 +179,10 @@ class FirestoreSyncService(
 
             val operacoes = syncDao.listarPendentes()
                 .filter { it.entityType == TIPO_ALUNO }
+
+            if (operacoes.isEmpty()) {
+                return true
+            }
 
             var todasConcluidas = true
 
@@ -267,17 +270,13 @@ class FirestoreSyncService(
             false
         }
     }
-
     suspend fun sincronizarLeituraAlunos(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
         val emailAuth = firebaseUser.email?.trim()?.lowercase().orEmpty()
-
         return try {
-            // Garante que o cadastro local do professor exista e esteja sincronizado com o Firestore
             var usuarioLocal = usuarioDao.buscarPorFirebaseUid(uid)
                 ?: emailAuth.takeIf { it.isNotBlank() }?.let { usuarioDao.buscarPorEmail(it) }
-
             if (usuarioLocal == null && emailAuth.isNotBlank()) {
                 val docProf = firestore.collection("usuarios").document(uid).get().await()
                 if (docProf.exists() && docProf.getString("perfil") == PERFIL_PROFESSOR) {
@@ -297,69 +296,55 @@ class FirestoreSyncService(
                 usuarioDao.atualizarFirebaseUid(usuarioLocal.id, uid)
                 usuarioLocal = usuarioLocal.copy(firebaseUid = uid)
             }
-
             val professorLocalId = SessaoUsuario.usuarioAtual?.id
                 ?: usuarioLocal?.id
                 ?: return false
-
-            val resultado = try {
-                firestore
-                    .collection(COLECAO_ALUNOS)
-                    .whereEqualTo("professorUid", uid)
-                    .get(Source.SERVER)
-                    .await()
-            } catch (_: Exception) {
-                firestore
-                    .collection(COLECAO_ALUNOS)
-                    .whereEqualTo("professorUid", uid)
-                    .get()
-                    .await()
-            }
-
+            val resultado = firestore
+                .collection(COLECAO_ALUNOS)
+                .whereEqualTo("professorUid", uid)
+                .get()
+                .await()
             val alunoDao = database.alunoDao()
             val syncDao = database.syncOperationDao()
             val firebaseIdsRemotos = HashSet<String>()
-
             for (documento in resultado.documents) {
                 try {
                     val firebaseId = documento.getString("firebaseId") ?: documento.id
                     firebaseIdsRemotos.add(firebaseId)
-
                     val emailRemoto = documento.getString("email")?.trim()?.lowercase().orEmpty()
                     val nomeRemoto = documento.getString("nome").orEmpty()
-
                     val alunoExistente = alunoDao.buscarPorFirebaseId(firebaseId)
                         ?: emailRemoto.takeIf { it.isNotBlank() }?.let { alunoDao.buscarPorEmail(it) }
-
                     if (alunoExistente != null) {
                         val operacoesPendentes = syncDao.buscarPorRegistro(
                             TIPO_ALUNO,
                             alunoExistente.id
                         )
-
                         if (operacoesPendentes.isNotEmpty()) {
                             continue
                         }
-
                         val condicoesRemotas = documento.getString("condicoes") ?: alunoExistente.condicoes
                         val restricoesRemotas = documento.getString("restricoes") ?: alunoExistente.restricoes
                         val statusRemoto = documento.getString("status")?.takeIf { it.isNotBlank() } ?: alunoExistente.status
-
-                        alunoDao.atualizar(
-                            alunoExistente.copy(
-                                professorId = professorLocalId,
-                                firebaseId = firebaseId,
-                                nome = nomeRemoto.ifBlank { alunoExistente.nome },
-                                email = emailRemoto.ifBlank { alunoExistente.email },
-                                dataCadastro = documento.getString("dataCadastro") ?: alunoExistente.dataCadastro,
-                                objetivo = documento.getString("objetivo") ?: alunoExistente.objetivo,
-                                status = statusRemoto,
-                                observacoesProfissionais = documento.getString("observacoesProfissionais")
-                                    ?: alunoExistente.observacoesProfissionais,
-                                condicoes = condicoesRemotas,
-                                restricoes = restricoesRemotas
-                            )
+                        val obsRemotas = documento.getString("observacoesProfissionais") ?: alunoExistente.observacoesProfissionais
+                        val objRemoto = documento.getString("objetivo") ?: alunoExistente.objetivo
+                        val dataRemota = documento.getString("dataCadastro") ?: alunoExistente.dataCadastro
+                        val atualizado = alunoExistente.copy(
+                            professorId = professorLocalId,
+                            firebaseId = firebaseId,
+                            nome = nomeRemoto.ifBlank { alunoExistente.nome },
+                            email = emailRemoto.ifBlank { alunoExistente.email },
+                            dataCadastro = dataRemota,
+                            objetivo = objRemoto,
+                            status = statusRemoto,
+                            observacoesProfissionais = obsRemotas,
+                            condicoes = condicoesRemotas,
+                            restricoes = restricoesRemotas
                         )
+// Só atualiza o Room se realmente houver mudança (evita disparos desnecessários de UI)
+                        if (atualizado != alunoExistente) {
+                            alunoDao.atualizar(atualizado)
+                        }
                     } else {
                         val statusRemoto = documento.getString("status")?.takeIf { it.isNotBlank() } ?: "Normal"
                         val novoAluno = AlunoEntity(
@@ -374,17 +359,12 @@ class FirestoreSyncService(
                             professorId = professorLocalId,
                             firebaseId = firebaseId
                         )
-
                         try {
                             alunoDao.inserir(novoAluno)
                         } catch (_: Exception) {
-                            // Se já existia um registro órfão com o mesmo e-mail (ex.: criado ao logar como Aluno no aparelho),
-                            // atualiza e vincula ao professor atual
                             val orfao = emailRemoto.takeIf { it.isNotBlank() }?.let { alunoDao.buscarPorEmail(it) }
                             if (orfao != null) {
-                                alunoDao.atualizar(
-                                    novoAluno.copy(id = orfao.id)
-                                )
+                                alunoDao.atualizar(novoAluno.copy(id = orfao.id))
                             }
                         }
                     }
@@ -394,8 +374,7 @@ class FirestoreSyncService(
                     Log.e(TAG, "Erro ao processar aluno remoto ${documento.id}", e)
                 }
             }
-
-            // Remove localmente alunos excluídos no Firestore
+// Remove localmente alunos excluídos no Firestore
             val alunosLocais = alunoDao.listarAlunosDoProfessorDireto(professorLocalId)
             for (local in alunosLocais) {
                 val fbId = local.firebaseId
@@ -406,9 +385,7 @@ class FirestoreSyncService(
                     }
                 }
             }
-
             true
-
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -416,8 +393,6 @@ class FirestoreSyncService(
             false
         }
     }
-
-
     suspend fun sincronizarAnamnesesAtribuidas(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -437,38 +412,21 @@ class FirestoreSyncService(
             val alunoDao = database.alunoDao()
             var sucesso = true
 // 1. Baixa do servidor todas as atribuições, exclusões e respostas dos alunos deste professor
-            val alunosRemotos = try {
-                firestore
-                    .collection(COLECAO_ALUNOS)
-                    .whereEqualTo("professorUid", uid)
-                    .get(Source.SERVER)
-                    .await()
-            } catch (_: Exception) {
-                firestore
-                    .collection(COLECAO_ALUNOS)
-                    .whereEqualTo("professorUid", uid)
-                    .get()
-                    .await()
-            }
+            val alunosRemotos = firestore
+                .collection(COLECAO_ALUNOS)
+                .whereEqualTo("professorUid", uid)
+                .get()
+                .await()
             for (documentoAluno in alunosRemotos.documents) {
                 try {
                     val alunoFirebaseId = documentoAluno.getString("firebaseId") ?: documentoAluno.id
                     val alunoLocal = alunoDao.buscarPorFirebaseId(alunoFirebaseId) ?: continue
-                    val atribuicoesRemotas = try {
-                        firestore
-                            .collection(COLECAO_ALUNOS)
-                            .document(alunoFirebaseId)
-                            .collection("anamneses_atribuidas")
-                            .get(Source.SERVER)
-                            .await()
-                    } catch (_: Exception) {
-                        firestore
-                            .collection(COLECAO_ALUNOS)
-                            .document(alunoFirebaseId)
-                            .collection("anamneses_atribuidas")
-                            .get()
-                            .await()
-                    }
+                    val atribuicoesRemotas = firestore
+                        .collection(COLECAO_ALUNOS)
+                        .document(alunoFirebaseId)
+                        .collection("anamneses_atribuidas")
+                        .get()
+                        .await()
                     for (documento in atribuicoesRemotas.documents) {
                         try {
                             importarAnamneseRemota(
@@ -491,22 +449,29 @@ class FirestoreSyncService(
                     Log.e(TAG, "Erro ao consultar atribuições do aluno ${documentoAluno.id}.", e)
                 }
             }
-// 2. Publica atribuições locais novas ou atualizadas no servidor
+// 2. Publica atribuições locais novas ou atualizadas no servidor (somente se houve mudança)
             val anamneses = anamneseDao.listarTodasParaSincronizacaoDoProfessor(usuario.id)
             for (anamnese in anamneses) {
                 try {
                     val aluno = alunoDao.buscarPorIdDireto(anamnese.alunoId) ?: continue
                     if (aluno.professorId != usuario.id) continue
                     val alunoFirebaseId = aluno.firebaseId?.takeIf { it.isNotBlank() } ?: continue
-                    val documentoAluno = firestore
-                        .collection(COLECAO_ALUNOS)
-                        .document(alunoFirebaseId)
-                        .get()
-                        .await()
-                    if (!documentoAluno.exists() || documentoAluno.getString("professorUid") != uid) {
+                    if (anamnese.excluida) {
+                        val fbId = anamnese.firestoreId?.takeIf { it.isNotBlank() }
+                        if (fbId != null) {
+                            try {
+                                firestore
+                                    .collection(COLECAO_ALUNOS)
+                                    .document(alunoFirebaseId)
+                                    .collection("anamneses_atribuidas")
+                                    .document(fbId)
+                                    .delete()
+                                    .await()
+                            } catch (_: Exception) {
+                            }
+                        }
                         continue
                     }
-                    val alunoAuthUid = documentoAluno.getString("alunoAuthUid")?.takeIf { it.isNotBlank() }
                     val firestoreId = anamnese.firestoreId?.takeIf { it.isNotBlank() }
                         ?: UUID.randomUUID().toString().also {
                             anamneseDao.atualizarFirestoreId(anamnese.id, it, System.currentTimeMillis())
@@ -518,6 +483,15 @@ class FirestoreSyncService(
                         .document(firestoreId)
                     val remotoExistente = documentoAnamnese.get().await()
                     if (!remotoExistente.exists()) {
+                        val documentoAluno = firestore
+                            .collection(COLECAO_ALUNOS)
+                            .document(alunoFirebaseId)
+                            .get()
+                            .await()
+                        if (!documentoAluno.exists() || documentoAluno.getString("professorUid") != uid) {
+                            continue
+                        }
+                        val alunoAuthUid = documentoAluno.getString("alunoAuthUid")?.takeIf { it.isNotBlank() }
                         val dados = hashMapOf<String, Any>(
                             "firestoreId" to firestoreId,
                             "professorUid" to uid,
@@ -525,7 +499,7 @@ class FirestoreSyncService(
                             "nomeModelo" to anamnese.nomeModelo,
                             "profissionalResponsavel" to anamnese.profissionalResponsavel,
                             "identificadorExterno" to anamnese.identificadorExterno,
-                            "excluida" to anamnese.excluida,
+                            "excluida" to false,
                             "status" to anamnese.status,
                             "dataCriacao" to anamnese.dataCriacao,
                             "dataEnvio" to anamnese.dataEnvio,
@@ -537,12 +511,34 @@ class FirestoreSyncService(
                             dados["alunoAuthUid"] = alunoAuthUid
                         }
                         documentoAnamnese.set(dados, SetOptions.merge()).await()
+                        val perguntas = perguntaDao.listarParaSincronizacao(anamnese.id)
+                        for (pergunta in perguntas) {
+                            val perguntaFirestoreId = pergunta.firestoreId?.takeIf { it.isNotBlank() }
+                                ?: UUID.randomUUID().toString().also {
+                                    perguntaDao.atribuirFirestoreId(pergunta.id, it)
+                                }
+                            val dadosPergunta = hashMapOf(
+                                "firestoreId" to perguntaFirestoreId,
+                                "texto" to pergunta.texto,
+                                "tipoResposta" to pergunta.tipoResposta,
+                                "opcoes" to pergunta.opcoes,
+                                "obrigatoria" to pergunta.obrigatoria,
+                                "ordem" to pergunta.ordem
+                            )
+                            documentoAnamnese
+                                .collection("perguntas")
+                                .document(perguntaFirestoreId)
+                                .set(dadosPergunta, SetOptions.merge())
+                                .await()
+                        }
                     } else {
                         val statusRemoto = remotoExistente.getString("status") ?: anamnese.status
                         val statusCombinado = combinarStatus(anamnese.status, statusRemoto)
-                        val excluidaRemota = remotoExistente.getBoolean("excluida") ?: false
-                        val excluidaFinal = anamnese.excluida || excluidaRemota
                         val remotoMillis = remotoExistente.getLong("updatedAtMillis") ?: 0L
+// Trava anti-loop: só escreve no Firestore se o local for mais recente ou o status mudou
+                        if (anamnese.updatedAtMillis <= remotoMillis && statusCombinado == statusRemoto) {
+                            continue
+                        }
                         val dados = hashMapOf<String, Any>(
                             "nomeModelo" to anamnese.nomeModelo,
                             "profissionalResponsavel" to anamnese.profissionalResponsavel,
@@ -560,33 +556,10 @@ class FirestoreSyncService(
                                 anamnese.dataResposta,
                                 remotoExistente.getString("dataResposta") ?: ""
                             ),
-                            "excluida" to excluidaFinal,
+                            "excluida" to false,
                             "updatedAtMillis" to maxOf(anamnese.updatedAtMillis, remotoMillis)
                         )
-                        if (alunoAuthUid != null) {
-                            dados["alunoAuthUid"] = alunoAuthUid
-                        }
                         documentoAnamnese.set(dados, SetOptions.merge()).await()
-                    }
-                    val perguntas = perguntaDao.listarParaSincronizacao(anamnese.id)
-                    for (pergunta in perguntas) {
-                        val perguntaFirestoreId = pergunta.firestoreId?.takeIf { it.isNotBlank() }
-                            ?: UUID.randomUUID().toString().also {
-                                perguntaDao.atribuirFirestoreId(pergunta.id, it)
-                            }
-                        val dadosPergunta = hashMapOf(
-                            "firestoreId" to perguntaFirestoreId,
-                            "texto" to pergunta.texto,
-                            "tipoResposta" to pergunta.tipoResposta,
-                            "opcoes" to pergunta.opcoes,
-                            "obrigatoria" to pergunta.obrigatoria,
-                            "ordem" to pergunta.ordem
-                        )
-                        documentoAnamnese
-                            .collection("perguntas")
-                            .document(perguntaFirestoreId)
-                            .set(dadosPergunta, SetOptions.merge())
-                            .await()
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -634,6 +607,10 @@ class FirestoreSyncService(
                         importarModeloRemoto(remoto, usuarioLocal.id, modeloDao, perguntaDao)
                         continue
                     }
+// Trava anti-loop: não regrava no Firestore se já está sincronizado na mesma versão
+                    if (remoto.exists() && remotoMillis == modelo.updatedAtMillis) {
+                        continue
+                    }
                     val perguntas = perguntaDao.buscarPorModeloDoProfessor(modelo.id, usuarioLocal.id)
                     val perguntasRemotas = perguntas.map {
                         hashMapOf(
@@ -666,11 +643,7 @@ class FirestoreSyncService(
                     Log.e(TAG, "Erro ao enviar modelo ${modelo.id}.", e)
                 }
             }
-            val resultado = try {
-                colecao.get(Source.SERVER).await()
-            } catch (_: Exception) {
-                colecao.get().await()
-            }
+            val resultado = colecao.get().await()
             for (documento in resultado.documents) {
                 try {
                     val categoria = documento.getString("categoria")
@@ -722,7 +695,7 @@ class FirestoreSyncService(
             val documentoAluno = firestore
                 .collection(COLECAO_ALUNOS)
                 .document(alunoFirebaseId)
-                .get(Source.SERVER)
+                .get()
                 .await()
             if (!documentoAluno.exists()) {
                 throw IllegalStateException("Cadastro remoto do aluno não encontrado.")
@@ -734,32 +707,39 @@ class FirestoreSyncService(
                 uid = uid,
                 emailAutenticado = emailAutenticado
             )
-// Atualiza dados de acompanhamento do aluno no Firestore (condições/restrições respondidas)
-            try {
-                firestore.collection(COLECAO_ALUNOS)
-                    .document(alunoFirebaseId)
-                    .set(
-                        mapOf(
-                            "condicoes" to aluno.condicoes,
-                            "restricoes" to aluno.restricoes,
-                            "observacoesProfissionais" to aluno.observacoesProfissionais,
-                            "status" to aluno.status
-                        ),
-                        SetOptions.merge()
-                    )
-                    .await()
-            } catch (e: Exception) {
-                Log.e(TAG, "Erro ao sincronizar acompanhamento do aluno ${aluno.id}", e)
+// Só atualiza condições/restrições no Firestore se houver divergência real com o servidor
+            val condicoesRemotas = documentoAluno.getString("condicoes") ?: ""
+            val restricoesRemotas = documentoAluno.getString("restricoes") ?: ""
+            val obsRemotas = documentoAluno.getString("observacoesProfissionais") ?: ""
+            val statusRemotoAluno = documentoAluno.getString("status") ?: "Normal"
+            if (
+                aluno.condicoes != condicoesRemotas ||
+                aluno.restricoes != restricoesRemotas ||
+                aluno.observacoesProfissionais != obsRemotas ||
+                aluno.status != statusRemotoAluno
+            ) {
+                try {
+                    firestore.collection(COLECAO_ALUNOS)
+                        .document(alunoFirebaseId)
+                        .set(
+                            mapOf(
+                                "condicoes" to aluno.condicoes,
+                                "restricoes" to aluno.restricoes,
+                                "observacoesProfissionais" to aluno.observacoesProfissionais,
+                                "status" to aluno.status
+                            ),
+                            SetOptions.merge()
+                        )
+                        .await()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erro ao sincronizar acompanhamento do aluno ${aluno.id}", e)
+                }
             }
             val colecaoAnamneses = firestore
                 .collection(COLECAO_ALUNOS)
                 .document(alunoFirebaseId)
                 .collection("anamneses_atribuidas")
-            val resultado = try {
-                colecaoAnamneses.get(Source.SERVER).await()
-            } catch (_: Exception) {
-                colecaoAnamneses.get().await()
-            }
+            val resultado = colecaoAnamneses.get().await()
             var sucesso = true
             for (documento in resultado.documents) {
                 try {
@@ -821,11 +801,7 @@ class FirestoreSyncService(
         val identificadorExterno = documento.getString("identificadorExterno") ?: ""
         val updatedAtMillis = documento.getLong("updatedAtMillis") ?: 0L
         val excluidaRemota = documento.getBoolean("excluida") ?: false
-        val perguntasRemotas = try {
-            documento.reference.collection("perguntas").get(Source.SERVER).await()
-        } catch (_: Exception) {
-            documento.reference.collection("perguntas").get().await()
-        }
+        val perguntasRemotas = documento.reference.collection("perguntas").get().await()
         val respostasRemotasDocs = if (importarRespostas) {
             val consultaRespostas = documento.reference.collection("respostas")
             val perfilUsuario = usuarioDao.buscarPorFirebaseUid(uidAutenticado)?.perfil
@@ -955,6 +931,7 @@ class FirestoreSyncService(
             .collection("anamneses_atribuidas")
             .document(anamneseFirestoreId)
         for (respostaLocal in respostasLocais) {
+            if (respostaLocal.resposta.isBlank()) continue
             val perguntaFirestoreId = firestoreIdPorPerguntaLocal[respostaLocal.perguntaAtribuidaId] ?: continue
             val dadosResposta = hashMapOf(
                 "perguntaFirestoreId" to perguntaFirestoreId,
@@ -970,23 +947,25 @@ class FirestoreSyncService(
         }
         val statusRemoto = documento.getString("status") ?: "PENDENTE"
         val statusFinal = combinarStatus(anamneseLocal.status, statusRemoto)
-        val atualizacaoStatus = hashMapOf<String, Any>(
-            "alunoAuthUid" to uid,
-            "status" to statusFinal,
-            "dataInicioResposta" to escolherDataMaisCompleta(
-                anamneseLocal.dataInicioResposta,
-                documento.getString("dataInicioResposta") ?: ""
-            ),
-            "dataResposta" to escolherDataMaisCompleta(
-                anamneseLocal.dataResposta,
-                documento.getString("dataResposta") ?: ""
-            ),
-            "updatedAtMillis" to maxOf(
-                anamneseLocal.updatedAtMillis,
-                documento.getLong("updatedAtMillis") ?: 0L
+        val remotoMillis = documento.getLong("updatedAtMillis") ?: 0L
+        val uidRemoto = documento.getString("alunoAuthUid")
+// Só atualiza o documento da anamnese se o status, carimbo de tempo ou vínculo realmente mudaram
+        if (anamneseLocal.updatedAtMillis > remotoMillis || statusFinal != statusRemoto || uidRemoto != uid) {
+            val atualizacaoStatus = hashMapOf<String, Any>(
+                "alunoAuthUid" to uid,
+                "status" to statusFinal,
+                "dataInicioResposta" to escolherDataMaisCompleta(
+                    anamneseLocal.dataInicioResposta,
+                    documento.getString("dataInicioResposta") ?: ""
+                ),
+                "dataResposta" to escolherDataMaisCompleta(
+                    anamneseLocal.dataResposta,
+                    documento.getString("dataResposta") ?: ""
+                ),
+                "updatedAtMillis" to maxOf(anamneseLocal.updatedAtMillis, remotoMillis)
             )
-        )
-        documentoAnamnese.set(atualizacaoStatus, SetOptions.merge()).await()
+            documentoAnamnese.set(atualizacaoStatus, SetOptions.merge()).await()
+        }
     }
     private fun combinarStatus(
         statusLocal: String?,
@@ -1034,7 +1013,7 @@ class FirestoreSyncService(
         val updatedAtMillis = documento.getLong("updatedAtMillis") ?: 0L
         val excluido = documento.getBoolean("deleted") ?: false
         val deletedAtMillis = documento.getLong("deletedAtMillis")
-        val perguntasRemotas = documento.get("perguntas") as? List<*> ?: listOf("")
+        val perguntasRemotas = documento.get("perguntas") as? List<*> ?: emptyList<Any>()
         val perguntasConvertidas = perguntasRemotas.mapNotNull { item ->
             val mapa = item as? Map<*, *> ?: return@mapNotNull null
             PerguntaModeloAnamneseEntity(
@@ -1117,6 +1096,7 @@ class FirestoreSyncService(
             if (uidExistente.isNullOrBlank()) {
                 transacao.update(documento, "alunoAuthUid", uid)
             }
+            snapshot.getString("professorUid")
             snapshot.getString("professorUid")
                 ?: throw IllegalStateException("Cadastro remoto sem professorUid.")
         }.await()

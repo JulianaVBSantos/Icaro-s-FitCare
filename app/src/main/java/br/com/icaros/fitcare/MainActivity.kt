@@ -1588,11 +1588,16 @@ fun TelaCadastroAluno(
                                 )
                                 throw e
                             }
-                            withContext<Unit>(Dispatchers.IO) {
-                                val db = FitCareDatabase.getDatabase(context)
-                                FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()
+                            AlunoSyncWorker.agendar(context)
+                            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    val db = FitCareDatabase.getDatabase(context)
+                                    FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()
+                                } catch (_: Exception) {
+                                }
                             }
                             onCadastroConcluido()
+
                         } catch (e: Exception) {
                             erro =
                                 "Não foi possível cadastrar o aluno: " +
@@ -1601,6 +1606,7 @@ fun TelaCadastroAluno(
                             salvando = false
                         }
                     }
+
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2155,9 +2161,13 @@ fun TelaDashboard(
                     }
                 }
             }
-            val primeiroNomeProfessor = nomeRealProfessor
-                .substringBefore(" ")
-                .trim()
+
+            val primeiroNomeProfessor = when {
+                nomeRealProfessor.equals("icaroalvesdasilva2005", ignoreCase = true) -> "Ícaro"
+                SessaoUsuario.usuarioAtual?.email.equals("icaroalvesdasilva2005@gmail.com", ignoreCase = true) &&
+                        (nomeRealProfessor.isBlank() || nomeRealProfessor.startsWith("icaroalves", ignoreCase = true)) -> "Ícaro"
+                else -> nomeRealProfessor.substringBefore(" ").trim()
+            }
 
             Text(
                 text = if (primeiroNomeProfessor.isNotBlank()) {
@@ -3235,16 +3245,40 @@ fun TelaPerfilAluno(
     val scope = rememberCoroutineScope()
     val contextoEventosPerfil = LocalContext.current
 // Sincroniza imediatamente ao abrir o perfil do aluno para trazer atualizações de outros aparelhos
-    LaunchedEffect(alunoId) {
-        withContext(Dispatchers.IO) {
+    DisposableEffect(alunoId) {
+        var subListener: com.google.firebase.firestore.ListenerRegistration? = null
+        scope.launch(Dispatchers.IO) {
             try {
                 val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
                 val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                syncService.sincronizarLeituraAlunos()
                 syncService.sincronizarAnamnesesAtribuidas()
+
+                val fbId = db.alunoDao().buscarPorIdDireto(alunoId)?.firebaseId
+                if (!fbId.isNullOrBlank()) {
+                    subListener = FirebaseFirestore.getInstance()
+                        .collection("alunos")
+                        .document(fbId)
+                        .collection("anamneses_atribuidas")
+                        .addSnapshotListener { snap, err ->
+                            if (err == null && snap != null) {
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        syncService.sincronizarAnamnesesAtribuidas()
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            }
+                        }
+                }
             } catch (_: Exception) {
             }
         }
+        onDispose {
+            subListener?.remove()
+        }
     }
+
     val documentosAnamnese by anamneseRepository
         .listarDocumentos(alunoId)
         .collectAsState(initial = emptyList())
@@ -4204,15 +4238,19 @@ fun TelaPerfilAluno(
                                     anamneseAtribuidaRepository.excluir(
                                         idAnamnese
                                     )
-                                    withContext(Dispatchers.IO) {
-                                        val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
-                                        FirestoreSyncService(
-                                            db.usuarioDao(),
-                                            db
-                                        ).sincronizarAnamnesesAtribuidas()
-                                    }
                                     AlunoSyncWorker.agendar(contextoEventosPerfil)
+                                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                        try {
+                                            val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                                            FirestoreSyncService(
+                                                db.usuarioDao(),
+                                                db
+                                            ).sincronizarAnamnesesAtribuidas()
+                                        } catch (_: Exception) {
+                                        }
+                                    }
                                     anamneseParaExcluirId = null
+
                                     android.widget.Toast.makeText(
                                         contextoEventosPerfil,
                                         "Anamnese excluída com sucesso.",
@@ -6005,7 +6043,6 @@ fun TelaEditarAluno(
                                 condicoes = condicoesTexto,
                                 restricoes = restricoesTexto
                             )
-
                             repository.atualizar(
                                 original.copy(
                                     nome = nome.trim(),
@@ -6017,7 +6054,8 @@ fun TelaEditarAluno(
                                     status = status
                                 )
                             )
-                            withContext<Unit>(Dispatchers.IO) {
+                            AlunoSyncWorker.agendar(context)
+                            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                                 try {
                                     val db = FitCareDatabase.getDatabase(context)
                                     FirestoreSyncService(db.usuarioDao(), db).sincronizarAlunos()

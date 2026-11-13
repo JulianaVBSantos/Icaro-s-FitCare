@@ -1,6 +1,12 @@
 package br.com.icaros.fitcare.data
 
 import androidx.room.withTransaction
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -261,9 +267,8 @@ class AnamneseAtribuidaRepository(
         }
     }
 
-    // Exclusão lógica permitida em qualquer status (incluindo RESPONDIDA),
-    // preservando os registros de respostas no banco e sincronizando a exclusão.
-    suspend fun excluir(id: Long) {
+    // Exclusão lógica instantânea no Room + remoção assíncrona no Firestore (nunca trava o diálogo)
+    suspend fun excluir(id: Long) = withContext(Dispatchers.IO) {
 
         val professorId = SessaoUsuario.exigirProfessorId()
 
@@ -286,6 +291,26 @@ class AnamneseAtribuidaRepository(
 
         check(linhasAfetadas == 1) {
             "Não foi possível excluir a anamnese."
+        }
+
+        val fbId = anamnese.firestoreId
+        if (!fbId.isNullOrBlank()) {
+            val aluno = database.alunoDao().buscarPorIdDireto(anamnese.alunoId)
+            val alunoFbId = aluno?.firebaseId
+            if (!alunoFbId.isNullOrBlank()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        FirebaseFirestore.getInstance()
+                            .collection("alunos")
+                            .document(alunoFbId)
+                            .collection("anamneses_atribuidas")
+                            .document(fbId)
+                            .delete()
+                            .await()
+                    } catch (_: Exception) {
+                    }
+                }
+            }
         }
     }
 

@@ -101,7 +101,7 @@ class AlunoRepository(
         }
     }
 
-    suspend fun inserir(aluno: AlunoEntity): Long {
+    suspend fun inserir(aluno: AlunoEntity): Long = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val professorId = SessaoUsuario.exigirProfessorId()
 
         validarAluno(aluno)
@@ -131,13 +131,11 @@ class AlunoRepository(
             id
         }
 
-        // Agenda somente depois de confirmar a transação Room.
         AlunoSyncWorker.agendar(context)
-
-        return novoId
+        novoId
     }
 
-    suspend fun atualizar(aluno: AlunoEntity) {
+    suspend fun atualizar(aluno: AlunoEntity) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val professorId = SessaoUsuario.exigirProfessorId()
 
         validarAluno(aluno)
@@ -161,8 +159,6 @@ class AlunoRepository(
                 observacoes = aluno.observacoesProfissionais
             )
 
-            // Alunos antigos ainda sem firebaseId recebem um UUID.
-            // Nesse caso, a primeira operação remota será INSERT.
             val firebaseId = alunoExistente.firebaseId
                 ?: UUID.randomUUID().toString()
 
@@ -185,11 +181,10 @@ class AlunoRepository(
             )
         }
 
-        // Agenda somente depois de confirmar a transação Room.
         AlunoSyncWorker.agendar(context)
     }
 
-    suspend fun excluir(aluno: AlunoEntity) {
+    suspend fun excluir(aluno: AlunoEntity) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val professorId = SessaoUsuario.exigirProfessorId()
 
         require(aluno.id > 0) {
@@ -216,8 +211,6 @@ class AlunoRepository(
                     it.operationType == OPERATION_INSERT
                 }
             ) {
-                // O aluno já existe remotamente.
-                // Registrar DELETE para futura sincronização.
                 syncDao.removerPorRegistro(
                     ENTITY_TYPE_ALUNO,
                     alunoExistente.id
@@ -232,8 +225,6 @@ class AlunoRepository(
                     )
                 )
             } else {
-                // Aluno ainda não enviado ao Firebase.
-                // Não é necessário enviar DELETE.
                 syncDao.removerPorRegistro(
                     ENTITY_TYPE_ALUNO,
                     alunoExistente.id
@@ -243,7 +234,6 @@ class AlunoRepository(
             alunoDao.excluir(alunoExistente)
         }
 
-        // Agenda depois da exclusão e do registro da operação.
         AlunoSyncWorker.agendar(context)
     }
 
