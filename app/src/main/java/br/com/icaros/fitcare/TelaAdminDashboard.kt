@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -21,7 +22,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
 import br.com.icaros.fitcare.data.UsuarioEntity
 import br.com.icaros.fitcare.data.UsuarioRepository
+import br.com.icaros.fitcare.data.DispositivoRepository
+import br.com.icaros.fitcare.data.DispositivoInfo
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
 fun TelaAdminDashboard(
@@ -29,6 +34,11 @@ fun TelaAdminDashboard(
     onSair: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val dispositivoRepository = remember {
+        DispositivoRepository(context)
+    }
 
     val fundoAdmin = Color(0xFFF4F8FC)
     val cabecalhoTopoAdmin = Color(0xFFEAF5FF)
@@ -41,16 +51,29 @@ fun TelaAdminDashboard(
         mutableStateOf<List<UsuarioEntity>>(emptyList())
     }
 
-    var carregando by remember { mutableStateOf(true) }
-    var mensagemErro by remember { mutableStateOf<String?>(null) }
+    var carregando by remember {
+        mutableStateOf(true)
+    }
+
+    var mensagemErro by remember {
+        mutableStateOf<String?>(null)
+    }
 
     var profissionalSelecionado by remember {
         mutableStateOf<UsuarioEntity?>(null)
     }
 
-    var mostrarDialogoExclusao by remember { mutableStateOf(false) }
-    var mostrarDialogoSenha by remember { mutableStateOf(false) }
-    var mostrarDialogoCadastro by remember { mutableStateOf(false) }
+    var mostrarDialogoExclusao by remember {
+        mutableStateOf(false)
+    }
+
+    var mostrarDialogoSenha by remember {
+        mutableStateOf(false)
+    }
+
+    var mostrarDialogoCadastro by remember {
+        mutableStateOf(false)
+    }
 
     var novaSenha by remember { mutableStateOf("") }
     var confirmarSenha by remember { mutableStateOf("") }
@@ -59,8 +82,31 @@ fun TelaAdminDashboard(
     var emailNovoProfessor by remember { mutableStateOf("") }
     var senhaNovoProfessor by remember { mutableStateOf("") }
     var confirmarSenhaNovoProfessor by remember { mutableStateOf("") }
-    var mensagemCadastro by remember { mutableStateOf<String?>(null) }
-    var cadastrandoProfessor by remember { mutableStateOf(false) }
+
+    var mensagemCadastro by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var cadastrandoProfessor by remember {
+        mutableStateOf(false)
+    }
+
+    // Controle dos dispositivos
+    var dispositivosProfessor by remember {
+        mutableStateOf<List<DispositivoInfo>>(emptyList())
+    }
+
+    var mostrarDialogoDispositivos by remember {
+        mutableStateOf(false)
+    }
+
+    var carregandoDispositivos by remember {
+        mutableStateOf(false)
+    }
+
+    var erroDispositivos by remember {
+        mutableStateOf<String?>(null)
+    }
 
     fun carregarProfissionais() {
         scope.launch {
@@ -68,13 +114,47 @@ fun TelaAdminDashboard(
             mensagemErro = null
 
             try {
-                profissionais = usuarioRepository.listarProfissionaisParaAdmin()
+                profissionais =
+                    usuarioRepository.listarProfissionaisParaAdmin()
             } catch (e: Exception) {
                 mensagemErro = e.message
                     ?: "Não foi possível carregar os profissionais."
             } finally {
                 carregando = false
             }
+        }
+    }
+
+    fun carregarDispositivos(profissional: UsuarioEntity) {
+        val uid = profissional.firebaseUid
+
+        if (uid.isNullOrBlank()) {
+            erroDispositivos =
+                "Este professor ainda não possui UID vinculado ao Firebase."
+
+            dispositivosProfessor = emptyList()
+            mostrarDialogoDispositivos = true
+            return
+        }
+
+        carregandoDispositivos = true
+        erroDispositivos = null
+        dispositivosProfessor = emptyList()
+        mostrarDialogoDispositivos = true
+
+        dispositivoRepository.listarDispositivos(uid) { resultado ->
+
+            resultado
+                .onSuccess { lista ->
+                    dispositivosProfessor = lista
+                    erroDispositivos = null
+                }
+                .onFailure { erro ->
+                    erroDispositivos = erro.message
+                        ?: "Não foi possível consultar os dispositivos."
+                }
+
+            carregandoDispositivos = false
         }
     }
 
@@ -107,7 +187,9 @@ fun TelaAdminDashboard(
                     .padding(top = 4.dp, bottom = 12.dp)
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.logo_fitcare),
+                    painter = painterResource(
+                        id = R.drawable.logo_fitcare
+                    ),
                     contentDescription = "Logo Ícaros FitCare",
                     modifier = Modifier
                         .width(160.dp)
@@ -178,7 +260,9 @@ fun TelaAdminDashboard(
                     )
 
                     TextButton(
-                        onClick = { carregarProfissionais() }
+                        onClick = {
+                            carregarProfissionais()
+                        }
                     ) {
                         Text("ATUALIZAR")
                     }
@@ -251,26 +335,33 @@ fun TelaAdminDashboard(
                                             color = textoSecundarioAdmin
                                         )
 
-                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Spacer(
+                                            modifier = Modifier.height(8.dp)
+                                        )
 
                                         Text(
-                                            text = if (profissional.ativo)
+                                            text = if (profissional.ativo) {
                                                 "ACESSO AUTORIZADO"
-                                            else
-                                                "AGUARDANDO AUTORIZAÇÃO",
-                                            color = if (profissional.ativo)
+                                            } else {
+                                                "AGUARDANDO AUTORIZAÇÃO"
+                                            },
+                                            color = if (profissional.ativo) {
                                                 Color(0xFF36844A)
-                                            else
-                                                Color(0xFFB17B00),
+                                            } else {
+                                                Color(0xFFB17B00)
+                                            },
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
                                         )
 
-                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Spacer(
+                                            modifier = Modifier.height(10.dp)
+                                        )
 
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement =
+                                                Arrangement.spacedBy(6.dp)
                                         ) {
                                             Button(
                                                 onClick = {
@@ -280,19 +371,23 @@ fun TelaAdminDashboard(
                                                                 professorId = profissional.id,
                                                                 ativo = !profissional.ativo
                                                             )
+
                                                             carregarProfissionais()
                                                         } catch (e: Exception) {
-                                                            mensagemErro = e.message
-                                                                ?: "Não foi possível alterar o acesso."
+                                                            mensagemErro =
+                                                                e.message
+                                                                    ?: "Não foi possível alterar o acesso."
                                                         }
                                                     }
                                                 },
                                                 modifier = Modifier.weight(1f),
                                                 colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (profissional.ativo)
-                                                        Color(0xFFD32F2F)
-                                                    else
-                                                        Color(0xFF36844A)
+                                                    containerColor =
+                                                        if (profissional.ativo) {
+                                                            Color(0xFFD32F2F)
+                                                        } else {
+                                                            Color(0xFF36844A)
+                                                        }
                                                 ),
                                                 contentPadding = PaddingValues(
                                                     horizontal = 6.dp,
@@ -300,17 +395,20 @@ fun TelaAdminDashboard(
                                                 )
                                             ) {
                                                 Text(
-                                                    text = if (profissional.ativo)
+                                                    text = if (profissional.ativo) {
                                                         "Bloquear"
-                                                    else
-                                                        "Autorizar",
+                                                    } else {
+                                                        "Autorizar"
+                                                    },
                                                     fontSize = 12.sp
                                                 )
                                             }
 
                                             OutlinedButton(
                                                 onClick = {
-                                                    profissionalSelecionado = profissional
+                                                    profissionalSelecionado =
+                                                        profissional
+
                                                     novaSenha = ""
                                                     confirmarSenha = ""
                                                     mostrarDialogoSenha = true
@@ -329,12 +427,15 @@ fun TelaAdminDashboard(
 
                                             OutlinedButton(
                                                 onClick = {
-                                                    profissionalSelecionado = profissional
+                                                    profissionalSelecionado =
+                                                        profissional
+
                                                     mostrarDialogoExclusao = true
                                                 },
                                                 modifier = Modifier.weight(1f),
                                                 colors = ButtonDefaults.outlinedButtonColors(
-                                                    contentColor = Color(0xFFD32F2F)
+                                                    contentColor =
+                                                        Color(0xFFD32F2F)
                                                 ),
                                                 contentPadding = PaddingValues(
                                                     horizontal = 6.dp,
@@ -347,6 +448,22 @@ fun TelaAdminDashboard(
                                                 )
                                             }
                                         }
+
+                                        Spacer(
+                                            modifier = Modifier.height(8.dp)
+                                        )
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                profissionalSelecionado =
+                                                    profissional
+
+                                                carregarDispositivos(profissional)
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("VER DISPOSITIVOS")
+                                        }
                                     }
                                 }
                             }
@@ -357,6 +474,7 @@ fun TelaAdminDashboard(
         }
     }
 
+    // Diálogo de cadastro
     if (mostrarDialogoCadastro) {
         AlertDialog(
             onDismissRequest = {
@@ -398,16 +516,20 @@ fun TelaAdminDashboard(
                         onValueChange = { senhaNovoProfessor = it },
                         label = { Text("Senha") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation =
+                            PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     OutlinedTextField(
                         value = confirmarSenhaNovoProfessor,
-                        onValueChange = { confirmarSenhaNovoProfessor = it },
+                        onValueChange = {
+                            confirmarSenhaNovoProfessor = it
+                        },
                         label = { Text("Confirmar senha") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation =
+                            PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -426,7 +548,8 @@ fun TelaAdminDashboard(
                     onClick = {
                         when {
                             nomeNovoProfessor.trim().length < 2 -> {
-                                mensagemCadastro = "Informe o nome completo."
+                                mensagemCadastro =
+                                    "Informe o nome completo."
                             }
 
                             emailNovoProfessor.isBlank() -> {
@@ -434,11 +557,13 @@ fun TelaAdminDashboard(
                             }
 
                             senhaNovoProfessor.length < 8 -> {
-                                mensagemCadastro = "A senha deve ter pelo menos 8 caracteres."
+                                mensagemCadastro =
+                                    "A senha deve ter pelo menos 8 caracteres."
                             }
 
                             senhaNovoProfessor != confirmarSenhaNovoProfessor -> {
-                                mensagemCadastro = "As senhas não coincidem."
+                                mensagemCadastro =
+                                    "As senhas não coincidem."
                             }
 
                             else -> {
@@ -467,8 +592,11 @@ fun TelaAdminDashboard(
                     }
                 ) {
                     Text(
-                        if (cadastrandoProfessor) "CADASTRANDO..."
-                        else "CADASTRAR"
+                        if (cadastrandoProfessor) {
+                            "CADASTRANDO..."
+                        } else {
+                            "CADASTRAR"
+                        }
                     )
                 }
             },
@@ -485,6 +613,7 @@ fun TelaAdminDashboard(
         )
     }
 
+    // Diálogo de exclusão
     if (mostrarDialogoExclusao) {
         AlertDialog(
             onDismissRequest = {
@@ -509,12 +638,14 @@ fun TelaAdminDashboard(
                                     usuarioRepository.excluirContaProfissional(
                                         profissional.id
                                     )
+
                                     mostrarDialogoExclusao = false
                                     profissionalSelecionado = null
                                     carregarProfissionais()
                                 } catch (e: Exception) {
                                     mensagemErro = e.message
                                         ?: "Não foi possível excluir a conta."
+
                                     mostrarDialogoExclusao = false
                                 }
                             }
@@ -539,6 +670,7 @@ fun TelaAdminDashboard(
         )
     }
 
+    // Diálogo de redefinição de senha
     if (mostrarDialogoSenha) {
         AlertDialog(
             onDismissRequest = {
@@ -554,24 +686,30 @@ fun TelaAdminDashboard(
                         fontSize = 13.sp
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(
+                        modifier = Modifier.height(12.dp)
+                    )
 
                     OutlinedTextField(
                         value = novaSenha,
                         onValueChange = { novaSenha = it },
                         label = { Text("Nova senha") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation =
+                            PasswordVisualTransformation()
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
 
                     OutlinedTextField(
                         value = confirmarSenha,
                         onValueChange = { confirmarSenha = it },
                         label = { Text("Confirmar nova senha") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation =
+                            PasswordVisualTransformation()
                     )
                 }
             },
@@ -585,7 +723,8 @@ fun TelaAdminDashboard(
                         }
 
                         if (novaSenha != confirmarSenha) {
-                            mensagemErro = "As senhas não coincidem."
+                            mensagemErro =
+                                "As senhas não coincidem."
                             return@TextButton
                         }
 
@@ -622,6 +761,162 @@ fun TelaAdminDashboard(
                     }
                 ) {
                     Text("CANCELAR")
+                }
+            }
+        )
+    }
+
+    // Diálogo de dispositivos
+    if (mostrarDialogoDispositivos) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarDialogoDispositivos = false
+            },
+            title = {
+                Text(
+                    "Dispositivos de ${profissionalSelecionado?.nome ?: "professor"}"
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    when {
+                        carregandoDispositivos -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(100.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+
+                        erroDispositivos != null -> {
+                            Text(
+                                text = erroDispositivos!!,
+                                color = Color(0xFFD32F2F),
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        dispositivosProfessor.isEmpty() -> {
+                            Text(
+                                "Nenhum dispositivo registrado para esta conta.",
+                                color = textoSecundarioAdmin
+                            )
+                        }
+
+                        else -> {
+                            Text(
+                                "Dispositivos encontrados: ${dispositivosProfessor.size}",
+                                fontWeight = FontWeight.SemiBold,
+                                color = textoPrincipalAdmin
+                            )
+
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 350.dp),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(
+                                    items = dispositivosProfessor,
+                                    key = { it.id }
+                                ) { dispositivo ->
+
+                                    val ativo = dispositivo.estaAtivo()
+
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor =
+                                                Color(0xFFF4F8FC)
+                                        )
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalArrangement =
+                                                Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            Text(
+                                                text = "${dispositivo.manufacturer} ${dispositivo.model}",
+                                                fontWeight = FontWeight.Bold,
+                                                color = textoPrincipalAdmin
+                                            )
+
+                                            Text(
+                                                text = if (ativo) {
+                                                    "ATIVO RECENTEMENTE"
+                                                } else {
+                                                    "INATIVO"
+                                                },
+                                                color = if (ativo) {
+                                                    Color(0xFF36844A)
+                                                } else {
+                                                    Color(0xFFB17B00)
+                                                },
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+
+                                            Text(
+                                                text = "Android: ${dispositivo.androidVersion}",
+                                                fontSize = 12.sp,
+                                                color = textoSecundarioAdmin
+                                            )
+
+                                            Text(
+                                                text = "Versão do app: ${dispositivo.appVersion}",
+                                                fontSize = 12.sp,
+                                                color = textoSecundarioAdmin
+                                            )
+
+                                            Text(
+                                                text = "Última atividade: ${
+                                                    dispositivo.lastSeen?.let {
+                                                        SimpleDateFormat(
+                                                            "dd/MM/yyyy HH:mm:ss",
+                                                            Locale("pt", "BR")
+                                                        ).format(it)
+                                                    } ?: "Não registrada"
+                                                }",
+                                                fontSize = 12.sp,
+                                                color = textoSecundarioAdmin
+                                            )
+
+                                            Text(
+                                                text = "ID: ${dispositivo.id}",
+                                                fontSize = 10.sp,
+                                                color = textoSecundarioAdmin
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarDialogoDispositivos = false
+                    }
+                ) {
+                    Text("FECHAR")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !carregandoDispositivos,
+                    onClick = {
+                        profissionalSelecionado?.let {
+                            carregarDispositivos(it)
+                        }
+                    }
+                ) {
+                    Text("ATUALIZAR")
                 }
             }
         )

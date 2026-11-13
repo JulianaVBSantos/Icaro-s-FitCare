@@ -1,5 +1,10 @@
 package br.com.icaros.fitcare
 
+import com.google.firebase.firestore.FirebaseFirestore
+import android.os.Handler
+import android.os.Looper
+import com.google.firebase.auth.FirebaseAuth
+import br.com.icaros.fitcare.data.DispositivoRepository
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import android.widget.Toast
@@ -127,7 +132,45 @@ const val CHAVE_MANTER_CONECTADO = "manter_conectado"
 const val CHAVE_USUARIO_ID = "usuario_id"
 const val CHAVE_PERFIL = "perfil"
 
+
 class MainActivity : ComponentActivity() {
+
+    private lateinit var dispositivoRepository: DispositivoRepository
+
+    private val monitorDispositivo = Handler(Looper.getMainLooper())
+
+    private val tarefaMonitoramento = object : Runnable {
+        override fun run() {
+            registrarDispositivoSeProfessor()
+
+            monitorDispositivo.postDelayed(
+                this,
+                60_000L
+            )
+        }
+    }
+
+    private fun registrarDispositivoSeProfessor() {
+        val usuarioFirebase = FirebaseAuth.getInstance().currentUser
+            ?: return
+
+        val uid = usuarioFirebase.uid
+
+        FirebaseFirestore.getInstance()
+            .collection("usuarios")
+            .document(uid)
+            .get()
+            .addOnSuccessListener { documento ->
+
+                val perfil = documento.getString("perfil")
+                val ativo = documento.getBoolean("ativo") == true
+
+                if (perfil == "PROFESSOR" && ativo) {
+                    dispositivoRepository.registrarAtividade(uid)
+                }
+            }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -135,24 +178,41 @@ class MainActivity : ComponentActivity() {
 
         window.statusBarColor = android.graphics.Color.TRANSPARENT
 
-        WindowInsetsControllerCompat(window, window.decorView).apply {
+        WindowInsetsControllerCompat(
+            window,
+            window.decorView
+        ).apply {
             isAppearanceLightStatusBars = true
         }
 
+        dispositivoRepository = DispositivoRepository(applicationContext)
+
         val database = FitCareDatabase.getDatabase(applicationContext)
-        val usuarioRepository = UsuarioRepository(database.usuarioDao(), applicationContext)
+
+        val usuarioRepository = UsuarioRepository(
+            database.usuarioDao(),
+            applicationContext
+        )
 
         // Repositórios existentes
         val repository = AlunoRepository(
             database = database,
             context = applicationContext
         )
-        val treinoRepository = TreinoRepository(database.treinoDao())
-        val anamneseRepository = AnamneseRepository(database.anamneseDao())
+
+        val treinoRepository = TreinoRepository(
+            database.treinoDao()
+        )
+
+        val anamneseRepository = AnamneseRepository(
+            database.anamneseDao()
+        )
 
         // Novos repositórios de anamnese digital
         val modeloAnamneseRepository =
-            ModeloAnamneseRepository(database.modeloAnamneseDao())
+            ModeloAnamneseRepository(
+                database.modeloAnamneseDao()
+            )
 
         val perguntaModeloAnamneseRepository =
             PerguntaModeloAnamneseRepository(
@@ -188,6 +248,21 @@ class MainActivity : ComponentActivity() {
                 usuarioRepository = usuarioRepository
             )
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+
+        monitorDispositivo.removeCallbacks(tarefaMonitoramento)
+
+        // Registra imediatamente e depois repete a cada minuto.
+        monitorDispositivo.post(tarefaMonitoramento)
+    }
+
+    override fun onStop() {
+        monitorDispositivo.removeCallbacks(tarefaMonitoramento)
+
+        super.onStop()
     }
 }
 
@@ -303,7 +378,14 @@ fun FitCareApp(
 
             if (usuario != null) {
                 SessaoUsuario.iniciar(usuario)
-                perfilSelecionado = usuario.perfil
+
+                if (usuario.perfil == "PROFESSOR") {
+                    val uid = FirebaseAuth.getInstance().currentUser?.uid
+
+                    if (!uid.isNullOrBlank()) {
+                        DispositivoRepository(context).registrarAtividade(uid)
+                    }
+                }
 
                 // Retoma a sincronização imediata e periódica do professor.
                 if (usuario.perfil == "PROFESSOR") {
@@ -445,7 +527,13 @@ fun FitCareApp(
 
                                 onEntrar = { usuario ->
                                     SessaoUsuario.iniciar(usuario)
+                                    if (usuario.perfil == "PROFESSOR") {
+                                        val uid = FirebaseAuth.getInstance().currentUser?.uid
 
+                                        if (!uid.isNullOrBlank()) {
+                                            DispositivoRepository(context).registrarAtividade(uid)
+                                        }
+                                    }
                                     // Agenda a sincronização imediata e periódica do professor.
                                     if (usuario.perfil == "PROFESSOR") {
                                         AlunoSyncWorker.agendar(context)
