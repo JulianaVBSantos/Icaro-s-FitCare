@@ -790,24 +790,36 @@ class UsuarioRepository(
         return usuario
     }
     // ADMINISTRAÇÃO DE PROFESSORES
+    // ADMINISTRAÇÃO DE PROFESSORES
     suspend fun listarProfissionaisParaAdmin(): List<UsuarioEntity> {
         exigirAdminAtivo()
         val firestore = FirebaseFirestore.getInstance()
+
         val resultado = firestore
             .collection("usuarios")
             .whereEqualTo("perfil", PERFIL_PROFESSOR)
             .get()
             .await()
+
+        val uidsRemotosAtivos = mutableSetOf<String>()
+        val emailsRemotosAtivos = mutableSetOf<String>()
+
         for (documento in resultado.documents) {
             val uid = documento.id
             val nome = documento.getString("nome")?.trim().orEmpty()
             val email = documento.getString("email")?.trim()?.lowercase().orEmpty()
             val ativo = documento.getBoolean("ativo") ?: false
+
             if (uid.isBlank() || nome.isBlank() || email.isBlank()) {
                 continue
             }
+
+            uidsRemotosAtivos.add(uid)
+            emailsRemotosAtivos.add(email)
+
             val usuarioPorUid = usuarioDao.buscarPorFirebaseUid(uid)
             val usuarioPorEmail = usuarioDao.buscarPorEmail(email)
+
             require(
                 usuarioPorUid == null ||
                         usuarioPorEmail == null ||
@@ -815,7 +827,9 @@ class UsuarioRepository(
             ) {
                 "Existem cadastros locais conflitantes para o professor $email."
             }
+
             val usuarioLocal = usuarioPorUid ?: usuarioPorEmail
+
             if (usuarioLocal != null) {
                 require(usuarioLocal.perfil == PERFIL_PROFESSOR) {
                     "O e-mail $email já pertence a outro perfil."
@@ -826,6 +840,7 @@ class UsuarioRepository(
                 ) {
                     "O professor $email está vinculado a outra conta Firebase."
                 }
+
                 val atualizado = usuarioDao.atualizarProfessorComDadosFirebase(
                     usuarioId = usuarioLocal.id,
                     nome = nome,
@@ -848,8 +863,25 @@ class UsuarioRepository(
                 usuarioDao.inserir(novoProfessor)
             }
         }
+
+        // Remove do banco local professores que foram excluídos no Firestore por outro dispositivo
+        val locaisAtuais = usuarioDao.listarProfissionaisParaAdmin()
+        for (local in locaisAtuais) {
+            if (local.email.equals(EMAIL_PROFESSOR_INICIAL, ignoreCase = true)) {
+                continue
+            }
+            val existeNoServidor =
+                (!local.firebaseUid.isNullOrBlank() && local.firebaseUid in uidsRemotosAtivos) ||
+                        (local.email.trim().lowercase() in emailsRemotosAtivos)
+
+            if (!existeNoServidor && !usuarioDao.professorPossuiAlunos(local.id)) {
+                usuarioDao.excluirProfessor(local.id)
+            }
+        }
+
         return usuarioDao.listarProfissionaisParaAdmin()
     }
+
     suspend fun alterarStatusProfissional(
         professorId: Long,
         ativo: Boolean

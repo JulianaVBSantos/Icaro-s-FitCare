@@ -217,7 +217,8 @@ class MainActivity : ComponentActivity() {
 
         val modeloAnamneseRepository =
             ModeloAnamneseRepository(
-                database.modeloAnamneseDao()
+                dao = database.modeloAnamneseDao(),
+                perguntaDao = database.perguntaModeloAnamneseDao()
             )
 
         val perguntaModeloAnamneseRepository =
@@ -411,7 +412,9 @@ fun FitCareApp(
         )
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
             color = FundoApp
         ) {
             Box(
@@ -1870,7 +1873,7 @@ fun TelaLogin(
     }
 }
 
-// Tela de Dashboard principal do professor (com sino de notificações e sync imediato)
+// Tela de Dashboard principal do professor (com sino zerando notificações lidas e Central de Atenção)
 @Composable
 fun TelaDashboard(
     repository: AlunoRepository,
@@ -1887,7 +1890,29 @@ fun TelaDashboard(
     val context = LocalContext.current
     var pesquisa by remember { mutableStateOf("") }
     var mostrarNotificacoes by remember { mutableStateOf(false) }
-// Sincroniza imediatamente ao abrir o Dashboard para refletir dados de outros dispositivos
+    var mostrarDialogoCentralAtencao by remember { mutableStateOf(false) }
+
+    val prefsNotificacoes = remember {
+        context.getSharedPreferences("fitcare_notificacoes", Context.MODE_PRIVATE)
+    }
+
+    var idsNotificacoesLidas by remember {
+        mutableStateOf(
+            prefsNotificacoes.getStringSet("notificacoes_lidas_ids", emptySet())
+                ?.toSet()
+                ?: emptySet()
+        )
+    }
+
+    fun marcarNotificacaoComoLida(anamneseId: Long) {
+        val atualizado = idsNotificacoesLidas + anamneseId.toString()
+        idsNotificacoesLidas = atualizado
+        prefsNotificacoes.edit()
+            .putStringSet("notificacoes_lidas_ids", atualizado)
+            .apply()
+    }
+
+    // Sincroniza imediatamente ao abrir o Dashboard para refletir dados de outros dispositivos
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
@@ -1899,10 +1924,12 @@ fun TelaDashboard(
             }
         }
     }
+
     val alunos by repository
         .listarAlunos()
         .collectAsState(initial = emptyList())
-// Lista todas as anamneses respondidas dos alunos deste professor para o sino de notificações
+
+    // Lista todas as anamneses respondidas dos alunos deste professor
     val notificacoesRespondidas by produceState(
         initialValue = emptyList<Pair<AlunoEntity, AnamneseAtribuidaEntity>>(),
         key1 = alunos
@@ -1923,9 +1950,14 @@ fun TelaDashboard(
         }
         value = lista.sortedByDescending { it.second.updatedAtMillis }
     }
+
+    val notificacoesNaoLidas = notificacoesRespondidas.filter { (_, anamnese) ->
+        anamnese.id.toString() !in idsNotificacoesLidas
+    }
+
     val totalAlunos = alunos.size
     val alunosEmAtencao = alunos.count { aluno ->
-        aluno.status == "Atenção"
+        aluno.status == "Atenção" || aluno.status == "Prioridade"
     }
     val alunosEmDia = alunos.count { aluno ->
         aluno.status == "Normal"
@@ -1933,6 +1965,7 @@ fun TelaDashboard(
     val alunosFiltrados = alunos.filter { aluno ->
         aluno.nome.contains(pesquisa.trim(), ignoreCase = true)
     }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1964,7 +1997,7 @@ fun TelaDashboard(
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-// Sino de notificações no canto superior esquerdo/direito ao lado de Sair
+                    // Sino de notificações no canto superior esquerdo
                     Box(
                         modifier = Modifier.align(Alignment.CenterStart)
                     ) {
@@ -1973,13 +2006,13 @@ fun TelaDashboard(
                         ) {
                             BadgedBox(
                                 badge = {
-                                    if (notificacoesRespondidas.isNotEmpty()) {
+                                    if (notificacoesNaoLidas.isNotEmpty()) {
                                         Badge(
                                             containerColor = Color(0xFFD32F2F),
                                             contentColor = Color.White
                                         ) {
                                             Text(
-                                                text = notificacoesRespondidas.size.toString(),
+                                                text = notificacoesNaoLidas.size.toString(),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -1996,6 +2029,7 @@ fun TelaDashboard(
                             }
                         }
                     }
+
                     Image(
                         painter = painterResource(
                             id = R.drawable.logo_fitcare
@@ -2005,6 +2039,7 @@ fun TelaDashboard(
                             .width(145.dp)
                             .height(70.dp)
                     )
+
                     Box(
                         modifier = Modifier.align(Alignment.CenterEnd)
                     ) {
@@ -2014,6 +2049,7 @@ fun TelaDashboard(
                     }
                 }
             }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2036,11 +2072,13 @@ fun TelaDashboard(
                     )
                 }
             }
+
             val primeiroNomeProfessor = SessaoUsuario.usuarioAtual
                 ?.nome
                 ?.trim()
                 ?.substringBefore(" ")
                 .orEmpty()
+
             Text(
                 text = if (primeiroNomeProfessor.isNotBlank()) {
                     "Bem-vindo de volta, $primeiroNomeProfessor!"
@@ -2056,6 +2094,7 @@ fun TelaDashboard(
                     bottom = 0.dp
                 )
             )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2068,6 +2107,7 @@ fun TelaDashboard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+
                 OutlinedTextField(
                     value = pesquisa,
                     onValueChange = { pesquisa = it },
@@ -2180,13 +2220,58 @@ fun TelaDashboard(
                     )
                     DashboardAcao(
                         modifier = Modifier.weight(1f),
-                        titulo = "Modelos de anamnese",
-                        subtitulo = "Criar, visualizar e enviar",
+                        titulo = "Central de atenção",
+                        subtitulo = "Alertas e prioridades",
                         corFundo = Color(0xFFFFD9DC),
                         corTexto = Color(0xFF9C4350),
-                        icone = "📋",
-                        onClick = onModelosAnamnese
+                        icone = "!",
+                        onClick = { mostrarDialogoCentralAtencao = true }
                     )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+// Acesso dedicado para Modelos de Anamnese
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onModelosAnamnese() },
+                    shape = RoundedCornerShape(13.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = AzulMuitoClaro
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Assignment,
+                            contentDescription = null,
+                            tint = AzulPrincipal,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Modelos de anamnese",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AzulPrincipal
+                            )
+                            Text(
+                                text = "Criar, visualizar e enviar formulários aos alunos",
+                                fontSize = 11.sp,
+                                color = TextoSecundario
+                            )
+                        }
+                        Text(
+                            text = "›",
+                            fontSize = 22.sp,
+                            color = AzulPrincipal,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(22.dp))
                 Row(
@@ -2204,7 +2289,8 @@ fun TelaDashboard(
                         text = "Ver todos ›",
                         fontSize = 13.sp,
                         color = AzulPrincipal,
-                        modifier = Modifier.clickable { onAlunos() })
+                        modifier = Modifier.clickable { onAlunos() }
+                    )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 if (alunosFiltrados.isEmpty()) {
@@ -2266,7 +2352,45 @@ fun TelaDashboard(
             onMais = onSair
         )
     }
-// Diálogo do sino de notificações (anamneses respondidas pelos alunos)
+    if (mostrarDialogoCentralAtencao) {
+        AlertDialog(
+            onDismissRequest = { mostrarDialogoCentralAtencao = false },
+            title = {
+                Text(
+                    text = "Central de Atenção",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AzulPrincipal
+                )
+            },
+            text = {
+                Text(
+                    text = "Esta tela dedicada aos alertas clínicos e prioridades está em desenvolvimento. " +
+                            "Você já pode filtrar os alunos com status 'Atenção' ou 'Prioridade' na tela Consultar Alunos.",
+                    fontSize = 13.sp,
+                    color = TextoSecundario
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarDialogoCentralAtencao = false
+                        onAlunos()
+                    }
+                ) {
+                    Text("Ver alunos", color = AzulPrincipal, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { mostrarDialogoCentralAtencao = false }
+                ) {
+                    Text("Fechar")
+                }
+            }
+        )
+    }
+// Diálogo do sino de notificações (zera contador ao clicar na notificação)
     if (mostrarNotificacoes) {
         AlertDialog(
             onDismissRequest = { mostrarNotificacoes = false },
@@ -2294,23 +2418,26 @@ fun TelaDashboard(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         notificacoesRespondidas.forEach { (aluno, anamnese) ->
+                            val jaLida = anamnese.id.toString() in idsNotificacoesLidas
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
+                                        marcarNotificacaoComoLida(anamnese.id)
                                         mostrarNotificacoes = false
                                         onPerfil(aluno)
                                     },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = AzulMuitoClaro
+                                    containerColor = if (jaLida) Color(0xFFF2F4F7) else AzulMuitoClaro
                                 )
                             ) {
                                 Column(
                                     modifier = Modifier.padding(12.dp)
                                 ) {
                                     Text(
-                                        text = "${aluno.nome} respondeu a anamnese",
+                                        text = "${aluno.nome} respondeu a anamnese" +
+                                                if (!jaLida) " (Nova)" else "",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = AzulPrincipal

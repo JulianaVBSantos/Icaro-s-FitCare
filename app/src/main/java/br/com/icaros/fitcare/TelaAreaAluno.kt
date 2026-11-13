@@ -47,41 +47,45 @@ import org.json.JSONArray
 import java.io.File
 import java.util.Locale
 
+private fun ehOpcaoOutro(opcao: String): Boolean {
+    val norm = opcao.trim().lowercase(Locale.ROOT)
+    return norm == "outro" || norm == "outros" || norm == "outra" || norm == "outras"
+}
+
+private fun extrairItensResposta(
+    tipoResposta: String,
+    respostaBruta: String
+): List<String> {
+    if (respostaBruta.isBlank()) return emptyList()
+    if (tipoResposta == "CHECKBOX" && respostaBruta.trim().startsWith("[")) {
+        return try {
+            val json = JSONArray(respostaBruta)
+            (0 until json.length()).mapNotNull { i ->
+                json.optString(i).trim().takeIf { it.isNotBlank() }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+    return listOf(respostaBruta.trim())
+}
+
 private fun respostaEstaPreenchida(
     tipoResposta: String,
     resposta: String?
 ): Boolean {
     if (resposta.isNullOrBlank()) return false
-    if (tipoResposta == "CHECKBOX" && resposta.trim().startsWith("[")) {
-        return try {
-            val json = JSONArray(resposta)
-            (0 until json.length()).any { i ->
-                json.optString(i).isNotBlank()
-            }
-        } catch (_: Exception) {
-            false
-        }
-    }
-    return true
+    val itens = extrairItensResposta(tipoResposta, resposta)
+    if (itens.isEmpty()) return false
+    return itens.none { ehOpcaoOutro(it) }
 }
 
 private fun formatarRespostaAluno(
     tipoResposta: String,
     respostaBruta: String
 ): String {
-    if (respostaBruta.isBlank()) return ""
-    if (tipoResposta == "CHECKBOX" && respostaBruta.trim().startsWith("[")) {
-        return try {
-            val json = JSONArray(respostaBruta)
-            val itens = (0 until json.length()).mapNotNull { i ->
-                json.optString(i).takeIf { it.isNotBlank() }
-            }
-            if (itens.isEmpty()) "" else itens.joinToString(", ")
-        } catch (_: Exception) {
-            respostaBruta
-        }
-    }
-    return respostaBruta
+    val itens = extrairItensResposta(tipoResposta, respostaBruta)
+    return if (itens.isEmpty()) "" else itens.joinToString(", ")
 }
 
 private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
@@ -95,43 +99,29 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
     val condicoesExtraidas = linkedSetOf<String>()
     val restricoesExtraidas = linkedSetOf<String>()
 
-    // Preserva itens já registrados anteriormente, caso existam
-    aluno.condicoes.split(",")
-        .map { it.trim() }
-        .filter { it.isNotBlank() && !it.equals("Nenhuma", ignoreCase = true) }
-        .forEach { condicoesExtraidas.add(it) }
-
-    aluno.restricoes.split(",")
-        .map { it.trim() }
-        .filter { it.isNotBlank() && !it.equals("Nenhuma", ignoreCase = true) }
-        .forEach { restricoesExtraidas.add(it) }
+    var atualizouCondicoes = false
+    var atualizouRestricoes = false
 
     for (pergunta in perguntas) {
         val tituloLower = pergunta.texto.lowercase(Locale.ROOT)
         val respostaBruta = respostas[pergunta.id].orEmpty().trim()
         if (respostaBruta.isBlank()) continue
 
-        val itens = if (
-            pergunta.tipoResposta == "CHECKBOX" &&
-            respostaBruta.startsWith("[")
-        ) {
-            try {
-                val arr = JSONArray(respostaBruta)
-                (0 until arr.length()).mapNotNull { i ->
-                    arr.optString(i).trim().takeIf { it.isNotBlank() }
+        val itens = extrairItensResposta(pergunta.tipoResposta, respostaBruta)
+            .map { item ->
+                if (item.startsWith("Outro:", ignoreCase = true)) {
+                    item.substringAfter(":").trim()
+                } else {
+                    item
                 }
-            } catch (_: Exception) {
-                listOf(respostaBruta)
             }
-        } else {
-            respostaBruta.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        }
-
-        val itensValidos = itens.filterNot {
-            it.equals("Nenhuma", ignoreCase = true) ||
-                    it.equals("Não", ignoreCase = true) ||
-                    it.equals("Nao", ignoreCase = true)
-        }
+            .filter {
+                it.isNotBlank() &&
+                        !it.equals("Nenhuma", ignoreCase = true) &&
+                        !it.equals("Não", ignoreCase = true) &&
+                        !it.equals("Nao", ignoreCase = true) &&
+                        !ehOpcaoOutro(it)
+            }
 
         when {
             tituloLower.contains("condiç") ||
@@ -139,13 +129,14 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("saúde") ||
                     tituloLower.contains("saude") ||
                     tituloLower.contains("dor") -> {
+                atualizouCondicoes = true
                 if (
                     pergunta.tipoResposta == "SIM_NAO" &&
                     respostaBruta.equals("Sim", ignoreCase = true)
                 ) {
                     condicoesExtraidas.add(pergunta.texto.trim())
                 } else if (pergunta.tipoResposta != "SIM_NAO") {
-                    condicoesExtraidas.addAll(itensValidos)
+                    condicoesExtraidas.addAll(itens)
                 }
             }
 
@@ -153,41 +144,48 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("restric") ||
                     tituloLower.contains("limitaç") ||
                     tituloLower.contains("limitac") -> {
+                atualizouRestricoes = true
                 if (
                     pergunta.tipoResposta == "SIM_NAO" &&
                     respostaBruta.equals("Sim", ignoreCase = true)
                 ) {
                     restricoesExtraidas.add(pergunta.texto.trim())
                 } else if (pergunta.tipoResposta != "SIM_NAO") {
-                    restricoesExtraidas.addAll(itensValidos)
+                    restricoesExtraidas.addAll(itens)
                 }
             }
         }
     }
 
-    val novasCondicoes = condicoesExtraidas.joinToString(", ")
-    val novasRestricoes = restricoesExtraidas.joinToString(", ")
+    val novasCondicoes = if (atualizouCondicoes) {
+        condicoesExtraidas.joinToString(", ")
+    } else {
+        aluno.condicoes
+    }
 
-    val totalItens = condicoesExtraidas.size + restricoesExtraidas.size
+    val novasRestricoes = if (atualizouRestricoes) {
+        restricoesExtraidas.joinToString(", ")
+    } else {
+        aluno.restricoes
+    }
+
+    val totalItens =
+        novasCondicoes.split(",").count { it.trim().isNotBlank() } +
+                novasRestricoes.split(",").count { it.trim().isNotBlank() }
+
     val novoStatus = when {
         totalItens == 0 -> "Normal"
         totalItens == 1 -> "Atenção"
         else -> "Prioridade"
     }
 
-    if (
-        novasCondicoes != aluno.condicoes ||
-        novasRestricoes != aluno.restricoes ||
-        novoStatus != aluno.status
-    ) {
-        alunoRepository.atualizarDireto(
-            aluno.copy(
-                condicoes = novasCondicoes,
-                restricoes = novasRestricoes,
-                status = novoStatus
-            )
+    alunoRepository.atualizarDireto(
+        aluno.copy(
+            condicoes = novasCondicoes,
+            restricoes = novasRestricoes,
+            status = novoStatus
         )
-    }
+    )
 }
 
 @Composable
@@ -1008,7 +1006,7 @@ fun TelaAreaAluno(
         }
     }
 }
-// CAMPO DE RESPOSTA DA ANAMNESE
+// CAMPO DE RESPOSTA DA ANAMNESE (COM CAIXA DE TEXTO PARA "OUTRO")
 @Composable
 private fun CampoRespostaAnamnese(
     pergunta: PerguntaAnamneseAtribuidaEntity,
@@ -1021,7 +1019,7 @@ private fun CampoRespostaAnamnese(
             (0 until json.length()).map {
                 json.getString(it)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -1056,11 +1054,7 @@ private fun CampoRespostaAnamnese(
                 OutlinedTextField(
                     value = valor,
                     onValueChange = { novo ->
-                        if (
-                            novo.matches(
-                                Regex("[0-9]([.,][0-9])?")
-                            )
-                        ) {
+                        if (novo.matches(Regex("[0-9]([.,][0-9])?"))) {
                             onChange(novo)
                         }
                     },
@@ -1112,23 +1106,44 @@ private fun CampoRespostaAnamnese(
                 }
             }
             "MULTIPLA_ESCOLHA" -> {
+                val outroSelecionado = ehOpcaoOutro(valor) ||
+                        valor.startsWith("Outro:", ignoreCase = true)
+                val textoOutroAtual = if (valor.startsWith("Outro:", ignoreCase = true)) {
+                    valor.substringAfter(":").trimStart()
+                } else {
+                    ""
+                }
                 Column(
                     modifier = Modifier.selectableGroup()
                 ) {
                     alternativas.forEach { opcao ->
+                        val ehEstaOutro = ehOpcaoOutro(opcao)
+                        val selecionada = if (ehEstaOutro) {
+                            outroSelecionado
+                        } else {
+                            valor == opcao
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .selectable(
-                                    selected = valor == opcao,
-                                    onClick = { onChange(opcao) },
+                                    selected = selecionada,
+                                    onClick = {
+                                        if (ehEstaOutro) {
+                                            if (!outroSelecionado) {
+                                                onChange("Outro:")
+                                            }
+                                        } else {
+                                            onChange(opcao)
+                                        }
+                                    },
                                     role = Role.RadioButton
                                 )
                                 .padding(vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
-                                selected = valor == opcao,
+                                selected = selecionada,
                                 onClick = null
                             )
                             Text(
@@ -1136,6 +1151,18 @@ private fun CampoRespostaAnamnese(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
+                    }
+                    if (outroSelecionado) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = textoOutroAtual,
+                            onValueChange = { digitado ->
+                                onChange("Outro: $digitado")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Descreva qual") },
+                            minLines = 2
+                        )
                     }
                 }
             }
@@ -1146,48 +1173,85 @@ private fun CampoRespostaAnamnese(
                         (0 until json.length()).map {
                             json.getString(it)
                         }.toSet()
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         emptySet()
                     }
                 }
+                val itemOutroAtual = selecionadas.firstOrNull {
+                    ehOpcaoOutro(it) || it.startsWith("Outro:", ignoreCase = true)
+                }
+                val outroMarcado = itemOutroAtual != null
+                val textoOutroAtual = if (
+                    itemOutroAtual != null &&
+                    itemOutroAtual.startsWith("Outro:", ignoreCase = true)
+                ) {
+                    itemOutroAtual.substringAfter(":").trimStart()
+                } else {
+                    ""
+                }
+                fun salvarConjunto(novas: Set<String>) {
+                    if (novas.isEmpty()) {
+                        onChange("")
+                    } else {
+                        val json = JSONArray()
+                        novas.forEach { json.put(it) }
+                        onChange(json.toString())
+                    }
+                }
                 alternativas.forEach { opcao ->
+                    val ehEstaOutro = ehOpcaoOutro(opcao)
+                    val marcada = if (ehEstaOutro) {
+                        outroMarcado
+                    } else {
+                        opcao in selecionadas
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
                                 val novas = selecionadas.toMutableSet()
-                                if (opcao in novas) {
-                                    novas.remove(opcao)
+                                if (ehEstaOutro) {
+                                    if (outroMarcado) {
+                                        novas.removeAll {
+                                            ehOpcaoOutro(it) ||
+                                                    it.startsWith("Outro:", ignoreCase = true)
+                                        }
+                                    } else {
+                                        novas.add("Outro:")
+                                    }
                                 } else {
-                                    novas.add(opcao)
+                                    if (opcao in novas) {
+                                        novas.remove(opcao)
+                                    } else {
+                                        novas.add(opcao)
+                                    }
                                 }
-                                if (novas.isEmpty()) {
-                                    onChange("")
-                                } else {
-                                    val json = JSONArray()
-                                    novas.forEach { json.put(it) }
-                                    onChange(json.toString())
-                                }
+                                salvarConjunto(novas)
                             }
                             .padding(vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
-                            checked = opcao in selecionadas,
-                            onCheckedChange = { marcado ->
+                            checked = marcada,
+                            onCheckedChange = { checked ->
                                 val novas = selecionadas.toMutableSet()
-                                if (marcado) {
-                                    novas.add(opcao)
+                                if (ehEstaOutro) {
+                                    if (checked) {
+                                        if (!outroMarcado) novas.add("Outro:")
+                                    } else {
+                                        novas.removeAll {
+                                            ehOpcaoOutro(it) ||
+                                                    it.startsWith("Outro:", ignoreCase = true)
+                                        }
+                                    }
                                 } else {
-                                    novas.remove(opcao)
+                                    if (checked) {
+                                        novas.add(opcao)
+                                    } else {
+                                        novas.remove(opcao)
+                                    }
                                 }
-                                if (novas.isEmpty()) {
-                                    onChange("")
-                                } else {
-                                    val json = JSONArray()
-                                    novas.forEach { json.put(it) }
-                                    onChange(json.toString())
-                                }
+                                salvarConjunto(novas)
                             }
                         )
                         Text(
@@ -1195,6 +1259,23 @@ private fun CampoRespostaAnamnese(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
+                }
+                if (outroMarcado) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = textoOutroAtual,
+                        onValueChange = { digitado ->
+                            val novas = selecionadas.filterNot {
+                                ehOpcaoOutro(it) ||
+                                        it.startsWith("Outro:", ignoreCase = true)
+                            }.toMutableSet()
+                            novas.add("Outro: $digitado")
+                            salvarConjunto(novas)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Descreva qual") },
+                        minLines = 2
+                    )
                 }
             }
             else -> {

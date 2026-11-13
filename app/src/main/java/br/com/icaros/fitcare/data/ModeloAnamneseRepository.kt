@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import java.text.SimpleDateFormat
@@ -8,7 +7,8 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 class ModeloAnamneseRepository(
-    private val dao: ModeloAnamneseDao
+    private val dao: ModeloAnamneseDao,
+    private val perguntaDao: PerguntaModeloAnamneseDao? = null
 ) {
 
     private fun agora(): String =
@@ -78,7 +78,15 @@ class ModeloAnamneseRepository(
                 deletedAtMillis = null
             )
 
-            dao.inserir(novoModelo)
+            val novoId = dao.inserir(novoModelo)
+
+            if (perguntaDao != null) {
+                val perguntasBase =
+                    ChecklistAnamneseUnificado.criarPerguntasPadraoAcompanhamento(novoId)
+                perguntaDao.inserirTodas(perguntasBase)
+            }
+
+            novoId
 
         } else {
 
