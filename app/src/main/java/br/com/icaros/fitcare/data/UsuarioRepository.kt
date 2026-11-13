@@ -308,10 +308,14 @@ class UsuarioRepository(
         senha: String
     ): UsuarioEntity {
         val auth = FirebaseAuth.getInstance()
-        val firebaseUser = auth.signInWithEmailAndPassword(
-            email,
-            senha
-        ).await().user ?: throw IllegalStateException(
+        val firebaseUser = try {
+            auth.signInWithEmailAndPassword(
+                email,
+                senha
+            ).await().user
+        } catch (_: Exception) {
+            throw IllegalArgumentException("E-mail ou senha incorretos.")
+        } ?: throw IllegalStateException(
             "O Firebase não retornou os dados da conta."
         )
         val uid = firebaseUser.uid
@@ -333,6 +337,9 @@ class UsuarioRepository(
                     "Esta conta não possui autorização ativa para acessar o perfil de professor."
                 )
             }
+            val nomeRemoto = documento.getString("nome")?.takeIf { it.isNotBlank() }
+                ?: firebaseUser.displayName?.takeIf { it.isNotBlank() }
+                ?: email.substringBefore("@")
             val usuarioPorUid = usuarioDao.buscarPorFirebaseUid(uid)
             val usuarioPorEmail = usuarioDao.buscarPorEmail(email)
             if (
@@ -361,34 +368,23 @@ class UsuarioRepository(
                         "Este e-mail já está associado a outra conta Firebase."
                     )
                 }
-                if (!usuarioLocal.ativo) {
-                    val alterados = usuarioDao.atualizarStatus(
-                        id = usuarioLocal.id,
-                        ativo = true
-                    )
-                    check(alterados == 1) {
-                        "Não foi possível atualizar o status local do professor."
-                    }
-                }
-                if (usuarioLocal.firebaseUid.isNullOrBlank()) {
-                    val alterados = usuarioDao.atualizarFirebaseUid(
-                        usuarioId = usuarioLocal.id,
-                        firebaseUid = uid
-                    )
-                    check(alterados == 1) {
-                        "Não foi possível vincular a conta ao Firebase."
-                    }
-                }
+                usuarioDao.atualizarProfessorComDadosFirebase(
+                    usuarioId = usuarioLocal.id,
+                    nome = nomeRemoto,
+                    email = email,
+                    ativo = true,
+                    firebaseUid = uid
+                )
                 usuarioLocal.copy(
+                    nome = nomeRemoto,
                     ativo = true,
                     firebaseUid = uid
                 )
             } else {
                 val novoUsuario = UsuarioEntity(
-                    nome = firebaseUser.displayName?.takeIf { it.isNotBlank() }
-                        ?: email.substringBefore("@"),
+                    nome = nomeRemoto,
                     email = email,
-                    senhaHash = "",
+                    senhaHash = gerarHashSenha(senha),
                     perfil = PERFIL_PROFESSOR,
                     ativo = true,
                     firebaseUid = uid
@@ -558,7 +554,7 @@ class UsuarioRepository(
         SessaoUsuario.iniciar(adminAutenticado)
         return adminAutenticado
     }
-    // CADASTRO DE PROFESSOR
+    // CADASTRO DE PROFESSOR (SEM CONFLITO COM LISTENER EM TEMPO REAL)
     suspend fun cadastrarProfessor(
         nome: String,
         email: String,
@@ -587,12 +583,19 @@ class UsuarioRepository(
             ).await().user.also {
                 contaCriadaAgora = true
             }
-        } catch (e: FirebaseAuthUserCollisionException) {
-            authSecundario.signInWithEmailAndPassword(
-                emailNormalizado,
-                senha
-            ).await().user
-        } ?: throw IllegalStateException(
+        } catch (_: FirebaseAuthUserCollisionException) {
+            try {
+                authSecundario.signInWithEmailAndPassword(
+                    emailNormalizado,
+                    senha
+                ).await().user
+            } catch (_: Exception) {
+                throw IllegalArgumentException(
+                    "Este e-mail já existe no Firebase Authentication com outra senha."
+                )
+            }
+        }
+            ?: throw IllegalStateException(
             "O Firebase Authentication não retornou a conta do professor."
         )
         val uidProfessor = firebaseUser.uid
@@ -608,19 +611,39 @@ class UsuarioRepository(
                         "ativo" to true,
                         "dataCadastro" to System.currentTimeMillis(),
                         "criadoPor" to UID_ADMIN_AUTORIZADO
-                    )
+                    ),
+                    SetOptions.merge()
                 )
                 .await()
-            val usuario = UsuarioEntity(
-                nome = nome.trim(),
-                email = emailNormalizado,
-                senhaHash = gerarHashSenha(senha),
-                perfil = PERFIL_PROFESSOR,
-                ativo = true,
-                firebaseUid = uidProfessor
-            )
-            val id = usuarioDao.inserir(usuario)
-            return usuario.copy(id = id)
+            val existenteNoRoom = usuarioDao.buscarPorFirebaseUid(uidProfessor)
+                ?: usuarioDao.buscarPorEmail(emailNormalizado)
+            return if (existenteNoRoom != null) {
+                usuarioDao.atualizarProfessorComDadosFirebase(
+                    usuarioId = existenteNoRoom.id,
+                    nome = nome.trim(),
+                    email = emailNormalizado,
+                    ativo = true,
+                    firebaseUid = uidProfessor
+                )
+                usuarioDao.atualizarSenha(existenteNoRoom.id, gerarHashSenha(senha))
+                existenteNoRoom.copy(
+                    nome = nome.trim(),
+                    email = emailNormalizado,
+                    ativo = true,
+                    firebaseUid = uidProfessor
+                )
+            } else {
+                val usuario = UsuarioEntity(
+                    nome = nome.trim(),
+                    email = emailNormalizado,
+                    senhaHash = gerarHashSenha(senha),
+                    perfil = PERFIL_PROFESSOR,
+                    ativo = true,
+                    firebaseUid = uidProfessor
+                )
+                val id = usuarioDao.inserir(usuario)
+                usuario.copy(id = id)
+            }
         } catch (e: Exception) {
             if (contaCriadaAgora) {
                 try {
@@ -760,7 +783,7 @@ class UsuarioRepository(
     ): UsuarioEntity? {
         return entrar(email, senha, perfilEsperado)
     }
-    // BUSCAS
+    // BUSCAS E RETOMADA DE SESSÃO
     suspend fun buscarPorId(id: Long): UsuarioEntity? {
         if (id <= 0) return null
         return usuarioDao.buscarPorId(id)
@@ -772,16 +795,46 @@ class UsuarioRepository(
         val usuario = usuarioDao.buscarPorId(id) ?: return null
         if (!usuario.ativo) return null
         if (
-            usuario.perfil !in setOf(
-                PERFIL_PROFESSOR,
-                PERFIL_ALUNO,
-                PERFIL_ADMIN
-            )
+            usuario.perfil != PERFIL_PROFESSOR &&
+            usuario.perfil != PERFIL_ALUNO &&
+            usuario.perfil != PERFIL_ADMIN
         ) return null
         if (usuario.perfil == PERFIL_ALUNO) {
-            val alunoId = usuario.alunoId ?: return null
             val database = FitCareDatabase.getDatabase(context)
-            database.alunoDao().buscarPorIdDireto(alunoId) ?: return null
+            val alunoDao = database.alunoDao()
+            val alunoAtual = usuario.alunoId?.let { alunoDao.buscarPorIdDireto(it) }
+            if (alunoAtual != null) {
+                return usuario
+            }
+// Reconstrói o vínculo local pelo e-mail no Firestore caso o banco tenha sido limpo
+            return try {
+                val doc = FirebaseFirestore.getInstance()
+                    .collection("alunos")
+                    .whereEqualTo("email", usuario.email.trim().lowercase())
+                    .get()
+                    .await()
+                    .documents
+                    .firstOrNull() ?: return null
+                val firebaseId = doc.getString("firebaseId") ?: doc.id
+                val existentePorFb = alunoDao.buscarPorFirebaseId(firebaseId)
+                val novoAlunoId = existentePorFb?.id ?: alunoDao.inserir(
+                    AlunoEntity(
+                        nome = doc.getString("nome") ?: usuario.nome,
+                        email = usuario.email.trim().lowercase(),
+                        dataCadastro = doc.getString("dataCadastro") ?: "",
+                        objetivo = doc.getString("objetivo") ?: "",
+                        status = doc.getString("status") ?: "Normal",
+                        observacoesProfissionais = doc.getString("observacoesProfissionais") ?: "",
+                        condicoes = doc.getString("condicoes") ?: "",
+                        restricoes = doc.getString("restricoes") ?: "",
+                        professorId = null,
+                        firebaseId = firebaseId
+                    )
+                )
+                usuario.copy(alunoId = novoAlunoId)
+            } catch (_: Exception) {
+                null
+            }
         }
         if (
             usuario.perfil == PERFIL_ADMIN &&
@@ -789,7 +842,6 @@ class UsuarioRepository(
         ) return null
         return usuario
     }
-    // ADMINISTRAÇÃO DE PROFESSORES
     // ADMINISTRAÇÃO DE PROFESSORES
     suspend fun listarProfissionaisParaAdmin(): List<UsuarioEntity> {
         exigirAdminAtivo()
@@ -801,25 +853,21 @@ class UsuarioRepository(
             .get()
             .await()
 
-        val uidsRemotosAtivos = mutableSetOf<String>()
-        val emailsRemotosAtivos = mutableSetOf<String>()
+        val uidsRemotosAtivos = HashSet<String>()
+        val emailsRemotosAtivos = HashSet<String>()
 
         for (documento in resultado.documents) {
             val uid = documento.id
             val nome = documento.getString("nome")?.trim().orEmpty()
             val email = documento.getString("email")?.trim()?.lowercase().orEmpty()
             val ativo = documento.getBoolean("ativo") ?: false
-
             if (uid.isBlank() || nome.isBlank() || email.isBlank()) {
                 continue
             }
-
             uidsRemotosAtivos.add(uid)
             emailsRemotosAtivos.add(email)
-
             val usuarioPorUid = usuarioDao.buscarPorFirebaseUid(uid)
             val usuarioPorEmail = usuarioDao.buscarPorEmail(email)
-
             require(
                 usuarioPorUid == null ||
                         usuarioPorEmail == null ||
@@ -827,9 +875,7 @@ class UsuarioRepository(
             ) {
                 "Existem cadastros locais conflitantes para o professor $email."
             }
-
             val usuarioLocal = usuarioPorUid ?: usuarioPorEmail
-
             if (usuarioLocal != null) {
                 require(usuarioLocal.perfil == PERFIL_PROFESSOR) {
                     "O e-mail $email já pertence a outro perfil."
@@ -840,7 +886,6 @@ class UsuarioRepository(
                 ) {
                     "O professor $email está vinculado a outra conta Firebase."
                 }
-
                 val atualizado = usuarioDao.atualizarProfessorComDadosFirebase(
                     usuarioId = usuarioLocal.id,
                     nome = nome,
@@ -863,8 +908,7 @@ class UsuarioRepository(
                 usuarioDao.inserir(novoProfessor)
             }
         }
-
-        // Remove do banco local professores que foram excluídos no Firestore por outro dispositivo
+// Remove do banco local professores excluídos no Firestore por outro dispositivo
         val locaisAtuais = usuarioDao.listarProfissionaisParaAdmin()
         for (local in locaisAtuais) {
             if (local.email.equals(EMAIL_PROFESSOR_INICIAL, ignoreCase = true)) {
@@ -873,15 +917,12 @@ class UsuarioRepository(
             val existeNoServidor =
                 (!local.firebaseUid.isNullOrBlank() && local.firebaseUid in uidsRemotosAtivos) ||
                         (local.email.trim().lowercase() in emailsRemotosAtivos)
-
             if (!existeNoServidor && !usuarioDao.professorPossuiAlunos(local.id)) {
                 usuarioDao.excluirProfessor(local.id)
             }
         }
-
         return usuarioDao.listarProfissionaisParaAdmin()
     }
-
     suspend fun alterarStatusProfissional(
         professorId: Long,
         ativo: Boolean
@@ -1195,12 +1236,10 @@ class UsuarioRepository(
             ) {
                 return false
             }
-
             val salt = Base64.decode(
                 partes.get(1),
                 Base64.NO_WRAP
             )
-
             val hashOriginal = Base64.decode(
                 partes.get(2),
                 Base64.NO_WRAP

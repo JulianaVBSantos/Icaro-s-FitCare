@@ -443,43 +443,38 @@ fun TelaAreaAluno(
             } else if (anamneseSelecionadaId != null) {
                 val modoSomenteLeitura =
                     anamneseSelecionada?.status == "RESPONDIDA"
-                Text(
-                    text = anamneseSelecionada?.nomeModelo
-                        ?: if (modoSomenteLeitura) {
-                            "Visualização da anamnese"
-                        } else {
-                            "Preenchimento da anamnese"
-                        },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF002B5C)
-                )
-                if (modoSomenteLeitura) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = buildString {
-                            append("Status: Concluída")
-                            val dataResp = anamneseSelecionada?.dataResposta.orEmpty()
-                            if (dataResp.isNotBlank()) {
-                                append(" em $dataResp")
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF2E7D32),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            aguardarSalvamentos()
-                            anamneseSelecionadaId = null
-                            mensagemErro = ""
-                        }
-                    }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("VOLTAR ÀS ANAMNESES")
+                    BotaoVoltarPadrao(
+                        onVoltar = {
+                            scope.launch {
+                                aguardarSalvamentos()
+                                anamneseSelecionadaId = null
+                                mensagemErro = ""
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = anamneseSelecionada?.nomeModelo
+                                ?: if (modoSomenteLeitura) {
+                                    "Visualização da anamnese"
+                                } else {
+                                    "Preenchimento da anamnese"
+                                },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF002B5C)
+                        )
+                    }
                 }
                 if (carregando) {
                     CircularProgressIndicator()

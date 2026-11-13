@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare
 
 import androidx.compose.foundation.background
@@ -22,14 +21,6 @@ import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.PerguntaModeloAnamneseEntity
 import br.com.icaros.fitcare.data.PerguntaModeloAnamneseRepository
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Checkbox
 import org.json.JSONArray
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -327,9 +318,7 @@ fun TelaPerguntasModeloAnamnese(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF212121)
                     )
-
                     Spacer(modifier = Modifier.height(6.dp))
-
                     Text(
                         text = "Utilize o botão acima para adicionar a primeira pergunta.",
                         fontSize = 13.sp,
@@ -345,7 +334,6 @@ fun TelaPerguntasModeloAnamnese(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 perguntas.forEachIndexed { indice, pergunta ->
-
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -364,9 +352,7 @@ fun TelaPerguntasModeloAnamnese(
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF002B5C)
                                 )
-
                                 Spacer(modifier = Modifier.width(8.dp))
-
                                 Text(
                                     text = pergunta.texto,
                                     modifier = Modifier.weight(1f),
@@ -374,15 +360,12 @@ fun TelaPerguntasModeloAnamnese(
                                     color = Color(0xFF212121)
                                 )
                             }
-
                             Spacer(modifier = Modifier.height(7.dp))
-
                             Text(
                                 text = descricaoTipo(pergunta.tipoResposta),
                                 fontSize = 12.sp,
                                 color = Color(0xFF757575)
                             )
-
                             Text(
                                 text = if (pergunta.obrigatoria) {
                                     "Obrigatória"
@@ -397,8 +380,7 @@ fun TelaPerguntasModeloAnamnese(
                                     Color(0xFF757575)
                                 }
                             )
-
-                            // Exibe as alternativas cadastradas.
+// Exibe as alternativas cadastradas.
                             if (
                                 pergunta.tipoResposta == "MULTIPLA_ESCOLHA" ||
                                 pergunta.tipoResposta == "CHECKBOX"
@@ -411,7 +393,6 @@ fun TelaPerguntasModeloAnamnese(
                                 } catch (_: Exception) {
                                     emptyList()
                                 }
-
                                 alternativas.forEach { alternativa ->
                                     Text(
                                         text = "• $alternativa",
@@ -420,13 +401,10 @@ fun TelaPerguntasModeloAnamnese(
                                     )
                                 }
                             }
-
                             Spacer(modifier = Modifier.height(8.dp))
-
                             HorizontalDivider(
                                 color = Color(0xFFF0F0F0)
                             )
-
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -441,7 +419,6 @@ fun TelaPerguntasModeloAnamnese(
                                     ) {
                                         Text("↑")
                                     }
-
                                     TextButton(
                                         enabled = indice < perguntas.lastIndex,
                                         onClick = {
@@ -451,7 +428,6 @@ fun TelaPerguntasModeloAnamnese(
                                         Text("↓")
                                     }
                                 }
-
                                 Row {
                                     IconButton(
                                         onClick = {
@@ -464,7 +440,6 @@ fun TelaPerguntasModeloAnamnese(
                                             tint = Color(0xFF002B5C)
                                         )
                                     }
-
                                     IconButton(
                                         onClick = {
                                             perguntaParaExcluir = pergunta
@@ -481,13 +456,11 @@ fun TelaPerguntasModeloAnamnese(
                         }
                     }
                 }
-
                 Spacer(modifier = Modifier.height(15.dp))
             }
         }
     }
-
-    // DIÁLOGO DE CADASTRO E EDIÇÃO
+// DIÁLOGO DE CADASTRO E EDIÇÃO
     if (mostrarDialogo) {
         AlertDialog(
             onDismissRequest = {
@@ -514,7 +487,6 @@ fun TelaPerguntasModeloAnamnese(
                         text = "Texto da pergunta *",
                         fontWeight = FontWeight.Bold
                     )
-
                     OutlinedTextField(
                         value = texto,
                         onValueChange = {
@@ -528,16 +500,13 @@ fun TelaPerguntasModeloAnamnese(
                         minLines = 2,
                         maxLines = 4
                     )
-
                     Text(
                         text = "Tipo de resposta",
                         fontWeight = FontWeight.Bold
                     )
-
                     var menuAberto by remember {
                         mutableStateOf(false)
                     }
-
                     Box {
                         OutlinedButton(
                             onClick = { menuAberto = true },
@@ -549,7 +518,6 @@ fun TelaPerguntasModeloAnamnese(
                             )
                             Text("⌄")
                         }
-
                         DropdownMenu(
                             expanded = menuAberto,
                             onDismissRequest = {
@@ -570,17 +538,56 @@ fun TelaPerguntasModeloAnamnese(
                             }
                         }
                     }
-
-                    // Alternativas para perguntas de seleção.
+// Alternativas para perguntas de seleção com checklist unificado ao perfil clínico.
                     if (
                         tipoResposta == "MULTIPLA_ESCOLHA" ||
                         tipoResposta == "CHECKBOX"
                     ) {
                         Text(
+                            text = "Checklist rápido vinculado ao perfil:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF002B5C)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (texto.isBlank()) {
+                                        texto = "Condições de saúde ou dores articulares"
+                                    }
+                                    tipoResposta = "CHECKBOX"
+                                    opcoesTexto = (OPCOES_CONDICOES_PADRAO + listOf("Nenhuma", "Outro"))
+                                        .joinToString("\n")
+                                    erro = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("Usar Condições", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (texto.isBlank()) {
+                                        texto = "Restrições físicas ou limitações de exercício"
+                                    }
+                                    tipoResposta = "CHECKBOX"
+                                    opcoesTexto = (OPCOES_RESTRICOES_PADRAO + listOf("Nenhuma", "Outro"))
+                                        .joinToString("\n")
+                                    erro = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("Usar Restrições", fontSize = 11.sp)
+                            }
+                        }
+                        Text(
                             text = "Alternativas *",
                             fontWeight = FontWeight.Bold
                         )
-
                         OutlinedTextField(
                             value = opcoesTexto,
                             onValueChange = {
@@ -594,15 +601,13 @@ fun TelaPerguntasModeloAnamnese(
                             minLines = 3,
                             maxLines = 6
                         )
-
                         Text(
                             text = "Cadastre pelo menos duas alternativas, uma por linha.",
                             fontSize = 11.sp,
                             color = Color(0xFF757575)
                         )
                     }
-
-                    // Define se o aluno será obrigado a responder.
+// Define se o aluno será obrigado a responder.
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = Color(0xFFF5F7FA)
@@ -622,7 +627,6 @@ fun TelaPerguntasModeloAnamnese(
                                     text = "Pergunta obrigatória",
                                     fontWeight = FontWeight.Bold
                                 )
-
                                 Text(
                                     text = if (obrigatoria) {
                                         "O aluno deverá responder esta pergunta."
@@ -633,7 +637,6 @@ fun TelaPerguntasModeloAnamnese(
                                     color = Color(0xFF757575)
                                 )
                             }
-
                             Switch(
                                 checked = obrigatoria,
                                 onCheckedChange = {
@@ -642,7 +645,6 @@ fun TelaPerguntasModeloAnamnese(
                             )
                         }
                     }
-
                     if (erro != null) {
                         Text(
                             text = erro!!,
@@ -650,7 +652,6 @@ fun TelaPerguntasModeloAnamnese(
                             fontSize = 12.sp
                         )
                     }
-
                     Text(
                         text = "* Campo obrigatório",
                         fontSize = 11.sp,
@@ -688,8 +689,7 @@ fun TelaPerguntasModeloAnamnese(
             }
         )
     }
-
-    // CONFIRMAÇÃO ANTES DE EXCLUIR UMA PERGUNTA.
+// CONFIRMAÇÃO ANTES DE EXCLUIR UMA PERGUNTA.
     perguntaParaExcluir?.let { pergunta ->
         AlertDialog(
             onDismissRequest = {

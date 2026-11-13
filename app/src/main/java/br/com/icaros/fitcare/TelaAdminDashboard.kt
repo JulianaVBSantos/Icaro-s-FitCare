@@ -27,6 +27,7 @@ import br.com.icaros.fitcare.data.DispositivoInfo
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun TelaAdminDashboard(
@@ -158,8 +159,27 @@ fun TelaAdminDashboard(
         }
     }
 
-    LaunchedEffect(Unit) {
+    DisposableEffect(Unit) {
         carregarProfissionais()
+
+        val listenerProfissionais = FirebaseFirestore.getInstance()
+            .collection("usuarios")
+            .whereEqualTo("perfil", "PROFESSOR")
+            .addSnapshotListener { snapshots, _ ->
+                if (snapshots != null) {
+                    scope.launch {
+                        try {
+                            profissionais =
+                                usuarioRepository.listarProfissionaisParaAdmin()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            }
+
+        onDispose {
+            listenerProfissionais.remove()
+        }
     }
 
     Column(
