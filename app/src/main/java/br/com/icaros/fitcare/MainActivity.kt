@@ -106,19 +106,30 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import br.com.icaros.fitcare.data.AlunoSyncWorker
 
-// Paleta de Cores baseada na Logo
-private val AzulPrincipal = Color(0xFF002B5C)
-private val AzulSecundario = Color(0xFF164A73)
+// Paleta de Cores Dinâmica (Tema White e Tema Dark)
+private var temaEscuroAtivoState by mutableStateOf(false)
+
+private val AzulPrincipal: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF7AB8F5) else Color(0xFF002B5C)
+private val AzulSecundario: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF5B9BD5) else Color(0xFF164A73)
 private val AzulClaro = Color(0xFF5B9BD5)
-private val AzulMuitoClaro = Color(0xFFEAF3F9)
-private val FundoApp = Color(0xFFF5F9FC)
-private val TextoPrincipal = Color(0xFF002B5C)
-private val TextoSecundario = Color(0xFF526579)
-private val Branco = Color(0xFFFFFFFF)
+private val AzulMuitoClaro: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF1E2D3D) else Color(0xFFEAF3F9)
+private val FundoApp: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF0F1722) else Color(0xFFF5F9FC)
+private val TextoPrincipal: Color
+    get() = if (temaEscuroAtivoState) Color(0xFFEAF2FA) else Color(0xFF002B5C)
+private val TextoSecundario: Color
+    get() = if (temaEscuroAtivoState) Color(0xFFA2B5C8) else Color(0xFF526579)
+private val Branco: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF172331) else Color(0xFFFFFFFF)
 private val Vermelho = Color(0xFFE34B63)
 
-private val CabecalhoTopoClaro = Color(0xFFEAF3F9)
-private val CabecalhoBaseClaro = Color(0xFFF5F9FC)
+private val CabecalhoTopoClaro: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF162434) else Color(0xFFEAF3F9)
+private val CabecalhoBaseClaro: Color
+    get() = if (temaEscuroAtivoState) Color(0xFF0F1722) else Color(0xFFF5F9FC)
 
 private const val PREFERENCIAS_SESSAO = "fitcare_sessao"
 const val CHAVE_MANTER_CONECTADO = "manter_conectado"
@@ -227,6 +238,10 @@ class MainActivity : ComponentActivity() {
             database.treinoDao()
         )
 
+        val periodizacaoRepository = PeriodizacaoRepository(
+            database.periodizacaoDao()
+        )
+
         val anamneseRepository = AnamneseRepository(
             database.anamneseDao()
         )
@@ -263,6 +278,7 @@ class MainActivity : ComponentActivity() {
             FitCareApp(
                 repository = repository,
                 treinoRepository = treinoRepository,
+                periodizacaoRepository = periodizacaoRepository,
                 anamneseRepository = anamneseRepository,
                 modeloAnamneseRepository = modeloAnamneseRepository,
                 perguntaModeloAnamneseRepository = perguntaModeloAnamneseRepository,
@@ -306,13 +322,16 @@ enum class AppScreen {
     FormularioAnamnese,
     VisualizarAnamnese,
     AdminDashboard,
-    CadastroAdminInicial
+    CadastroAdminInicial,
+    Periodizacao
 }
 
+// Fluxo do aplicativo
 @Composable
 fun FitCareApp(
     repository: AlunoRepository,
     treinoRepository: TreinoRepository,
+    periodizacaoRepository: PeriodizacaoRepository,
     anamneseRepository: AnamneseRepository,
     modeloAnamneseRepository: ModeloAnamneseRepository,
     perguntaModeloAnamneseRepository: PerguntaModeloAnamneseRepository,
@@ -367,6 +386,10 @@ fun FitCareApp(
         )
     }
     LaunchedEffect(Unit) {
+        temaEscuroAtivoState = preferenciasSessao.getBoolean(
+            "tema_escuro_ativo",
+            false
+        )
         val manterConectado = preferenciasSessao.getBoolean(
             CHAVE_MANTER_CONECTADO,
             false
@@ -502,14 +525,25 @@ fun FitCareApp(
     }
 
     MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = AzulPrincipal,
-            secondary = AzulSecundario,
-            background = FundoApp,
-            surface = Branco,
-            onBackground = TextoPrincipal,
-            onSurface = TextoPrincipal
-        )
+        colorScheme = if (temaEscuroAtivoState) {
+            darkColorScheme(
+                primary = AzulPrincipal,
+                secondary = AzulSecundario,
+                background = FundoApp,
+                surface = Branco,
+                onBackground = TextoPrincipal,
+                onSurface = TextoPrincipal
+            )
+        } else {
+            lightColorScheme(
+                primary = AzulPrincipal,
+                secondary = AzulSecundario,
+                background = FundoApp,
+                surface = Branco,
+                onBackground = TextoPrincipal,
+                onSurface = TextoPrincipal
+            )
+        }
     ) {
         Surface(
             modifier = Modifier
@@ -523,6 +557,22 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
+                    AppScreen.Periodizacao -> {
+                        alunoSelecionadoId?.let { id ->
+                            TelaPeriodizacaoAluno(
+                                alunoId = id,
+                                repository = repository,
+                                treinoRepository = treinoRepository,
+                                periodizacaoRepository = periodizacaoRepository,
+                                onVoltar = { tela = AppScreen.PerfilAluno },
+                                onVisualizarTreino = { treinoId ->
+                                    treinoSelecionadoId = treinoId
+                                    tela = AppScreen.DetalhesTreino
+                                }
+                            )
+                        }
+                    }
+
                     AppScreen.CentralAtencao -> {
                         TelaCentralAtencao(
                             repository = repository,
@@ -864,7 +914,8 @@ fun FitCareApp(
                                 onVisualizarTreino = { treinoId ->
                                     treinoSelecionadoId = treinoId
                                     tela = AppScreen.DetalhesTreino
-                                }
+                                },
+                                onPeriodizacao = { tela = AppScreen.Periodizacao }
                             )
                         }
                     }
@@ -2433,6 +2484,28 @@ fun TelaDashboard(
                         )
                     }
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.clickable {
+                        val novoTema = !temaEscuroAtivoState
+                        temaEscuroAtivoState = novoTema
+                        context.getSharedPreferences(PREFERENCIAS_SESSAO, Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("tema_escuro_ativo", novoTema)
+                            .apply()
+
+                    },
+                    shape = RoundedCornerShape(20.dp),
+                    color = AzulMuitoClaro
+                ) {
+                    Text(
+                        text = if (temaEscuroAtivoState) "☀ Claro" else "☾ Escuro",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        color = AzulPrincipal,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             var nomeRealProfessor by remember {
                 mutableStateOf(
@@ -3610,7 +3683,8 @@ fun TelaPerfilAluno(
     onLinhaDoTempo: () -> Unit,
     onModelosAnamnese: () -> Unit,
     onVisualizarAnamnese: (Long) -> Unit = {},
-    onVisualizarTreino: (Long) -> Unit = {}
+    onVisualizarTreino: (Long) -> Unit = {},
+    onPeriodizacao: () -> Unit = {}
 ) {
     var alunoAtual by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
@@ -4163,6 +4237,14 @@ fun TelaPerfilAluno(
                                 }
                             }
                         }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = onPeriodizacao,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Periodização (Macro / Meso / Micro)")
                     }
                 }
 // ANAMNESE E DOCUMENTOS (BOTÕES SEPARADOS: ATRIBUIR E VISUALIZAR)
@@ -7495,6 +7577,20 @@ fun TelaEditarAluno(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onVoltar,
+                enabled = !salvando,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "Cancelar",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
         DashboardBottomBar(
             telaAtual = AppScreen.EditarAluno,
@@ -7507,7 +7603,6 @@ fun TelaEditarAluno(
     }
 }
 
-// Rodapé com navigationBarsPadding() para não ficar atrás das teclas de navegação (Motorola)
 @Composable
 private fun DashboardBottomBar(
     telaAtual: AppScreen,
@@ -7521,7 +7616,7 @@ private fun DashboardBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding(),
-        color = Color.White,
+        color = Branco,
         shadowElevation = 8.dp
     ) {
         Row(
@@ -7606,7 +7701,10 @@ private data class ExercicioFormulario(
     val series: String = "3",
     val repeticoes: String = "12",
     val carga: String = "",
-    val observacoes: String = ""
+    val observacoes: String = "",
+    val videoTipo: String = "",
+    val videoUrl: String = "",
+    val videoNome: String = ""
 )
 
 // TELA DE TREINOS
@@ -8055,7 +8153,7 @@ fun TelaTreinos(
     }
 }
 
-// TELA FORMULÁRIO DE TREINO
+// TELA FORMULÁRIO DE TREINO (COM ASSOCIAÇÃO DE VÍDEOS: LINK OU ARQUIVO IMPORTADO)
 @Composable
 fun TelaFormularioTreino(
     alunoId: Long,
@@ -8072,6 +8170,8 @@ fun TelaFormularioTreino(
     var mensagemErro by remember { mutableStateOf<String?>(null) }
     var salvando by remember { mutableStateOf(false) }
     var mostrarDialogoExcluir by remember { mutableStateOf(false) }
+    var indiceExercicioImportandoVideo by remember { mutableIntStateOf(-1) }
+
     val exercicios = remember {
         mutableStateListOf(ExercicioFormulario())
     }
@@ -8080,6 +8180,69 @@ fun TelaFormularioTreino(
     val eventoStorage = remember(contextoEventos) {
         EventoAlunoStorage(contextoEventos)
     }
+
+    val seletorVideo = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: android.net.Uri? ->
+        val idx = indiceExercicioImportandoVideo
+        indiceExercicioImportandoVideo = -1
+        if (uri != null && idx in exercicios.indices) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val mime = contextoEventos.contentResolver.getType(uri).orEmpty()
+                    if (!mime.startsWith("video/", ignoreCase = true)) {
+                        withContext(Dispatchers.Main) {
+                            mensagemErro = "Selecione um arquivo de vídeo válido (MP4, MOV, MKV, WEBM)."
+                        }
+                        return@launch
+                    }
+
+                    var nomeOriginal = "video_exercicio.mp4"
+                    contextoEventos.contentResolver.query(
+                        uri,
+                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val col = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (col >= 0) {
+                                nomeOriginal = cursor.getString(col) ?: nomeOriginal
+                            }
+                        }
+                    }
+
+                    val pastaVideos = java.io.File(contextoEventos.filesDir, "videos_exercicios")
+                    if (!pastaVideos.exists()) {
+                        pastaVideos.mkdirs()
+                    }
+                    val nomeSeguro = nomeOriginal.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    val destino = java.io.File(pastaVideos, "${System.currentTimeMillis()}_$nomeSeguro")
+
+                    contextoEventos.contentResolver.openInputStream(uri)?.use { entrada ->
+                        destino.outputStream().use { saida ->
+                            entrada.copyTo(saida)
+                        }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        exercicios[idx] = exercicios[idx].copy(
+                            videoTipo = "LOCAL",
+                            videoUrl = destino.absolutePath,
+                            videoNome = nomeOriginal
+                        )
+                        mensagemErro = null
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        mensagemErro = "Não foi possível importar o vídeo: ${e.message ?: "erro inesperado"}"
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(treinoId) {
         if (treinoId != null) {
             val treino = treinoRepository.buscarTreinoPorId(treinoId)
@@ -8102,7 +8265,10 @@ fun TelaFormularioTreino(
                                 series = exercicio.series,
                                 repeticoes = exercicio.repeticoes,
                                 carga = exercicio.carga,
-                                observacoes = exercicio.observacoes
+                                observacoes = exercicio.observacoes,
+                                videoTipo = exercicio.videoTipo,
+                                videoUrl = exercicio.videoUrl,
+                                videoNome = exercicio.videoNome
                             )
                         )
                     }
@@ -8446,6 +8612,81 @@ fun TelaFormularioTreino(
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 2
                         )
+// Seção de Vídeo Demonstrativo (Opcional: Link YouTube ou Importar do Celular)
+                        Text(
+                            text = "Vídeo demonstrativo (opcional)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrincipal
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    exercicios[index] = exercicios[index].copy(
+                                        videoTipo = "LINK",
+                                        videoUrl = if (exercicio.videoTipo == "LINK") exercicio.videoUrl else "",
+                                        videoNome = "Link externo"
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Link (YouTube)", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    indiceExercicioImportandoVideo = index
+                                    seletorVideo.launch(arrayOf("video/*"))
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Importar vídeo", fontSize = 11.sp)
+                            }
+                        }
+                        if (exercicio.videoTipo == "LINK") {
+                            OutlinedTextField(
+                                value = exercicio.videoUrl,
+                                onValueChange = {
+                                    exercicios[index] = exercicios[index].copy(
+                                        videoTipo = "LINK",
+                                        videoUrl = it,
+                                        videoNome = "Link externo"
+                                    )
+                                },
+                                label = { Text("URL do vídeo (YouTube / Vimeo / HTTP)") },
+                                placeholder = { Text("youtube.com...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        } else if (exercicio.videoTipo == "LOCAL" && exercicio.videoUrl.isNotBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(AzulMuitoClaro, RoundedCornerShape(8.dp))
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Vídeo importado: ${exercicio.videoNome.ifBlank { "Arquivo local" }}",
+                                    fontSize = 12.sp,
+                                    color = TextoPrincipal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        exercicios[index] = exercicios[index].copy(
+                                            videoTipo = "",
+                                            videoUrl = "",
+                                            videoNome = ""
+                                        )
+                                    }
+                                ) {
+                                    Text("Remover", color = Vermelho, fontSize = 11.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -8572,6 +8813,17 @@ fun TelaFormularioTreino(
                             "Preencha o nome, as séries válidas e as repetições de todos os exercícios."
                         return@Button
                     }
+                    val linkInvalido = exercicios.any { exercicio ->
+                        exercicio.videoTipo == "LINK" &&
+                                exercicio.videoUrl.isNotBlank() &&
+                                !exercicio.videoUrl.trim().startsWith("http://", ignoreCase = true) &&
+                                !exercicio.videoUrl.trim().startsWith("https://", ignoreCase = true)
+                    }
+                    if (linkInvalido) {
+                        mensagemErro =
+                            "O link do vídeo deve iniciar com http:// ou https://."
+                        return@Button
+                    }
                     mensagemErro = null
                     salvando = true
                     scope.launch {
@@ -8608,6 +8860,7 @@ fun TelaFormularioTreino(
                                 )
                             }
                             exercicios.forEachIndexed { index, exercicio ->
+                                val tipoVid = if (exercicio.videoUrl.isBlank()) "" else exercicio.videoTipo.trim()
                                 treinoRepository.inserirExercicio(
                                     ExercicioEntity(
                                         treinoId = idTreinoSalvo,
@@ -8616,7 +8869,10 @@ fun TelaFormularioTreino(
                                         repeticoes = exercicio.repeticoes.trim(),
                                         carga = exercicio.carga.trim(),
                                         observacoes = exercicio.observacoes.trim(),
-                                        ordem = index
+                                        ordem = index,
+                                        videoTipo = tipoVid,
+                                        videoUrl = exercicio.videoUrl.trim(),
+                                        videoNome = exercicio.videoNome.trim()
                                     )
                                 )
                             }
@@ -8664,6 +8920,7 @@ fun TelaFormularioTreino(
         }
     }
 }
+
 @Composable
 fun TelaDetalhesTreino(
     treinoId: Long,
@@ -8672,6 +8929,7 @@ fun TelaDetalhesTreino(
     onVoltar: () -> Unit,
     onEditar: (TreinoEntity) -> Unit = {}
 ) {
+    val context = LocalContext.current
     var treino by remember {
         mutableStateOf<br.com.icaros.fitcare.data.TreinoEntity?>(null)
     }
@@ -8700,7 +8958,6 @@ fun TelaDetalhesTreino(
             .background(FundoApp)
             .navigationBarsPadding()
     ) {
-        // Cabeçalho com Voltar no canto superior esquerdo e Lápis no canto superior direito
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -8909,6 +9166,62 @@ fun TelaDetalhesTreino(
                                         fontSize = 12.sp,
                                         color = TextoSecundario
                                     )
+                                }
+                                if (exercicio.videoUrl.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                if (exercicio.videoTipo == "LINK") {
+                                                    val intent = android.content.Intent(
+                                                        android.content.Intent.ACTION_VIEW,
+                                                        android.net.Uri.parse(exercicio.videoUrl)
+                                                    )
+                                                    context.startActivity(intent)
+                                                } else {
+                                                    val arquivo = java.io.File(exercicio.videoUrl)
+                                                    require(arquivo.exists()) {
+                                                        "Arquivo de vídeo não encontrado."
+                                                    }
+                                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        arquivo
+                                                    )
+                                                    val intent = android.content.Intent(
+                                                        android.content.Intent.ACTION_VIEW
+                                                    ).apply {
+                                                        setDataAndType(uri, "video/*")
+                                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                    }
+                                                    context.startActivity(
+                                                        android.content.Intent.createChooser(intent, "Assistir vídeo")
+                                                    )
+                                                }
+                                            } catch (e: Exception) {
+                                                Toast.makeText(
+                                                    context,
+                                                    e.message ?: "Não foi possível abrir o vídeo.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = AzulPrincipal
+                                        )
+                                    ) {
+                                        Text(
+                                            text = if (exercicio.videoTipo == "LINK") {
+                                                "▶ Assistir vídeo (Link)"
+                                            } else {
+                                                "▶ Assistir vídeo importado"
+                                            },
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }

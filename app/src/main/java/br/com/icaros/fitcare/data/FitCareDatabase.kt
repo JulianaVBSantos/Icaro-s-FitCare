@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import android.content.Context
@@ -21,9 +20,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AnamneseAtribuidaEntity::class,
         PerguntaAnamneseAtribuidaEntity::class,
         RespostaAnamneseEntity::class,
-        SyncOperationEntity::class
+        SyncOperationEntity::class,
+        MacrocicloEntity::class,
+        MesocicloEntity::class,
+        MicrocicloEntity::class,
+        SessaoPeriodizacaoEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -32,6 +35,8 @@ abstract class FitCareDatabase : RoomDatabase() {
     abstract fun alunoDao(): AlunoDao
     abstract fun documentoAnamneseDao(): DocumentoAnamneseDao
     abstract fun treinoDao(): TreinoDao
+
+    abstract fun periodizacaoDao(): PeriodizacaoDao
     abstract fun anamneseDao(): AnamneseDao
     abstract fun modeloAnamneseDao(): ModeloAnamneseDao
     abstract fun perguntaModeloAnamneseDao(): PerguntaModeloAnamneseDao
@@ -822,11 +827,13 @@ abstract class FitCareDatabase : RoomDatabase() {
 
         private val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
             UPDATE anamneses_atribuidas
             SET firestoreId = lower(hex(randomblob(16)))
             WHERE firestoreId IS NULL OR firestoreId = ''
-        """.trimIndent())
+        """.trimIndent()
+                )
             }
         }
 
@@ -865,6 +872,84 @@ abstract class FitCareDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE exercicios ADD COLUMN videoTipo TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE exercicios ADD COLUMN videoUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE exercicios ADD COLUMN videoNome TEXT NOT NULL DEFAULT ''")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS macrociclos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        alunoId INTEGER NOT NULL,
+                        nome TEXT NOT NULL,
+                        objetivo TEXT NOT NULL,
+                        dataInicio TEXT NOT NULL,
+                        dataFim TEXT NOT NULL,
+                        observacoes TEXT NOT NULL,
+                        FOREIGN KEY(alunoId) REFERENCES alunos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_macrociclos_alunoId ON macrociclos(alunoId)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS mesociclos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        macrocicloId INTEGER NOT NULL,
+                        nome TEXT NOT NULL,
+                        foco TEXT NOT NULL,
+                        dataInicio TEXT NOT NULL,
+                        dataFim TEXT NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(macrocicloId) REFERENCES macrociclos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mesociclos_macrocicloId ON mesociclos(macrocicloId)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS microciclos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        mesocicloId INTEGER NOT NULL,
+                        nome TEXT NOT NULL,
+                        objetivoSemanal TEXT NOT NULL,
+                        dataInicio TEXT NOT NULL,
+                        dataFim TEXT NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(mesocicloId) REFERENCES mesociclos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_microciclos_mesocicloId ON microciclos(mesocicloId)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sessoes_periodizacao (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        microcicloId INTEGER NOT NULL,
+                        treinoId INTEGER,
+                        diaSemana TEXT NOT NULL,
+                        titulo TEXT NOT NULL,
+                        observacoes TEXT NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(microcicloId) REFERENCES microciclos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(treinoId) REFERENCES treinos(id)
+                        ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessoes_periodizacao_microcicloId ON sessoes_periodizacao(microcicloId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessoes_periodizacao_treinoId ON sessoes_periodizacao(treinoId)")
+            }
+        }
 
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -888,7 +973,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
-                        MIGRATION_15_16
+                        MIGRATION_15_16,
+                        MIGRATION_16_17
                     )
                     .build()
 

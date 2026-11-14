@@ -26,5 +26,8 @@ data class ExercicioEntity(
     val repeticoes: String,
     val carga: String = "",
     val observacoes: String = "",
-    val ordem: Int = 0
+    val ordem: Int = 0,
+    val videoTipo: String = "",
+    val videoUrl: String = "",
+    val videoNome: String = ""
 )

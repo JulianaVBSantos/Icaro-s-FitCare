@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import kotlinx.coroutines.flow.Flow
@@ -356,6 +355,30 @@ class TreinoRepository(
 
         require(exercicio.repeticoes.isNotBlank()) {
             "Informe as repetições."
+        }
+
+        val tipoVideo = exercicio.videoTipo.trim().uppercase()
+        val urlVideo = exercicio.videoUrl.trim()
+
+        if (tipoVideo.isNotBlank() || urlVideo.isNotBlank()) {
+            require(tipoVideo == "LINK" || tipoVideo == "LOCAL") {
+                "Tipo de vídeo inválido."
+            }
+            require(urlVideo.isNotBlank()) {
+                "Informe o link ou selecione o arquivo de vídeo."
+            }
+            if (tipoVideo == "LINK") {
+                val linkValido = urlVideo.startsWith("http://", ignoreCase = true) ||
+                        urlVideo.startsWith("https://", ignoreCase = true)
+                require(linkValido) {
+                    "Informe um link de vídeo válido iniciando com http:// ou https://."
+                }
+            } else {
+                val arquivo = java.io.File(urlVideo)
+                require(arquivo.exists() && arquivo.length() > 0L) {
+                    "O arquivo de vídeo importado não foi encontrado."
+                }
+            }
         }
     }
 }
