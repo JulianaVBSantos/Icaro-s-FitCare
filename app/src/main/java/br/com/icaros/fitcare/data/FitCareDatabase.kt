@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RespostaAnamneseEntity::class,
         SyncOperationEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class FitCareDatabase : RoomDatabase() {
@@ -830,6 +830,42 @@ abstract class FitCareDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE exercicios_nova (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        treinoId INTEGER NOT NULL,
+                        nome TEXT NOT NULL,
+                        series TEXT NOT NULL,
+                        repeticoes TEXT NOT NULL,
+                        carga TEXT NOT NULL,
+                        observacoes TEXT NOT NULL,
+                        ordem INTEGER NOT NULL,
+                        FOREIGN KEY(treinoId) REFERENCES treinos(id)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO exercicios_nova (id, treinoId, nome, series, repeticoes, carga, observacoes, ordem)
+                    SELECT id, treinoId, nome, CAST(series AS TEXT), repeticoes, carga, observacoes, ordem
+                    FROM exercicios
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE exercicios")
+                db.execSQL("ALTER TABLE exercicios_nova RENAME TO exercicios")
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_exercicios_treinoId
+                    ON exercicios(treinoId)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -851,7 +887,8 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
-                        MIGRATION_14_15
+                        MIGRATION_14_15,
+                        MIGRATION_15_16
                     )
                     .build()
 

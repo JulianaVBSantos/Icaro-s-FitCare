@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare.data
 
 import androidx.room.Entity
@@ -23,7 +22,7 @@ data class ExercicioEntity(
     val id: Long = 0,
     val treinoId: Long,
     val nome: String,
-    val series: Int,
+    val series: String,
     val repeticoes: String,
     val carga: String = "",
     val observacoes: String = "",

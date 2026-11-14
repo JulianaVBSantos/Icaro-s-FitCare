@@ -350,8 +350,8 @@ class TreinoRepository(
             "Informe o nome do exercício."
         }
 
-        require(exercicio.series > 0) {
-            "O número de séries deve ser maior que zero."
+        require(exercicio.series.isNotBlank()) {
+            "Informe as séries do exercício."
         }
 
         require(exercicio.repeticoes.isNotBlank()) {
