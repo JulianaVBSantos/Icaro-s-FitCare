@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import br.com.icaros.fitcare.data.FcmTokenManager
 import br.com.icaros.fitcare.data.SessaoUsuario
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -686,6 +687,37 @@ fun TelaAreaAluno(
                     it.status == "PENDENTE" ||
                             it.status == "EM_ANDAMENTO"
                 }
+                LaunchedEffect(pendentes) {
+                    if (pendentes.isNotEmpty()) {
+                        val prefsAluno = context.getSharedPreferences("fitcare_notificacoes_aluno", android.content.Context.MODE_PRIVATE)
+                        val jaAlertadas = prefsAluno
+                            .getStringSet("anamneses_alertadas_ids", emptySet())
+                            ?.toMutableSet()
+                            ?: mutableSetOf()
+
+                        var houveNova = false
+                        for (anamnese in pendentes) {
+                            val idStr = anamnese.id.toString()
+                            if (idStr !in jaAlertadas) {
+                                FitCareMessagingService.exibirNotificacao(
+                                    context = context,
+                                    titulo = "Nova anamnese disponível",
+                                    mensagem = "Você recebeu a anamnese \"${anamnese.nomeModelo}\" para preenchimento.",
+                                    notificacaoId = (anamnese.id % Int.MAX_VALUE).toInt() + 10000
+                                )
+                                jaAlertadas.add(idStr)
+                                houveNova = true
+                            }
+                        }
+
+                        if (houveNova) {
+                            prefsAluno.edit()
+                                .putStringSet("anamneses_alertadas_ids", jaAlertadas)
+                                .apply()
+                        }
+                    }
+                }
+
                 val naoEnviadas = anamneses.filter {
                     it.status == "NAO_ENVIADA"
                 }
