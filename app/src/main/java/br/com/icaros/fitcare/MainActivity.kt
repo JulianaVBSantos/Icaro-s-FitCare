@@ -299,13 +299,14 @@ enum class AppScreen {
     Treinos,
     SelecionarAlunoTreino,
     FormularioTreino,
+    DetalhesTreino,
+    CentralAtencao,
     ModelosAnamnese,
     CriarModeloAnamnese,
     FormularioAnamnese,
     VisualizarAnamnese,
     AdminDashboard,
-    CadastroAdminInicial,
-    DetalhesTreino
+    CadastroAdminInicial
 }
 
 @Composable
@@ -522,6 +523,44 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
+                    AppScreen.CentralAtencao -> {
+                        TelaCentralAtencao(
+                            repository = repository,
+                            treinoRepository = treinoRepository,
+                            onVoltar = {
+                                tela = AppScreen.Dashboard
+                            },
+                            onAbrirPerfil = { aluno ->
+                                alunoSelecionadoId = aluno.id
+                                tela = AppScreen.PerfilAluno
+                            },
+                            onDashboard = {
+                                tela = AppScreen.Dashboard
+                            },
+                            onAlunos = {
+                                tela = AppScreen.Alunos
+                            },
+                            onTreinos = {
+                                tela = AppScreen.Treinos
+                            },
+                            onSair = {
+                                val usuarioSaindo = SessaoUsuario.usuarioAtual
+                                val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
+                                FcmTokenManager.removerTokenAoSair(context, usuarioSaindo, uidSaindo)
+                                AlunoSyncWorker.cancelarPeriodica(context)
+                                preferenciasSessao.edit()
+                                    .remove(CHAVE_USUARIO_ID)
+                                    .remove(CHAVE_PERFIL)
+                                    .apply()
+                                SessaoUsuario.encerrar()
+                                sessaoVersao++
+                                alunoAutenticado = false
+                                perfilSelecionado = "PROFESSOR"
+                                tela = AppScreen.Login
+                            }
+                        )
+                    }
+
                     AppScreen.DetalhesTreino -> {
                         val treinoId = treinoSelecionadoId
                         if (treinoId != null) {
@@ -720,6 +759,9 @@ fun FitCareApp(
                             },
                             onModelosAnamnese = {
                                 tela = AppScreen.ModelosAnamnese
+                            },
+                            onCentralAtencao = {
+                                tela = AppScreen.CentralAtencao
                             },
                             onPerfil = { aluno ->
                                 alunoSelecionadoId = aluno.id
@@ -2043,7 +2085,8 @@ fun TelaDashboard(
     onRegistrarTreino: () -> Unit,
     onPerfil: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onModelosAnamnese: () -> Unit = {},
-    onSair: () -> Unit
+    onSair: () -> Unit,
+    onCentralAtencao: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var pesquisa by remember { mutableStateOf("") }
@@ -2568,13 +2611,6 @@ fun TelaDashboard(
                     alunosSemTreinar7Dias = metricasFrequencia.third
                 )
                 Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = "Ações rápidas",
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal
-                )
-                Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -2590,28 +2626,12 @@ fun TelaDashboard(
                     )
                     DashboardAcao(
                         modifier = Modifier.weight(1f),
-                        titulo = "Consultar alunos",
-                        subtitulo = "Ver lista e filtros",
-                        corFundo = Color(0xFFDCEBFF),
-                        corTexto = Color(0xFF416C93),
-                        icone = "⌕",
-                        onClick = onAlunos
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-// Cartão "Registrar treino" removido conforme solicitado, mantendo apenas Central de atenção
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    DashboardAcao(
-                        modifier = Modifier.fillMaxWidth(),
                         titulo = "Central de atenção",
                         subtitulo = "Alertas e prioridades",
                         corFundo = Color(0xFFFFD9DC),
                         corTexto = Color(0xFF9C4350),
                         icone = "!",
-                        onClick = { mostrarDialogoCentralAtencao = true }
+                        onClick = onCentralAtencao
                     )
                 }
                 Spacer(modifier = Modifier.height(22.dp))
@@ -5447,7 +5467,7 @@ fun GraficoCarteiraAlunos(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFFFFD9DC), RoundedCornerShape(10.dp))
+                    .background(Color(0xFFFFE5D0), RoundedCornerShape(10.dp))
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -5456,13 +5476,13 @@ fun GraficoCarteiraAlunos(
                         text = alunosSemTreinar7Dias.toString(),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF9C4350)
+                        color = Color(0xFFC25900)
                     )
                     Text(
                         text = "+7d sem treinar",
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
-                        color = Color(0xFF9C4350)
+                        color = Color(0xFFC25900)
                     )
                 }
             }
@@ -5569,6 +5589,575 @@ fun GraficoRegistrosAluno(eventos: List<EventoAluno>) {
                 )
             }
         }
+    }
+}
+
+// MOTOR DE CLASSIFICAÇÃO E CENTRAL DE ATENÇÃO (RF06, RF07, RF08, RF09, RF12)
+data class MotivoAcompanhamento(
+    val categoria: String,
+    val titulo: String,
+    val descricao: String,
+    val ehPrioritario: Boolean
+)
+
+data class DiagnosticoAcompanhamentoAluno(
+    val aluno: AlunoEntity,
+    val classificacaoCalculada: String,
+    val motivos: List<MotivoAcompanhamento>
+)
+
+object CentralAtencaoAnalyzer {
+
+    private fun parseDataBr(dataStr: String): Long? {
+        if (dataStr.isBlank()) return null
+        val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply {
+            isLenient = false
+        }
+        return runCatching { fmt.parse(dataStr.trim())?.time }.getOrNull()
+    }
+
+    fun avaliarCarteira(
+        alunos: List<AlunoEntity>,
+        todosTreinos: List<TreinoEntity>,
+        todosEventos: List<EventoAluno>
+    ): List<DiagnosticoAcompanhamentoAluno> {
+        val calHoje = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val hojeMs = calHoje.timeInMillis
+        val mesAtual = calHoje.get(java.util.Calendar.MONTH)
+        val anoAtual = calHoje.get(java.util.Calendar.YEAR)
+
+        val calInicioSemana = java.util.Calendar.getInstance().apply {
+            timeInMillis = hojeMs
+            set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.SUNDAY)
+        }
+        val inicioSemanaMs = calInicioSemana.timeInMillis
+        val diaMs = 24L * 60L * 60L * 1000L
+
+        return alunos.map { aluno ->
+            val motivos = mutableListOf<MotivoAcompanhamento>()
+            val treinosAluno = todosTreinos.filter { it.alunoId == aluno.id }
+            val eventosAluno = todosEventos
+                .filter { it.alunoId == aluno.id }
+                .sortedByDescending { parseDataBr(it.data) ?: it.id }
+
+            // 1. Regra de Baixa Frequência: 2+ treinos previstos não realizados na semana
+            val treinosAtivosSemana = treinosAluno.filter { t ->
+                val inicio = parseDataBr(t.dataInicio) ?: 0L
+                val fim = parseDataBr(t.dataFim) ?: Long.MAX_VALUE
+                inicio <= hojeMs + diaMs && fim >= inicioSemanaMs
+            }
+            if (treinosAtivosSemana.isNotEmpty()) {
+                val diasDecorridosSemana = (((hojeMs - inicioSemanaMs) / diaMs).toInt() + 1).coerceIn(1, 7)
+                val metaPrevista = (diasDecorridosSemana / 2).coerceAtLeast(2)
+                val realizadosSemana = eventosAluno.count { ev ->
+                    val dMs = parseDataBr(ev.data) ?: 0L
+                    ev.tipo.equals("Treino", ignoreCase = true) && dMs in inicioSemanaMs..(hojeMs + diaMs)
+                }
+                val faltantes = metaPrevista - realizadosSemana
+                if (faltantes >= 2) {
+                    motivos.add(
+                        MotivoAcompanhamento(
+                            categoria = "Baixa frequência",
+                            titulo = "Baixa frequência semanal",
+                            descricao = "$faltantes treino(s) previsto(s) não realizado(s) nesta semana ($realizadosSemana de $metaPrevista).",
+                            ehPrioritario = false
+                        )
+                    )
+                }
+            }
+
+            // 2. Regra de Dor Recorrente: 2 treinos consecutivos com dor ou 3 ocorrências no mesmo mês
+            val eventosComDor = eventosAluno.filter { ev ->
+                ev.tipo.equals("Dor / desconforto", ignoreCase = true) || (ev.intensidade ?: 0) >= 4
+            }
+            val dorNoMes = eventosComDor.count { ev ->
+                val dMs = parseDataBr(ev.data) ?: return@count false
+                val c = java.util.Calendar.getInstance().apply { timeInMillis = dMs }
+                c.get(java.util.Calendar.MONTH) == mesAtual && c.get(java.util.Calendar.YEAR) == anoAtual
+            }
+            val doisConsecutivosComDor = eventosAluno.take(2).size == 2 &&
+                    eventosAluno.take(2).all { ev ->
+                        ev.tipo.equals("Dor / desconforto", ignoreCase = true) || (ev.intensidade ?: 0) >= 4
+                    }
+            val dorIntensa = eventosComDor.any { (it.intensidade ?: 0) >= 8 }
+
+            if (doisConsecutivosComDor || dorNoMes >= 3 || dorIntensa) {
+                val maxDor = eventosComDor.maxOfOrNull { it.intensidade ?: 0 } ?: 0
+                val descricaoDor = when {
+                    doisConsecutivosComDor -> "Dois registros consecutivos com relato de dor ou desconforto."
+                    dorNoMes >= 3 -> "$dorNoMes ocorrências de dor registradas no mês atual."
+                    else -> "Relato de dor com intensidade elevada ($maxDor/10)."
+                }
+                motivos.add(
+                    MotivoAcompanhamento(
+                        categoria = "Dor",
+                        titulo = "Dor recorrente ou elevada",
+                        descricao = descricaoDor,
+                        ehPrioritario = true
+                    )
+                )
+            } else if (eventosComDor.isNotEmpty()) {
+                val ultimaDorMs = parseDataBr(eventosComDor.first().data) ?: 0L
+                if (hojeMs - ultimaDorMs <= 7 * diaMs) {
+                    motivos.add(
+                        MotivoAcompanhamento(
+                            categoria = "Dor",
+                            titulo = "Registro recente de desconforto",
+                            descricao = "Ocorrência de dor registrada nos últimos 7 dias (${eventosComDor.first().data}).",
+                            ehPrioritario = false
+                        )
+                    )
+                }
+            }
+
+            // 3. Regra de Avaliação Pendente (7 dias após definição) e 4. Avaliação Atrasada (5 dias após data prevista)
+            val avaliacoesFisicas = eventosAluno.filter {
+                it.tipo.equals("Avaliação física", ignoreCase = true)
+            }
+            val ultimaAvaliacao = avaliacoesFisicas.firstOrNull()
+            if (ultimaAvaliacao == null) {
+                val cadastroMs = parseDataBr(aluno.dataCadastro)
+                if (cadastroMs != null && (hojeMs - cadastroMs) >= 7 * diaMs) {
+                    motivos.add(
+                        MotivoAcompanhamento(
+                            categoria = "Avaliação",
+                            titulo = "Avaliação física pendente",
+                            descricao = "Nenhum registro de avaliação física realizado após 7 dias do cadastro (${aluno.dataCadastro}).",
+                            ehPrioritario = false
+                        )
+                    )
+                }
+            } else {
+                val proximaPrevistaMs = parseDataBr(ultimaAvaliacao.proximaAvaliacao)
+                if (proximaPrevistaMs != null && (hojeMs - proximaPrevistaMs) >= 5 * diaMs) {
+                    val diasAtraso = ((hojeMs - proximaPrevistaMs) / diaMs).toInt()
+                    motivos.add(
+                        MotivoAcompanhamento(
+                            categoria = "Avaliação",
+                            titulo = "Reavaliação física atrasada",
+                            descricao = "Data prevista em ${ultimaAvaliacao.proximaAvaliacao} ultrapassada há $diasAtraso dia(s).",
+                            ehPrioritario = false
+                        )
+                    )
+                }
+            }
+
+            // 5. Regra de Ausência de Contato: 10 dias consecutivos sem contato ou ação
+            val ultimoContatoMs = eventosAluno.firstOrNull()?.let { parseDataBr(it.data) }
+                ?: parseDataBr(aluno.dataCadastro)
+            if (ultimoContatoMs != null && (hojeMs - ultimoContatoMs) >= 10 * diaMs) {
+                val diasSemContato = ((hojeMs - ultimoContatoMs) / diaMs).toInt()
+                motivos.add(
+                    MotivoAcompanhamento(
+                        categoria = "Sem contato",
+                        titulo = "Ausência de contato / acompanhamento",
+                        descricao = "$diasSemContato dias consecutivos sem registro de contato ou ação.",
+                        ehPrioritario = false
+                    )
+                )
+            }
+
+            // 6. Regra de Proximidade do Vencimento do Treinamento (7 dias antes sem renovação)
+            if (treinosAluno.isNotEmpty()) {
+                val treinoMaisRecente = treinosAluno.maxByOrNull { parseDataBr(it.dataFim) ?: 0L }
+                val dataFimMs = treinoMaisRecente?.let { parseDataBr(it.dataFim) }
+                if (treinoMaisRecente != null && dataFimMs != null) {
+                    val temRenovacaoPosterior = treinosAluno.any { outro ->
+                        outro.id != treinoMaisRecente.id &&
+                                (parseDataBr(outro.dataInicio) ?: 0L) >= dataFimMs
+                    }
+                    if (!temRenovacaoPosterior) {
+                        val diffDias = ((dataFimMs - hojeMs) / diaMs).toInt()
+                        if (diffDias < 0) {
+                            motivos.add(
+                                MotivoAcompanhamento(
+                                    categoria = "Vencimento",
+                                    titulo = "Treino vencido sem renovação",
+                                    descricao = "A ficha \"${treinoMaisRecente.nome}\" venceu em ${treinoMaisRecente.dataFim}.",
+                                    ehPrioritario = true
+                                )
+                            )
+                        } else if (diffDias <= 7) {
+                            motivos.add(
+                                MotivoAcompanhamento(
+                                    categoria = "Vencimento",
+                                    titulo = "Treino próximo do vencimento",
+                                    descricao = "A ficha \"${treinoMaisRecente.nome}\" vence em $diffDias dia(s) (${treinoMaisRecente.dataFim}).",
+                                    ehPrioritario = false
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+// 7. Integração de Condições e Restrições Clínicas (RF12)
+            val textoClinico = "${aluno.condicoes} ${aluno.restricoes} ${aluno.observacoesProfissionais}".lowercase()
+            val possuiCondicao = aluno.condicoes.isNotBlank() &&
+                    !aluno.condicoes.equals("Nenhuma", ignoreCase = true)
+            val possuiRestricao = aluno.restricoes.isNotBlank() &&
+                    !aluno.restricoes.equals("Nenhuma", ignoreCase = true)
+            val palavrasPrioritarias = listOf(
+                "cardiopatia", "cirurgia", "hérnia", "hernia", "fratura",
+                "lesão grave", "lesao grave", "hipertensão descompensada", "grave", "severa"
+            )
+            val clinicoPrioritario = palavrasPrioritarias.any { textoClinico.contains(it) }
+            if (possuiCondicao || possuiRestricao) {
+                val resumoClinico = listOfNotNull(
+                    aluno.condicoes.takeIf { possuiCondicao }?.let { "Condições: $it" },
+                    aluno.restricoes.takeIf { possuiRestricao }?.let { "Restrições: $it" }
+                ).joinToString(" • ")
+                motivos.add(
+                    MotivoAcompanhamento(
+                        categoria = "Clínico",
+                        titulo = "Condição / restrição clínica ativa",
+                        descricao = resumoClinico,
+                        ehPrioritario = clinicoPrioritario
+                    )
+                )
+            }
+// Critério final de classificação:
+// - Prioridade: >= 1 regra prioritária OU >= 2 regras de atenção simultâneas
+// - Atenção: 1 regra de atenção
+// - Normal: nenhuma regra ativa
+            val totalPrioritarias = motivos.count { it.ehPrioritario }
+            val totalAtencao = motivos.count { !it.ehPrioritario }
+            val classificacaoFinal = when {
+                totalPrioritarias >= 1 || totalAtencao >= 2 -> "Prioridade"
+                totalAtencao == 1 -> "Atenção"
+                else -> "Normal"
+            }
+            DiagnosticoAcompanhamentoAluno(
+                aluno = aluno,
+                classificacaoCalculada = classificacaoFinal,
+                motivos = motivos
+            )
+        }
+    }
+}
+@Composable
+fun TelaCentralAtencao(
+    repository: AlunoRepository,
+    treinoRepository: TreinoRepository,
+    onVoltar: () -> Unit,
+    onAbrirPerfil: (AlunoEntity) -> Unit,
+    onDashboard: () -> Unit,
+    onAlunos: () -> Unit,
+    onTreinos: () -> Unit,
+    onSair: () -> Unit
+) {
+    val context = LocalContext.current
+    val alunos by repository.listarAlunos().collectAsState(initial = emptyList())
+    val todosTreinos by treinoRepository.listarTodosTreinos().collectAsState(initial = emptyList())
+    val eventosStorage = remember { EventoAlunoStorage(context) }
+    val diagnosticos = remember(alunos, todosTreinos) {
+        val eventos = eventosStorage.listarTodos()
+        CentralAtencaoAnalyzer.avaliarCarteira(
+            alunos = alunos,
+            todosTreinos = todosTreinos,
+            todosEventos = eventos
+        )
+    }
+// Sincroniza automaticamente a classificação calculada com o banco local se houver divergência
+    LaunchedEffect(diagnosticos) {
+        withContext(Dispatchers.IO) {
+            for (diag in diagnosticos) {
+                if (diag.aluno.status != diag.classificacaoCalculada) {
+                    try {
+                        repository.atualizar(
+                            diag.aluno.copy(status = diag.classificacaoCalculada)
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+    }
+    var filtroSituacao by remember { mutableStateOf("Todos") }
+    val filtrosDisponiveis = listOf(
+        "Todos",
+        "Prioridade",
+        "Atenção",
+        "Baixa frequência",
+        "Dor",
+        "Avaliação",
+        "Vencimento",
+        "Sem contato",
+        "Clínico"
+    )
+    val alunosRequeremAcompanhamento = remember(diagnosticos, filtroSituacao) {
+        val comparador = Comparator { a: DiagnosticoAcompanhamentoAluno, b: DiagnosticoAcompanhamentoAluno ->
+            val pA = when (a.classificacaoCalculada) {
+                "Prioridade" -> 0
+                "Atenção" -> 1
+                else -> 2
+            }
+            val pB = when (b.classificacaoCalculada) {
+                "Prioridade" -> 0
+                "Atenção" -> 1
+                else -> 2
+            }
+            if (pA != pB) pA.compareTo(pB) else a.aluno.nome.lowercase().compareTo(b.aluno.nome.lowercase())
+        }
+
+        val base = diagnosticos
+            .filter { it.classificacaoCalculada != "Normal" || it.motivos.isNotEmpty() }
+            .sortedWith(comparador)
+
+        when (filtroSituacao) {
+            "Todos" -> base
+            "Prioridade" -> base.filter { it.classificacaoCalculada == "Prioridade" }
+            "Atenção" -> base.filter { it.classificacaoCalculada == "Atenção" }
+            else -> base.filter { diag ->
+                diag.motivos.any { it.categoria.equals(filtroSituacao, ignoreCase = true) }
+            }
+        }
+    }
+    val qtdPrioridade = diagnosticos.count { it.classificacaoCalculada == "Prioridade" }
+    val qtdAtencao = diagnosticos.count { it.classificacaoCalculada == "Atenção" }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(CabecalhoTopoClaro, CabecalhoBaseClaro)
+                    )
+                )
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Box(modifier = Modifier.align(Alignment.CenterStart)) {
+                BotaoVoltarPadrao(onVoltar = onVoltar)
+            }
+            Image(
+                painter = painterResource(id = R.drawable.logo_fitcare),
+                contentDescription = "Logo Ícaro's FitCare",
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .width(145.dp)
+                    .height(70.dp)
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp)
+        ) {
+            Text(
+                text = "Central de Atenção",
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+            Text(
+                text = "Classificação automatizada e motivos clínicos/operacionais.",
+                fontSize = 13.sp,
+                color = TextoSecundario
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                DashboardIndicador(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { filtroSituacao = "Prioridade" },
+                    titulo = "Prioridade",
+                    valor = qtdPrioridade.toString(),
+                    corFundo = Color(0xFFFFD9DC),
+                    corTexto = Color(0xFFB42332)
+                )
+                DashboardIndicador(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { filtroSituacao = "Atenção" },
+                    titulo = "Atenção",
+                    valor = qtdAtencao.toString(),
+                    corFundo = Color(0xFFFFEAB5),
+                    corTexto = Color(0xFF9A7000)
+                )
+                DashboardIndicador(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { filtroSituacao = "Todos" },
+                    titulo = "Em alerta",
+                    valor = (qtdPrioridade + qtdAtencao).toString(),
+                    corFundo = AzulMuitoClaro,
+                    corTexto = AzulPrincipal
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+// Filtros por categoria e classificação
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                filtrosDisponiveis.chunked(3).forEach { linhaFiltros ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        linhaFiltros.forEach { opcao ->
+                            val selecionado = filtroSituacao == opcao
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(if (selecionado) AzulPrincipal else Branco)
+                                    .clickable { filtroSituacao = opcao }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = opcao,
+                                    color = if (selecionado) Color.White else TextoPrincipal,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            if (alunosRequeremAcompanhamento.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Branco)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Nenhum aluno neste filtro",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextoPrincipal
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Todos os alunos acompanhados estão em situação normal para este critério.",
+                            fontSize = 12.sp,
+                            color = TextoSecundario,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                alunosRequeremAcompanhamento.forEach { diag ->
+                    val ehPrioridade = diag.classificacaoCalculada == "Prioridade"
+                    val corBadgeFundo = if (ehPrioridade) Color(0xFFFFD9DC) else Color(0xFFFFEAB5)
+                    val corBadgeTexto = if (ehPrioridade) Color(0xFFB42332) else Color(0xFF9A7000)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .clickable { onAbrirPerfil(diag.aluno) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Branco),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = diag.aluno.nome,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextoPrincipal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = corBadgeFundo
+                                ) {
+                                    Text(
+                                        text = diag.classificacaoCalculada.uppercase(),
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = corBadgeTexto
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            diag.motivos.forEach { motivo ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp)
+                                        .background(
+                                            color = if (motivo.ehPrioritario) {
+                                                Color(0xFFFFF1F2)
+                                            } else {
+                                                AzulMuitoClaro.copy(alpha = 0.6f)
+                                            },
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(top = 4.dp)
+                                            .size(8.dp)
+                                            .background(
+                                                color = if (motivo.ehPrioritario) Color(0xFFB42332) else AzulPrincipal,
+                                                shape = CircleShape
+                                            )
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "${motivo.titulo} (${motivo.categoria})",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextoPrincipal
+                                        )
+                                        Text(
+                                            text = motivo.descricao,
+                                            fontSize = 11.sp,
+                                            color = TextoSecundario
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "Toque para abrir o perfil e agir ›",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AzulPrincipal
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        DashboardBottomBar(
+            telaAtual = AppScreen.Dashboard,
+            onInicio = onDashboard,
+            onAlunos = onAlunos,
+            onTreinos = onTreinos,
+            onRegistros = onAlunos,
+            onMais = onSair
+        )
     }
 }
 
