@@ -303,9 +303,17 @@ fun TelaPeriodizacaoAluno(
                         }
                     }
                 }
-// NÍVEL 2: MESOCICLOS
+                // NÍVEL 2: MESOCICLOS
                 mesoSelecionado == null -> {
                     val macro = macroSelecionado!!
+
+                    VisaoCompletaMacrociclo(
+                        macrociclo = macro,
+                        periodizacaoRepository = periodizacaoRepository,
+                        treinosAluno = treinosAluno,
+                        onVisualizarTreino = onVisualizarTreino
+                    )
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -891,4 +899,121 @@ private fun DialogoFormCiclo(
             }
         }
     )
+}
+@Composable
+fun VisaoCompletaMacrociclo(
+    macrociclo: MacrocicloEntity,
+    periodizacaoRepository: PeriodizacaoRepository,
+    treinosAluno: List<TreinoEntity>,
+    onVisualizarTreino: (Long) -> Unit
+) {
+    val mesociclos by periodizacaoRepository
+        .listarMesociclos(macrociclo.id)
+        .collectAsState(initial = emptyList())
+
+    if (mesociclos.isEmpty()) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Visão geral completa: ${macrociclo.nome}",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            mesociclos.forEach { meso ->
+                val microciclos by periodizacaoRepository
+                    .listarMicrociclos(meso.id)
+                    .collectAsState(initial = emptyList())
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Mesociclo: ${meso.nome}" +
+                                if (meso.foco.isNotBlank()) " (${meso.foco})" else "",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    if (microciclos.isEmpty()) {
+                        Text(
+                            text = "Nenhum microciclo neste mesociclo.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        microciclos.forEach { micro ->
+                            val sessoes by periodizacaoRepository
+                                .listarSessoes(micro.id)
+                                .collectAsState(initial = emptyList())
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "• Microciclo: ${micro.nome} (${micro.dataInicio})",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (sessoes.isEmpty()) {
+                                    Text(
+                                        text = "   Sem sessões semanais cadastradas.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    sessoes.forEach { sessao ->
+                                        val treinoVinc = treinosAluno.firstOrNull { it.id == sessao.treinoId }
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 12.dp)
+                                                .clickable(enabled = treinoVinc != null) {
+                                                    treinoVinc?.let { onVisualizarTreino(it.id) }
+                                                },
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${sessao.diaSemana}: ${sessao.titulo}" +
+                                                        if (treinoVinc != null) " → ${treinoVinc.nome}" else "",
+                                                fontSize = 11.sp,
+                                                color = if (treinoVinc != null) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

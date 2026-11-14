@@ -212,12 +212,14 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.BLACK
 
         WindowInsetsControllerCompat(
             window,
             window.decorView
         ).apply {
-            isAppearanceLightStatusBars = true
+            isAppearanceLightStatusBars = !temaEscuroAtivoState
+            isAppearanceLightNavigationBars = false
         }
 
         dispositivoRepository = DispositivoRepository(applicationContext)
@@ -379,12 +381,26 @@ fun FitCareApp(
         mutableStateOf(false)
     }
     val context = LocalContext.current
+
+    val view = androidx.compose.ui.platform.LocalView.current
+    LaunchedEffect(temaEscuroAtivoState) {
+        val window = (view.context as? android.app.Activity)?.window
+        if (window != null) {
+            window.navigationBarColor = android.graphics.Color.BLACK
+            WindowInsetsControllerCompat(window, view).apply {
+                isAppearanceLightStatusBars = !temaEscuroAtivoState
+                isAppearanceLightNavigationBars = false
+            }
+        }
+    }
+
     val preferenciasSessao = remember {
         context.getSharedPreferences(
             PREFERENCIAS_SESSAO,
             Context.MODE_PRIVATE
         )
     }
+
     LaunchedEffect(Unit) {
         temaEscuroAtivoState = preferenciasSessao.getBoolean(
             "tema_escuro_ativo",
@@ -477,6 +493,7 @@ fun FitCareApp(
                         syncService.sincronizarLeituraAlunos()
                         syncService.sincronizarModelosAnamnese()
                         syncService.sincronizarAnamnesesAtribuidas()
+                        syncService.sincronizarTreinos()
                     } catch (_: Exception) {
                     }
                 }
@@ -1874,8 +1891,8 @@ fun TelaLogin(
     var mensagemErro by remember { mutableStateOf<String?>(null) }
     var mostrarAjudaSenha by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val azulClaro = Color(0xFFEAF5FF)
-    val azulFundo = Color(0xFFD8ECFF)
+    val azulClaro = if (temaEscuroAtivoState) Color(0xFF162434) else Color(0xFFEAF5FF)
+    val azulFundo = if (temaEscuroAtivoState) Color(0xFF0F1722) else Color(0xFFD8ECFF)
     val descricaoPerfil = when (perfil) {
         "PROFESSOR" -> "Acesse sua conta profissional."
         "ALUNO" -> "Acesse sua conta de aluno."
@@ -1912,12 +1929,12 @@ fun TelaLogin(
                 text = "Bem-vindo de volta",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF173B5E)
+                color = TextoPrincipal
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = descricaoPerfil,
-                color = Color(0xFF38566F)
+                color = TextoSecundario
             )
             Spacer(modifier = Modifier.height(28.dp))
             OutlinedTextField(
@@ -1971,7 +1988,7 @@ fun TelaLogin(
                     ) {
                         Text(
                             text = "Esqueci minha senha",
-                            color = Color(0xFF174F80)
+                            color = AzulPrincipal
                         )
                     }
                 }
@@ -2001,7 +2018,7 @@ fun TelaLogin(
                 )
                 Text(
                     text = "Manter-me conectado",
-                    color = Color(0xFF24445F)
+                    color = TextoPrincipal
                 )
             }
             if (mensagemErro != null) {
@@ -2083,7 +2100,7 @@ fun TelaLogin(
             ) {
                 Text(
                     "Voltar",
-                    color = Color(0xFF174F80)
+                    color = AzulPrincipal
                 )
             }
         }
@@ -2097,7 +2114,7 @@ fun TelaLogin(
                 Text(
                     text = "Recuperar acesso",
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF173B5E)
+                    color = TextoPrincipal
                 )
             },
             text = {
@@ -2183,9 +2200,17 @@ fun TelaDashboard(
         withContext(Dispatchers.IO) {
             try {
                 val db = FitCareDatabase.getDatabase(context)
-                val syncService = FirestoreSyncService(db.usuarioDao(), db)
-                syncService.sincronizarModelosAnamnese()
-                syncService.sincronizarAnamnesesAtribuidas()
+                val agora = System.currentTimeMillis()
+                val ultimaSync = prefsNotificacoes.getLong("ultima_sync_dashboard_ms", 0L)
+                // Só força sincronização completa se passaram mais de 5 minutos (300.000 ms)
+                if (agora - ultimaSync > 300_000L) {
+                    val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                    syncService.sincronizarModelosAnamnese()
+                    syncService.sincronizarAnamnesesAtribuidas()
+                    prefsNotificacoes.edit()
+                        .putLong("ultima_sync_dashboard_ms", agora)
+                        .apply()
+                }
                 val pendentes = db.syncOperationDao().listarPendentes().size
                 withContext(Dispatchers.Main) {
                     if (pendentes > 0) {
@@ -2601,8 +2626,8 @@ fun TelaDashboard(
                     },
                     shape = RoundedCornerShape(13.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Branco,
+                        unfocusedContainerColor = Branco,
                         focusedBorderColor = AzulPrincipal,
                         unfocusedBorderColor = AzulMuitoClaro,
                         focusedTextColor = TextoPrincipal,
@@ -2733,7 +2758,7 @@ fun TelaDashboard(
                             .fillMaxWidth()
                             .padding(top = 8.dp),
                         shape = RoundedCornerShape(13.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                        colors = CardDefaults.cardColors(containerColor = Branco)
                     ) {
                         Column(
                             modifier = Modifier
@@ -3058,7 +3083,7 @@ private fun DashboardAluno(
             .padding(bottom = 8.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(13.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = Branco),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
@@ -3110,453 +3135,455 @@ private fun DashboardAluno(
     }
 }
 
-// Tela de Lista Completa de Alunos com filtros
-@Composable
-fun TelaAlunos(
-    repository: AlunoRepository,
-    filtroInicial: String = "Todos",
-    onVoltar: () -> Unit,
-    onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
-    onTreinos: () -> Unit,
-    modoSelecaoTreino: Boolean = false,
-    onCadastrarAluno: () -> Unit = {}
-) {
-    var pesquisa by remember { mutableStateOf("") }
-    var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
-    var filtroAcompanhamento by remember { mutableStateOf("Todos") }
+    // Tela de Lista Completa de Alunos com filtros
+    @Composable
+    fun TelaAlunos(
+        repository: AlunoRepository,
+        filtroInicial: String = "Todos",
+        onVoltar: () -> Unit,
+        onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
+        onTreinos: () -> Unit,
+        modoSelecaoTreino: Boolean = false,
+        onCadastrarAluno: () -> Unit = {}
+    ) {
+        var pesquisa by remember { mutableStateOf("") }
+        var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
+        var filtroAcompanhamento by remember { mutableStateOf("Todos") }
 
-    val alunos by repository
-        .listarAlunos()
-        .collectAsState(initial = emptyList())
+        val alunos by repository
+            .listarAlunos()
+            .collectAsState(initial = emptyList())
 
-    val termo = pesquisa.trim()
+        val termo = pesquisa.trim()
 
-    val contextAlunos = LocalContext.current
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val db = FitCareDatabase.getDatabase(contextAlunos)
-                val syncService = FirestoreSyncService(db.usuarioDao(), db)
-                syncService.sincronizarAlunos()
-                syncService.sincronizarLeituraAlunos()
-            } catch (_: Exception) {
+        val contextAlunos = LocalContext.current
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val db = FitCareDatabase.getDatabase(contextAlunos)
+                    val syncService = FirestoreSyncService(db.usuarioDao(), db)
+                    syncService.sincronizarAlunos()
+                    syncService.sincronizarLeituraAlunos()
+                } catch (_: Exception) {
+                }
             }
         }
-    }
 
-    val filtrados = alunos.filter { aluno ->
+        val filtrados = alunos.filter { aluno ->
 
-        val correspondeAcompanhamento = when (filtroAcompanhamento) {
-            "Com restrições" -> aluno.restricoes.isNotBlank()
-            "Com observações" -> aluno.observacoesProfissionais.isNotBlank()
-            else -> true
+            val correspondeAcompanhamento = when (filtroAcompanhamento) {
+                "Com restrições" -> aluno.restricoes.isNotBlank()
+                "Com observações" -> aluno.observacoesProfissionais.isNotBlank()
+                else -> true
+            }
+
+            val correspondeBusca = termo.isBlank() ||
+                    aluno.nome.contains(termo, ignoreCase = true) ||
+                    aluno.email.contains(termo, ignoreCase = true) ||
+                    aluno.id.toString().contains(termo, ignoreCase = true) ||
+                    aluno.dataCadastro.contains(termo, ignoreCase = true) ||
+                    aluno.objetivo.contains(termo, ignoreCase = true) ||
+                    aluno.observacoesProfissionais.contains(termo, ignoreCase = true) ||
+                    aluno.condicoes.contains(termo, ignoreCase = true) ||
+                    aluno.restricoes.contains(termo, ignoreCase = true)
+
+            val correspondeStatus =
+                filtroSelecionado == "Todos" ||
+                        aluno.status == filtroSelecionado
+
+            correspondeBusca &&
+                    correspondeStatus &&
+                    correspondeAcompanhamento
         }
 
-        val correspondeBusca = termo.isBlank() ||
-                aluno.nome.contains(termo, ignoreCase = true) ||
-                aluno.email.contains(termo, ignoreCase = true) ||
-                aluno.id.toString().contains(termo, ignoreCase = true) ||
-                aluno.dataCadastro.contains(termo, ignoreCase = true) ||
-                aluno.objetivo.contains(termo, ignoreCase = true) ||
-                aluno.observacoesProfissionais.contains(termo, ignoreCase = true) ||
-                aluno.condicoes.contains(termo, ignoreCase = true) ||
-                aluno.restricoes.contains(termo, ignoreCase = true)
-
-        val correspondeStatus =
-            filtroSelecionado == "Todos" ||
-                    aluno.status == filtroSelecionado
-
-        correspondeBusca &&
-                correspondeStatus &&
-                correspondeAcompanhamento
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(FundoApp)
-    ) {
         Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .fillMaxSize()
+                .background(FundoApp)
         ) {
-            Box(
+            Column(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                CabecalhoTopoClaro,
-                                CabecalhoBaseClaro
-                            )
-                        )
-                    )
-                    .statusBarsPadding()
-                    .padding(top = 4.dp, bottom = 10.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(
-                            id = R.drawable.logo_fitcare
-                        ),
-                        contentDescription = "Logo Ícaro's FitCare",
-                        modifier = Modifier
-                            .width(145.dp)
-                            .height(70.dp)
-                    )
-
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    ) {
-                        BotaoVoltarPadrao(
-                            onVoltar = onVoltar
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    CabecalhoTopoClaro,
+                                    CabecalhoBaseClaro
+                                )
+                            )
                         )
+                        .statusBarsPadding()
+                        .padding(top = 4.dp, bottom = 10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(
+                                id = R.drawable.logo_fitcare
+                            ),
+                            contentDescription = "Logo Ícaro's FitCare",
+                            modifier = Modifier
+                                .width(145.dp)
+                                .height(70.dp)
+                        )
+
+                        Box(
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        ) {
+                            BotaoVoltarPadrao(
+                                onVoltar = onVoltar
+                            )
+                        }
                     }
                 }
-            }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp)
-            ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
                 ) {
-                    Text(
-                        text = if (modoSelecaoTreino) {
-                            "Selecione o aluno"
-                        } else {
-                            "Meus alunos"
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (modoSelecaoTreino) {
+                                "Selecione o aluno"
+                            } else {
+                                "Meus alunos"
+                            },
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextoPrincipal
+                        )
+
+                        if (!modoSelecaoTreino) {
+                            IconButton(
+                                onClick = onCadastrarAluno,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(
+                                        color = AzulPrincipal,
+                                        shape = CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Adicionar novo aluno",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = pesquisa,
+                        onValueChange = { pesquisa = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                text = "Buscar aluno pelo nome...",
+                                color = TextoSecundario,
+                                fontSize = 14.sp
+                            )
                         },
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
+                        shape = RoundedCornerShape(13.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Branco,
+                            unfocusedContainerColor = Branco,
+                            focusedBorderColor = AzulPrincipal,
+                            unfocusedBorderColor = AzulMuitoClaro,
+                            focusedTextColor = TextoPrincipal,
+                            unfocusedTextColor = TextoPrincipal
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "Todos",
+                            "Normal",
+                            "Atenção",
+                            "Prioridade"
+                        ).forEach { tag ->
+                            val selecionado = filtroSelecionado == tag
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = if (selecionado) {
+                                            AzulPrincipal
+                                        } else {
+                                            Branco
+                                        },
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .clickable {
+                                        filtroSelecionado = tag
+                                    }
+                                    .padding(
+                                        horizontal = 18.dp,
+                                        vertical = 8.dp
+                                    )
+                            ) {
+                                Text(
+                                    text = tag,
+                                    color = if (selecionado) {
+                                        Color.White
+                                    } else {
+                                        TextoPrincipal
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Text(
+                        text = "Acompanhamento",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = TextoPrincipal
                     )
 
-                    if (!modoSelecaoTreino) {
-                        IconButton(
-                            onClick = onCadastrarAluno,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(
-                                    color = AzulPrincipal,
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Adicionar novo aluno",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
-                }
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = pesquisa,
-                    onValueChange = { pesquisa = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = "Buscar aluno pelo nome...",
-                            color = TextoSecundario,
-                            fontSize = 14.sp
-                        )
-                    },
-                    shape = RoundedCornerShape(13.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                        focusedBorderColor = AzulPrincipal,
-                        unfocusedBorderColor = AzulMuitoClaro
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "Todos",
-                        "Normal",
-                        "Atenção",
-                        "Prioridade"
-                    ).forEach { tag ->
-                        val selecionado = filtroSelecionado == tag
-                        Box(
-                            modifier = Modifier
-                                .background(
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "Todos",
+                            "Com restrições",
+                            "Com observações"
+                        ).forEach { filtro ->
+                            val selecionado = filtroAcompanhamento == filtro
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (selecionado) {
+                                            AzulMuitoClaro
+                                        } else {
+                                            Branco
+                                        }
+                                    )
+                                    .clickable {
+                                        filtroAcompanhamento = filtro
+                                    }
+                                    .padding(
+                                        horizontal = 6.dp,
+                                        vertical = 12.dp
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = filtro,
+                                    fontSize = 11.sp,
                                     color = if (selecionado) {
                                         AzulPrincipal
                                     } else {
-                                        Color.White
+                                        TextoPrincipal
                                     },
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable {
-                                    filtroSelecionado = tag
-                                }
-                                .padding(
-                                    horizontal = 18.dp,
-                                    vertical = 8.dp
-                                )
-                        ) {
-                            Text(
-                                text = tag,
-                                color = if (selecionado) {
-                                    Color.White
-                                } else {
-                                    TextoPrincipal
-                                },
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Text(
-                    text = "Acompanhamento",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextoPrincipal
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "Todos",
-                        "Com restrições",
-                        "Com observações"
-                    ).forEach { filtro ->
-                        val selecionado = filtroAcompanhamento == filtro
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (selecionado) {
-                                        AzulMuitoClaro
+                                    fontWeight = if (selecionado) {
+                                        FontWeight.SemiBold
                                     } else {
-                                        Branco
+                                        FontWeight.Normal
                                     }
                                 )
-                                .clickable {
-                                    filtroAcompanhamento = filtro
-                                }
-                                .padding(
-                                    horizontal = 6.dp,
-                                    vertical = 12.dp
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = filtro,
-                                fontSize = 11.sp,
-                                color = if (selecionado) {
-                                    AzulPrincipal
-                                } else {
-                                    TextoPrincipal
-                                },
-                                fontWeight = if (selecionado) {
-                                    FontWeight.SemiBold
-                                } else {
-                                    FontWeight.Normal
-                                }
-                            )
+                            }
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(18.dp))
-                if (filtrados.isEmpty()) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        shape = RoundedCornerShape(13.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Nenhum aluno encontrado.",
-                                color = TextoPrincipal,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = if (pesquisa.isBlank()) {
-                                    "Não há alunos cadastrados."
-                                } else {
-                                    "Tente buscar por outro nome ou altere o filtro."
-                                },
-                                color = TextoSecundario,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                } else {
-                    filtrados.forEach { aluno ->
-                        val nome = aluno.nome
-                        val objetivo = aluno.objetivo
-                        val status = aluno.status
-                        val corStatus = when (status) {
-                            "Prioridade" -> Color(0xFFFFD9DC)
-                            "Atenção" -> Color(0xFFFFEAB5)
-                            else -> Color(0xFFDDF4E3)
-                        }
-                        val corTextoStatus = when (status) {
-                            "Prioridade" -> Color(0xFF9C4350)
-                            "Atenção" -> Color(0xFF9A7000)
-                            else -> Color(0xFF39754A)
-                        }
+                    Spacer(modifier = Modifier.height(18.dp))
+                    if (filtrados.isEmpty()) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 10.dp)
-                                .clickable {
-                                    onSelecionarAluno(aluno)
-                                },
+                                .padding(top = 8.dp),
                             shape = RoundedCornerShape(13.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = Color.White
+                                containerColor = Branco
                             )
                         ) {
                             Column(
-                                modifier = Modifier.padding(12.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
+                                Text(
+                                    text = "Nenhum aluno encontrado.",
+                                    color = TextoPrincipal,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = if (pesquisa.isBlank()) {
+                                        "Não há alunos cadastrados."
+                                    } else {
+                                        "Tente buscar por outro nome ou altere o filtro."
+                                    },
+                                    color = TextoSecundario,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    } else {
+                        filtrados.forEach { aluno ->
+                            val nome = aluno.nome
+                            val objetivo = aluno.objetivo
+                            val status = aluno.status
+                            val corStatus = when (status) {
+                                "Prioridade" -> Color(0xFFFFD9DC)
+                                "Atenção" -> Color(0xFFFFEAB5)
+                                else -> Color(0xFFDDF4E3)
+                            }
+                            val corTextoStatus = when (status) {
+                                "Prioridade" -> Color(0xFF9C4350)
+                                "Atenção" -> Color(0xFF9A7000)
+                                else -> Color(0xFF39754A)
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp)
+                                    .clickable {
+                                        onSelecionarAluno(aluno)
+                                    },
+                                shape = RoundedCornerShape(13.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Branco
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .background(
-                                                Color(0xFFE9E7EC),
-                                                CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .background(
+                                                    Color(0xFFE9E7EC),
+                                                    CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = nome.split(" ")
+                                                    .take(2)
+                                                    .mapNotNull {
+                                                        it.firstOrNull()
+                                                    }
+                                                    .joinToString(""),
+                                                color = Color(0xFF706A75),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                        Spacer(
+                                            modifier = Modifier.width(12.dp)
+                                        )
+                                        Column(
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = nome,
+                                                color = TextoPrincipal,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = objetivo,
+                                                color = TextoSecundario,
+                                                fontSize = 12.sp
+                                            )
+                                        }
                                         Text(
-                                            text = nome.split(" ")
-                                                .take(2)
-                                                .mapNotNull {
-                                                    it.firstOrNull()
-                                                }
-                                                .joinToString(""),
-                                            color = Color(0xFF706A75),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
+                                            text = "›",
+                                            color = Color(0xFF77717F),
+                                            fontSize = 26.sp
                                         )
                                     }
                                     Spacer(
-                                        modifier = Modifier.width(12.dp)
+                                        modifier = Modifier.height(10.dp)
                                     )
-                                    Column(
-                                        modifier = Modifier.weight(1f)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(
+                                                    color = corStatus,
+                                                    shape = RoundedCornerShape(20.dp)
+                                                )
+                                                .padding(
+                                                    horizontal = 12.dp,
+                                                    vertical = 5.dp
+                                                )
+                                        ) {
+                                            Text(
+                                                text = status,
+                                                color = corTextoStatus,
+                                                fontSize = 11.sp
+                                            )
+                                        }
                                         Text(
-                                            text = nome,
-                                            color = TextoPrincipal,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = objetivo,
-                                            color = TextoSecundario,
-                                            fontSize = 12.sp
+                                            text = if (modoSelecaoTreino) {
+                                                "Selecionar ›"
+                                            } else {
+                                                "Ver perfil ›"
+                                            },
+                                            color = AzulPrincipal,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium
                                         )
                                     }
-                                    Text(
-                                        text = "›",
-                                        color = Color(0xFF77717F),
-                                        fontSize = 26.sp
-                                    )
-                                }
-                                Spacer(
-                                    modifier = Modifier.height(10.dp)
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = corStatus,
-                                                shape = RoundedCornerShape(20.dp)
-                                            )
-                                            .padding(
-                                                horizontal = 12.dp,
-                                                vertical = 5.dp
-                                            )
-                                    ) {
-                                        Text(
-                                            text = status,
-                                            color = corTextoStatus,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                    Text(
-                                        text = if (modoSelecaoTreino) {
-                                            "Selecionar ›"
-                                        } else {
-                                            "Ver perfil ›"
-                                        },
-                                        color = AzulPrincipal,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
                                 }
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
+            DashboardBottomBar(
+                telaAtual = AppScreen.Alunos,
+                onInicio = onVoltar,
+                onAlunos = {},
+                onTreinos = onTreinos,
+                onRegistros = {},
+                onMais = {}
+            )
         }
-        DashboardBottomBar(
-            telaAtual = AppScreen.Alunos,
-            onInicio = onVoltar,
-            onAlunos = {},
-            onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
-        )
     }
-}
 
 data class EventoAluno(
     val id: Long,
@@ -4657,7 +4684,6 @@ fun TelaPerfilAluno(
                         color = TextoPrincipal
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    GraficoIntensidadeDor(eventosAluno)
                     GraficoIntensidadeDor(eventosAluno)
                     Spacer(modifier = Modifier.height(14.dp))
                     GraficoRegistrosAluno(eventosAluno)
@@ -7576,21 +7602,6 @@ fun TelaEditarAluno(
                     fontWeight = FontWeight.Bold
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onVoltar,
-                enabled = !salvando,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(
-                    text = "Cancelar",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
         }
         DashboardBottomBar(
             telaAtual = AppScreen.EditarAluno,
@@ -7910,10 +7921,12 @@ fun TelaTreinos(
                     },
                     shape = RoundedCornerShape(13.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Branco,
+                        unfocusedContainerColor = Branco,
                         focusedBorderColor = AzulPrincipal,
-                        unfocusedBorderColor = AzulMuitoClaro
+                        unfocusedBorderColor = AzulMuitoClaro,
+                        focusedTextColor = TextoPrincipal,
+                        unfocusedTextColor = TextoPrincipal
                     )
                 )
                 Spacer(
@@ -8305,7 +8318,21 @@ fun TelaFormularioTreino(
                                 if (treino != null) {
                                     treinoRepository.excluirTreino(treino)
                                 }
+                                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        val db = FitCareDatabase.getDatabase(contextoEventos)
+                                        FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
+                                    } catch (_: Exception) {
+                                    }
+                                }
                                 mostrarDialogoExcluir = false
+                                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        val db = FitCareDatabase.getDatabase(contextoEventos)
+                                        FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
+                                    } catch (_: Exception) {
+                                    }
+                                }
                                 onSalvo()
                             } catch (e: Exception) {
                                 mensagemErro =

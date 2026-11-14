@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+import kotlinx.coroutines.flow.first
 
 class FirestoreSyncService(
     private val usuarioDao: UsuarioDao,
@@ -784,6 +785,147 @@ class FirestoreSyncService(
             false
         }
     }
+
+    suspend fun sincronizarTreinos(): Boolean {
+        val firebaseUser = firebaseAuth.currentUser ?: return false
+        val uid = firebaseUser.uid
+        return try {
+            val usuario = usuarioDao.buscarPorFirebaseUid(uid) ?: return false
+            if (!usuario.ativo || usuario.perfil != PERFIL_PROFESSOR) return false
+
+            val treinoDao = database.treinoDao()
+            val alunoDao = database.alunoDao()
+
+            // 1. Publica treinos e exercícios locais do professor no Firestore
+            val alunosLocais = alunoDao.listarAlunosDoProfessorDireto(usuario.id)
+            val todosTreinosLocais = treinoDao.listarTreinosDoProfessor(usuario.id).first()
+
+            for (treino in todosTreinosLocais) {
+                val aluno = alunosLocais.firstOrNull { it.id == treino.alunoId } ?: continue
+                val alunoFbId = aluno.firebaseId?.takeIf { it.isNotBlank() } ?: continue
+                val treinoDocId = "treino_${treino.id}"
+
+                val docRef = firestore.collection(COLECAO_ALUNOS)
+                    .document(alunoFbId)
+                    .collection("treinos")
+                    .document(treinoDocId)
+
+                val exercicios = treinoDao.listarExerciciosDoProfessor(treino.id, usuario.id).first()
+                val listaExerciciosMap = exercicios.map { ex ->
+                    hashMapOf(
+                        "nome" to ex.nome,
+                        "series" to ex.series,
+                        "repeticoes" to ex.repeticoes,
+                        "carga" to ex.carga,
+                        "observacoes" to ex.observacoes,
+                        "ordem" to ex.ordem,
+                        "videoTipo" to ex.videoTipo,
+                        "videoUrl" to if (ex.videoTipo == "LINK") ex.videoUrl else "",
+                        "videoNome" to ex.videoNome
+                    )
+                }
+
+                val remoto = docRef.get().await()
+                val nomeRemoto = remoto.getString("nome") ?: ""
+                val inicioRemoto = remoto.getString("dataInicio") ?: ""
+                val fimRemoto = remoto.getString("dataFim") ?: ""
+                val descRemota = remoto.getString("descricao") ?: ""
+                val obsRemota = remoto.getString("observacoes") ?: ""
+                val exRemotos = remoto.get("exercicios") as? List<*>
+
+                // Só grava no Firestore se houver diferença real (trava anti-loop)
+                if (!remoto.exists() ||
+                    nomeRemoto != treino.nome ||
+                    inicioRemoto != treino.dataInicio ||
+                    fimRemoto != treino.dataFim ||
+                    descRemota != treino.descricao ||
+                    obsRemota != treino.observacoes ||
+                    (exRemotos?.size ?: -1) != exercicios.size
+                ) {
+                    val dadosTreino = hashMapOf<String, Any>(
+                        "professorUid" to uid,
+                        "alunoFirebaseId" to alunoFbId,
+                        "localTreinoId" to treino.id,
+                        "nome" to treino.nome,
+                        "descricao" to treino.descricao,
+                        "dataInicio" to treino.dataInicio,
+                        "dataFim" to treino.dataFim,
+                        "observacoes" to treino.observacoes,
+                        "exercicios" to listaExerciciosMap
+                    )
+                    docRef.set(dadosTreino, SetOptions.merge()).await()
+                }
+            }
+
+            // 2. Baixa treinos remotos que ainda não existam neste dispositivo
+            val alunosRemotos = firestore.collection(COLECAO_ALUNOS)
+                .whereEqualTo("professorUid", uid)
+                .get()
+                .await()
+
+            for (docAluno in alunosRemotos.documents) {
+                val alunoFbId = docAluno.getString("firebaseId") ?: docAluno.id
+                val alunoLocal = alunoDao.buscarPorFirebaseId(alunoFbId) ?: continue
+                val treinosAtuaisAluno = treinoDao.listarTreinosDoAluno(alunoLocal.id).first()
+
+                val treinosRemotos = firestore.collection(COLECAO_ALUNOS)
+                    .document(alunoFbId)
+                    .collection("treinos")
+                    .get()
+                    .await()
+
+                for (docTreino in treinosRemotos.documents) {
+                    val nomeRemoto = docTreino.getString("nome") ?: continue
+                    val inicioRemoto = docTreino.getString("dataInicio") ?: ""
+                    val fimRemoto = docTreino.getString("dataFim") ?: ""
+                    val descRemota = docTreino.getString("descricao") ?: ""
+                    val obsRemota = docTreino.getString("observacoes") ?: ""
+
+                    val jaExisteLocal = treinosAtuaisAluno.any {
+                        it.nome == nomeRemoto && it.dataInicio == inicioRemoto
+                    }
+
+                    if (!jaExisteLocal) {
+                        val novoTreinoId = treinoDao.inserirTreino(
+                            TreinoEntity(
+                                alunoId = alunoLocal.id,
+                                nome = nomeRemoto,
+                                descricao = descRemota,
+                                dataInicio = inicioRemoto,
+                                dataFim = fimRemoto,
+                                observacoes = obsRemota
+                            )
+                        )
+                        val exList = docTreino.get("exercicios") as? List<*> ?: emptyList<Any>()
+                        exList.forEachIndexed { idx, item ->
+                            val mapa = item as? Map<*, *> ?: return@forEachIndexed
+                            treinoDao.inserirExercicio(
+                                ExercicioEntity(
+                                    treinoId = novoTreinoId,
+                                    nome = mapa["nome"] as? String ?: "",
+                                    series = mapa["series"] as? String ?: "3",
+                                    repeticoes = mapa["repeticoes"] as? String ?: "12",
+                                    carga = mapa["carga"] as? String ?: "",
+                                    observacoes = mapa["observacoes"] as? String ?: "",
+                                    ordem = (mapa["ordem"] as? Number)?.toInt() ?: idx,
+                                    videoTipo = mapa["videoTipo"] as? String ?: "",
+                                    videoUrl = mapa["videoUrl"] as? String ?: "",
+                                    videoNome = mapa["videoNome"] as? String ?: ""
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao sincronizar treinos.", e)
+            false
+        }
+    }
+
     private suspend fun importarAnamneseRemota(
         documento: DocumentSnapshot,
         alunoId: Long,
