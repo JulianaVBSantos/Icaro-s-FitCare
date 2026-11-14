@@ -352,6 +352,9 @@ fun FitCareApp(
     var perfilSelecionado by rememberSaveable {
         mutableStateOf<String?>(null)
     }
+    var filtroInicialAlunos by rememberSaveable {
+        mutableStateOf("Todos")
+    }
     var alunoAutenticado by rememberSaveable {
         mutableStateOf(false)
     }
@@ -699,6 +702,11 @@ fun FitCareApp(
                             treinoRepository = treinoRepository,
                             anamneseAtribuidaRepository = anamneseAtribuidaRepository,
                             onAlunos = {
+                                filtroInicialAlunos = "Todos"
+                                tela = AppScreen.Alunos
+                            },
+                            onFiltrarAlunos = { filtro ->
+                                filtroInicialAlunos = filtro
                                 tela = AppScreen.Alunos
                             },
                             onCadastrarAluno = {
@@ -758,7 +766,11 @@ fun FitCareApp(
                     AppScreen.Alunos -> {
                         TelaAlunos(
                             repository = repository,
-                            onVoltar = { tela = AppScreen.Dashboard },
+                            filtroInicial = filtroInicialAlunos,
+                            onVoltar = {
+                                filtroInicialAlunos = "Todos"
+                                tela = AppScreen.Dashboard
+                            },
                             onSelecionarAluno = { aluno ->
                                 alunoSelecionadoId = aluno.id
                                 if (registrarNovoTreino) {
@@ -2025,6 +2037,7 @@ fun TelaDashboard(
     treinoRepository: TreinoRepository,
     anamneseAtribuidaRepository: AnamneseAtribuidaRepository,
     onAlunos: () -> Unit,
+    onFiltrarAlunos: (String) -> Unit = { onAlunos() },
     onCadastrarAluno: () -> Unit,
     onTreinos: () -> Unit,
     onRegistrarTreino: () -> Unit,
@@ -2480,34 +2493,81 @@ fun TelaDashboard(
                         unfocusedTextColor = TextoPrincipal
                     )
                 )
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
-                ) {
-                    DashboardIndicador(
-                        modifier = Modifier.weight(1f),
-                        titulo = "Total de alunos",
-                        valor = totalAlunos.toString(),
-                        corFundo = AzulMuitoClaro,
-                        corTexto = AzulPrincipal
-                    )
-                    DashboardIndicador(
-                        modifier = Modifier.weight(1f),
-                        titulo = "Em atenção",
-                        valor = alunosEmAtencao.toString(),
-                        corFundo = Color(0xFFFFEAB5),
-                        corTexto = Color(0xFFB17B00)
-                    )
-                    DashboardIndicador(
-                        modifier = Modifier.weight(1f),
-                        titulo = "Em dia",
-                        valor = alunosEmDia.toString(),
-                        corFundo = Color(0xFFD8F3DF),
-                        corTexto = Color(0xFF36844A)
-                    )
+                val alunosStatusNormal = alunos.count { it.status == "Normal" }
+                val alunosStatusAtencao = alunos.count { it.status == "Atenção" }
+                val alunosStatusPrioridade = alunos.count { it.status == "Prioridade" }
+
+                val eventosStorage = remember { EventoAlunoStorage(context) }
+                val todosEventos = remember(alunos, todosTreinos) {
+                    eventosStorage.listarTodos()
                 }
-                Spacer(modifier = Modifier.height(20.dp))
+
+                val metricasFrequencia = remember(alunos, todosEventos, todosTreinos) {
+                    val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply {
+                        isLenient = false
+                    }
+                    val agoraCal = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, 23)
+                        set(java.util.Calendar.MINUTE, 59)
+                        set(java.util.Calendar.SECOND, 59)
+                    }
+                    val hojeMs = agoraCal.timeInMillis
+
+                    val inicioSemanaCal = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.SUNDAY)
+                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                        set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    val inicioSemanaMs = inicioSemanaCal.timeInMillis
+                    val seteDiasAtrasMs = hojeMs - (7L * 24L * 60L * 60L * 1000L)
+
+                    val idsAlunosProfessor = alunos.map { it.id }.toSet()
+                    val eventosTreinoCarteira = todosEventos.filter { ev ->
+                        ev.alunoId in idsAlunosProfessor &&
+                                ev.tipo.equals("Treino", ignoreCase = true)
+                    }
+
+                    val frequenciaSemanalGeral = eventosTreinoCarteira.count { ev ->
+                        val dataMs = runCatching { fmt.parse(ev.data)?.time }.getOrNull() ?: 0L
+                        dataMs in inicioSemanaMs..hojeMs
+                    }
+
+                    val mediaSemanal = if (totalAlunos > 0) {
+                        frequenciaSemanalGeral.toFloat() / totalAlunos.toFloat()
+                    } else {
+                        0f
+                    }
+
+                    val semTreinarMais7Dias = alunos.count { aluno ->
+                        val ultimoEventoTreinoMs = eventosTreinoCarteira
+                            .filter { it.alunoId == aluno.id }
+                            .mapNotNull { runCatching { fmt.parse(it.data)?.time }.getOrNull() }
+                            .maxOrNull()
+
+                        val ultimoInicioFichaMs = todosTreinos
+                            .filter { it.alunoId == aluno.id }
+                            .mapNotNull { runCatching { fmt.parse(it.dataInicio)?.time }.getOrNull() }
+                            .maxOrNull()
+
+                        val ultimaAtividadeMs = listOfNotNull(ultimoEventoTreinoMs, ultimoInicioFichaMs).maxOrNull()
+                        ultimaAtividadeMs == null || ultimaAtividadeMs < seteDiasAtrasMs
+                    }
+
+                    Triple(frequenciaSemanalGeral, mediaSemanal, semTreinarMais7Dias)
+                }
+
+                GraficoCarteiraAlunos(
+                    totalAlunos = totalAlunos,
+                    emDia = alunosStatusNormal,
+                    emAtencao = alunosStatusAtencao,
+                    prioridade = alunosStatusPrioridade,
+                    frequenciaSemanalGeral = metricasFrequencia.first,
+                    mediaFrequenciaSemanal = metricasFrequencia.second,
+                    alunosSemTreinar7Dias = metricasFrequencia.third
+                )
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = "Ações rápidas",
                     fontSize = 19.sp,
@@ -2961,6 +3021,7 @@ private fun DashboardAluno(
 @Composable
 fun TelaAlunos(
     repository: AlunoRepository,
+    filtroInicial: String = "Todos",
     onVoltar: () -> Unit,
     onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onTreinos: () -> Unit,
@@ -2968,7 +3029,7 @@ fun TelaAlunos(
     onCadastrarAluno: () -> Unit = {}
 ) {
     var pesquisa by remember { mutableStateOf("") }
-    var filtroSelecionado by remember { mutableStateOf("Todos") }
+    var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
     var filtroAcompanhamento by remember { mutableStateOf("Todos") }
 
     val alunos by repository
@@ -4495,6 +4556,10 @@ fun TelaPerfilAluno(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     GraficoIntensidadeDor(eventosAluno)
+                    GraficoIntensidadeDor(eventosAluno)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    GraficoRegistrosAluno(eventosAluno)
+                    Spacer(modifier = Modifier.height(14.dp))
                     Spacer(modifier = Modifier.height(14.dp))
                     if (eventosAluno.isNotEmpty()) {
                         val ultimo = eventosAluno.first()
@@ -5209,6 +5274,300 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
                 altura - 5.dp.toPx(),
                 paintData
             )
+        }
+    }
+}
+/// Gráfico visual da situação geral da carteira de alunos e indicadores de frequência (RF10 / CA06)
+@Composable
+fun GraficoCarteiraAlunos(
+    totalAlunos: Int,
+    emDia: Int,
+    emAtencao: Int,
+    prioridade: Int,
+    frequenciaSemanalGeral: Int,
+    mediaFrequenciaSemanal: Float,
+    alunosSemTreinar7Dias: Int
+) {
+    Cartao(
+        modifier = Modifier.padding(top = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.BarChart,
+                contentDescription = "Gráfico da carteira",
+                tint = AzulPrincipal,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Distribuição da carteira de alunos",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (totalAlunos == 0) {
+            Text(
+                text = "Cadastre alunos para visualizar os indicadores gráficos da carteira.",
+                fontSize = 12.sp,
+                color = TextoSecundario
+            )
+        } else {
+            val pctEmDia = (emDia * 100f / totalAlunos).toInt()
+            val pctAtencao = (emAtencao * 100f / totalAlunos).toInt()
+            val pctPrioridade = (prioridade * 100f / totalAlunos).toInt()
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(9.dp))
+            ) {
+                val larguraTotal = size.width
+                val altura = size.height
+                val wEmDia = larguraTotal * (emDia.toFloat() / totalAlunos)
+                val wAtencao = larguraTotal * (emAtencao.toFloat() / totalAlunos)
+                val wPrioridade = larguraTotal * (prioridade.toFloat() / totalAlunos)
+
+                var xAtual = 0f
+                if (wEmDia > 0f) {
+                    drawRect(
+                        color = Color(0xFF36844A),
+                        topLeft = Offset(xAtual, 0f),
+                        size = androidx.compose.ui.geometry.Size(wEmDia, altura)
+                    )
+                    xAtual += wEmDia
+                }
+                if (wAtencao > 0f) {
+                    drawRect(
+                        color = Color(0xFFE5A50A),
+                        topLeft = Offset(xAtual, 0f),
+                        size = androidx.compose.ui.geometry.Size(wAtencao, altura)
+                    )
+                    xAtual += wAtencao
+                }
+                if (wPrioridade > 0f) {
+                    drawRect(
+                        color = Color(0xFFE34B63),
+                        topLeft = Offset(xAtual, 0f),
+                        size = androidx.compose.ui.geometry.Size(wPrioridade, altura)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                LegendaIndicador(
+                    cor = Color(0xFF36844A),
+                    rotulo = "Em dia",
+                    detalhe = "$emDia ($pctEmDia%)"
+                )
+                LegendaIndicador(
+                    cor = Color(0xFFE5A50A),
+                    rotulo = "Atenção",
+                    detalhe = "$emAtencao ($pctAtencao%)"
+                )
+                LegendaIndicador(
+                    cor = Color(0xFFE34B63),
+                    rotulo = "Prioridade",
+                    detalhe = "$prioridade ($pctPrioridade%)"
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = AzulMuitoClaro)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = "Indicadores de frequência e assiduidade",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextoPrincipal
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Color(0xFFDCEBFF), RoundedCornerShape(10.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = frequenciaSemanalGeral.toString(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF416C93)
+                    )
+                    Text(
+                        text = "Treinos na semana",
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF416C93)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Color(0xFFD8F3DF), RoundedCornerShape(10.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = String.format(Locale("pt", "BR"), "%.1f", mediaFrequenciaSemanal),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF36844A)
+                    )
+                    Text(
+                        text = "Média semanal",
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF36844A)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Color(0xFFFFD9DC), RoundedCornerShape(10.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = alunosSemTreinar7Dias.toString(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF9C4350)
+                    )
+                    Text(
+                        text = "+7d sem treinar",
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF9C4350)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun LegendaIndicador(
+    cor: Color,
+    rotulo: String,
+    detalhe: String
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(cor, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Column {
+            Text(
+                text = rotulo,
+                fontSize = 11.sp,
+                color = TextoSecundario
+            )
+            Text(
+                text = detalhe,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal
+            )
+        }
+    }
+}
+
+// Gráfico de barras de acompanhamento individual por categoria de registro
+@Composable
+fun GraficoRegistrosAluno(eventos: List<EventoAluno>) {
+    if (eventos.isEmpty()) return
+
+    val categorias = listOf(
+        Triple("Treinos", eventos.count { it.tipo == "Treino" }, AzulPrincipal),
+        Triple("Avaliações", eventos.count { it.tipo == "Avaliação física" }, Color(0xFF36844A)),
+        Triple("Dor", eventos.count { it.tipo == "Dor / desconforto" }, Vermelho),
+        Triple(
+            "Outros",
+            eventos.count { it.tipo != "Treino" && it.tipo != "Avaliação física" && it.tipo != "Dor / desconforto" },
+            AzulClaro
+        )
+    )
+
+    val maximo = (categorias.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AzulMuitoClaro.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Distribuição dos registros do aluno",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextoPrincipal
+        )
+        categorias.forEach { (rotulo, quantidade, corBarra) ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = rotulo,
+                    fontSize = 11.sp,
+                    color = TextoPrincipal,
+                    modifier = Modifier.width(74.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(12.dp)
+                        .background(Color.White, RoundedCornerShape(6.dp))
+                ) {
+                    val fracao = (quantidade.toFloat() / maximo).coerceIn(0f, 1f)
+                    if (fracao > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fracao)
+                                .fillMaxHeight()
+                                .background(corBarra, RoundedCornerShape(6.dp))
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = quantidade.toString(),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextoPrincipal,
+                    modifier = Modifier.width(22.dp),
+                    textAlign = TextAlign.End
+                )
+            }
         }
     }
 }
