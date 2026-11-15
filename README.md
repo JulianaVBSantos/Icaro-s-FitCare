@@ -1,85 +1,77 @@
 # Ícaro's FitCare
 
-Aplicativo mobile voltado ao acompanhamento de alunos durante a prática de exercícios físicos, com foco em pessoas que apresentam necessidades específicas, como limitações decorrentes de lesões, condições físicas ou períodos de recuperação.
+Aplicativo mobile voltado ao acompanhamento individualizado de alunos durante a prática de exercícios físicos, com foco em pessoas que apresentam necessidades específicas, como limitações decorrentes de lesões, condições clínicas ou períodos de recuperação pós-operatória.
 
 ## Sobre o projeto
 
-O **Ícaro's FitCare** é uma solução desenvolvida por meio de um projeto extensionista para auxiliar o profissional de Educação Física no acompanhamento individualizado de seus alunos.
+O **Ícaro's FitCare** é uma solução mobile desenvolvida por meio de um projeto de extensão universitária para auxiliar o profissional de Educação Física na gestão integrada de seus atendimentos remotos e presenciais.
 
-A proposta é centralizar informações relevantes sobre cada aluno e facilitar o planejamento e o acompanhamento dos treinamentos, considerando características, restrições, observações e registros relacionados à evolução durante o processo de acompanhamento.
-
-O aplicativo busca contribuir para um atendimento mais organizado e personalizado, auxiliando o profissional na tomada de decisões relacionadas ao acompanhamento dos alunos.
+A proposta centraliza as informações cadastrais, clínicas e de treinamento de cada aluno, substituindo controles antes dispersos entre planilhas e aplicativos de mensagens. Com acesso multiperfil sincronizado em nuvem, a solução permite ao profissional planejar treinos estruturados, acompanhar a evolução histórica e identificar prioridades de atenção, enquanto o próprio aluno participa ativamente respondendo anamneses digitais, anexando documentos médicos e consultando suas rotinas.
 
 ## Objetivo
 
-Desenvolver uma solução mobile que facilite o gerenciamento das informações dos alunos e o acompanhamento de seus treinamentos, especialmente daqueles que possuem necessidades específicas ou estão em processo de recuperação física.
+Desenvolver uma solução mobile para Android que facilite o gerenciamento de alunos, a prescrição estruturada de treinamentos e o acompanhamento clínico individualizado, apoiando a tomada de decisão do profissional e a adesão dos atendidos.
 
-## Público-alvo
+## Perfis de acesso e público-alvo
 
-- Profissionais de Educação Física;
-- Alunos acompanhados pelo profissional;
-- Pessoas que necessitam de acompanhamento de exercícios adaptado às suas condições e limitações.
+- **Administrador da Plataforma:** gerencia a autorização, o bloqueio e o monitoramento de dispositivos das contas profissionais;
+- **Profissional de Educação Física:** gerencia alunos, prescreve treinos com vídeos e periodização, atribui anamneses, registra ocorrências na linha do tempo e monitora alertas da Central de Atenção;
+- **Alunos:** preenchem anamneses digitais obrigatórias, anexam exames médicos e fotos de comparação física e acompanham seus treinos sincronizados.
 
 ## Principais funcionalidades
 
-- Cadastro e gerenciamento de alunos;
-- Consulta e edição de informações dos alunos;
-- Registro de condições e restrições físicas;
-- Classificação dos alunos conforme as regras de acompanhamento;
-- Pesquisa e filtros para facilitar a localização de alunos;
-- Visualização do perfil e do histórico de acompanhamento;
-- Cadastro, consulta, edição e exclusão de treinos;
-- Gerenciamento dos exercícios associados aos treinos;
-- Indicadores e informações para auxiliar o profissional na organização dos atendimentos.
-
-As funcionalidades são desenvolvidas de forma incremental, conforme os requisitos definidos para cada sprint.
+- **Acesso Multiperfil e Segurança:** seleção de perfil (Administrador, Professor e Aluno), autenticação independente via Firebase Authentication, persistência de sessão e isolamento de dados por vínculo profissional;
+- **Gestão Completa de Alunos:** cadastro, consulta, edição, exclusão segura, pesquisa e filtros avançados por situação de acompanhamento;
+- **Anamnese Digital e Documentos:** criação de modelos padrão e personalizados, atribuição ao aluno com controle de status, preenchimento pelo app, vínculo automático com condições e restrições clínicas e anexo privado de documentos médicos e imagens de comparação;
+- **Linha do Tempo e Evolução:** histórico cronológico individual com registro e filtragem de dores, avaliações físicas, treinos e contatos profissionais, acompanhado de gráficos de evolução;
+- **Central de Atenção Automatizada:** triagem inteligente baseada em sete regras clínicas e operacionais (baixa frequência, dor recorrente, avaliações pendentes/atrasadas, ausência de contato, vencimento de treino e condições/restrições ativas), classificando os alunos em *Normal*, *Atenção* ou *Prioridade*;
+- **Treinos, Vídeos e Periodização:** prescrição de fichas de treino com suporte a vídeos demonstrativos (links externos ou arquivos locais) e estrutura hierárquica opcional de periodização (macrociclos, mesociclos, microciclos e sessões semanais);
+- **Notificações e Experiência Visual:** alertas nativos integrados ao Firebase Cloud Messaging, painel de notificações no Dashboard, indicadores de frequência da carteira e suporte ao Tema Dark.
 
 ## Tecnologias
 
-O Ícaro's FitCare está sendo desenvolvido como um aplicativo mobile para a plataforma Android, utilizando:
+O **Ícaro's FitCare** é desenvolvido para a plataforma Android utilizando:
 
-- **Android Studio:** ambiente de desenvolvimento;
-- **Kotlin:** linguagem de programação;
-- **Jetpack Compose:** construção da interface;
-- **Room:** persistência local de dados;
-- **Figma:** planejamento e prototipação das interfaces;
-- **Git e GitHub:** versionamento do código-fonte e acompanhamento da evolução do projeto.
+- **Android Studio:** ambiente de desenvolvimento, compilação e depuração;
+- **Kotlin:** linguagem principal de programação;
+- **Jetpack Compose:** construção das interfaces declarativas e suporte aos temas Claro e Dark;
+- **SQLite / Room:** persistência local imediata e operação offline;
+- **Firebase (Authentication, Cloud Firestore e Cloud Messaging):** autenticação multiperfil, sincronização em tempo real entre dispositivos e notificações nativas;
+- **WorkManager e FileProvider:** processamento assíncrono da fila de sincronização e gerenciamento privado de arquivos médicos e mídias;
+- **Figma:** prototipação inicial das interfaces;
+- **Git e GitHub:** controle de versões e histórico evolutivo do código-fonte.
 
 ## Desenvolvimento
 
-O projeto está organizado em quatro sprints, com desenvolvimento incremental e acompanhamento das atividades por meio de um quadro Kanban e do histórico de commits no GitHub.
+O projeto está organizado em quatro sprints, com desenvolvimento incremental e acompanhamento das atividades por meio de quadro Kanban (Trello) e versionamento contínuo no GitHub.
 
 ### Planejamento das sprints
 
-**Sprint 01 — Estrutura inicial e autenticação**
+**Sprint 01 — Estrutura inicial e interfaces**
 
 Concluída. Configuração inicial do projeto mobile com Kotlin e Jetpack Compose, estruturação da navegação e desenvolvimento das primeiras interfaces, incluindo login, dashboard, listagem e perfil do aluno.
 
-**Sprint 02 — Gerenciamento, persistência e qualidade**
+**Sprint 02 — Gerenciamento, persistência local e classificação inicial**
 
-Concluída com sucesso. Implementação da persistência local de dados utilizando Room e desenvolvimento das funcionalidades de cadastro, consulta, edição e exclusão de alunos. Também foram implementados filtros de busca, registro de condições e restrições físicas e regras iniciais de classificação para o acompanhamento dos alunos.
+Concluída. Implementação da persistência local com Room e desenvolvimento das funcionalidades de cadastro, consulta, edição e exclusão de alunos, filtros de busca, checklist de condições e restrições físicas, regras iniciais de classificação e gerenciamento básico de treinos e exercícios.
 
-A sprint contemplou ainda o desenvolvimento do gerenciamento de treinos e exercícios, a integração entre telas e repositórios e a realização de testes funcionais e correções de problemas identificados durante o desenvolvimento.
+**Sprint 03 — Inteligência de acompanhamento, acesso multiperfil e arquitetura híbrida**
 
-**Sprint 03 — Treinamentos e acompanhamento**
+Concluída. Implementação da Linha do Tempo individual, módulo de anamnese digital, anexação privada de documentos médicos e fotos de comparação, gráficos de evolução, Central de Atenção automatizada com sete regras de triagem, associação de vídeos aos exercícios e periodização hierárquica opcional. O ciclo também antecipou a implementação do sistema de acesso multiperfil (Administrador, Professor e Aluno) e a evolução para a arquitetura híbrida (Room + Firebase Auth, Cloud Firestore e FCM) com otimização de cota e notificações nativas.
 
-Prevista para ampliar as ferramentas de acompanhamento, incluindo registro de dores, anamnese, gráficos de evolução e implementação da Central de Atenção para destacar alunos que necessitam de cuidados específicos, conforme os requisitos priorizados.
+**Sprint 04 — Finalização, refinamentos de UX/UI e validação integrada**
 
-**Sprint 04 — Finalização e validação**
-
-Prevista para a integração dos fluxos, implementação e validação do acesso de usuários com foco na proteção de dados, realização de testes integrados, correções de usabilidade e finalização do MVP.
+Em andamento. Conclusão do fluxo obrigatório de anamnese padrão no primeiro acesso do aluno, unificação integral do checklist clínico, consulta e atualização de cargas/observações nos treinos pela área do aluno, catálogo pesquisável de exercícios predefinidos/personalizados, visualização em calendário e seletor gráfico de datas na periodização, extensão completa do Tema Dark com degradê nos cabeçalhos, testes integrados ponta a ponta e geração do pacote instalável APK.
 
 ## Status do projeto
 
-**Sprint 03 em andamento.**
+**Sprint 03 concluída — Sprint 04 em andamento.**
 
-As Sprints 01 e 02 foram concluídas, estabelecendo a estrutura inicial do aplicativo e implementando as funcionalidades de gerenciamento de alunos, persistência local de dados, classificação de restrições e gerenciamento de treinos.
-
-A Sprint 02 também contemplou testes funcionais e correções de bugs relacionados aos fluxos implementados. O projeto seguirá para a Sprint 03, com foco na ampliação dos recursos de acompanhamento dos alunos.
+As funcionalidades centrais de acompanhamento clínico, prescrição estruturada, acesso multiperfil e sincronização em nuvem entre dispositivos estão implementadas e validadas. O projeto encontra-se na reta final para fechamento dos últimos ajustes de usabilidade, validação integrada do MVP e geração do APK de entrega.
 
 ## Licença
 
-O Ícaro's FitCare é um projeto de uso restrito, desenvolvido no contexto acadêmico e destinado à utilização prevista pelos responsáveis pela solução.
+O **Ícaro's FitCare** é um projeto de uso restrito, desenvolvido no contexto acadêmico e destinado à utilização prevista pelos responsáveis pela solução.
 
 O código-fonte e os demais artefatos do projeto não podem ser copiados, modificados, distribuídos ou utilizados para outras finalidades sem autorização prévia dos responsáveis pelo projeto.
 
