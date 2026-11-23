@@ -1,10 +1,10 @@
-
 package br.com.icaros.fitcare
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,21 +15,23 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.RoundedCornerShape
 
 @Composable
 fun TelaEscolherPerfil(
     onSelecionarPerfil: (String) -> Unit
 ) {
-    val azulClaro = Color(0xFFEAF5FF)
-    val azulFundo = Color(0xFFD8ECFF)
+    val escuro = temaEscuroAtivoState
+    val corTopo = if (escuro) Color(0xFF141F2E) else Color(0xFFEAF5FF)
+    val corBase = if (escuro) Color(0xFF0F1722) else Color(0xFFD8ECFF)
+    val corTitulo = if (escuro) Color(0xFFEAF2FA) else Color(0xFF173B5E)
+    val corSubtitulo = if (escuro) Color(0xFFA2B5C8) else Color(0xFF38566F)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(azulClaro, azulFundo)
+                    colors = listOf(corTopo, corBase)
                 )
             )
             .statusBarsPadding()
@@ -42,13 +44,7 @@ fun TelaEscolherPerfil(
                 .align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Image(
-                painter = painterResource(R.drawable.logo_fitcare),
-                contentDescription = "Logo Ícaros FitCare",
-                modifier = Modifier
-                    .width(250.dp)
-                    .height(165.dp)
-            )
+            LogoFitCarePadrao(largura = 230.dp, altura = 150.dp)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -56,14 +52,14 @@ fun TelaEscolherPerfil(
                 text = "Bem-vindo ao Ícaros FitCare",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF173B5E)
+                color = corTitulo
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "Como deseja acessar o aplicativo?",
-                color = Color(0xFF38566F),
+                color = corSubtitulo,
                 fontSize = 16.sp
             )
 
@@ -99,7 +95,7 @@ fun TelaEscolherPerfil(
 
             Text(
                 text = "Acesso administrativo",
-                color = Color(0xFF38566F),
+                color = corSubtitulo,
                 fontSize = 13.sp,
                 modifier = Modifier.clickable {
                     onSelecionarPerfil("ADMIN")

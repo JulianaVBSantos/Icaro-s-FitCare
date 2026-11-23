@@ -8,8 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HelpOutline
@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -55,6 +56,16 @@ fun TelaModelosAnamnese(
     onAnamneseEnviada: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val escuro = temaEscuroAtivoState
+
+    val corFundo = if (escuro) Color(0xFF0F1722) else Color(0xFFF5F7FA)
+    val corCabecalhoTopo = if (escuro) Color(0xFF141F2E) else Color(0xFFDCEEFF)
+    val corCabecalhoBase = if (escuro) Color(0xFF0F1722) else Color(0xFFF5F7FA)
+    val corCartao = if (escuro) Color(0xFF172331) else Color.White
+    val corCartaoSecundario = if (escuro) Color(0xFF1E2D3D) else Color(0xFFEAF3F9)
+    val corTextoPrincipal = if (escuro) Color(0xFFEAF2FA) else Color(0xFF212121)
+    val corTextoSecundario = if (escuro) Color(0xFFA2B5C8) else Color(0xFF757575)
+    val corDestaque = if (escuro) Color(0xFF7AB8F5) else Color(0xFF002B5C)
 
     val modelos by repository.listarTodos()
         .collectAsState(initial = emptyList())
@@ -118,11 +129,11 @@ fun TelaModelosAnamnese(
                     novaAnamneseId
                 )
 
-                // Sincroniza imediatamente com o Firestore para refletir nos demais dispositivos
                 withContext(Dispatchers.IO) {
                     val db = FitCareDatabase.getDatabase(context)
                     val syncService = FirestoreSyncService(db.usuarioDao(), db)
                     syncService.sincronizarAnamnesesAtribuidas()
+                    Unit
                 }
 
                 AlunoSyncWorker.agendar(context)
@@ -177,372 +188,348 @@ fun TelaModelosAnamnese(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F7FA))
-            .statusBarsPadding()
+            .background(corFundo)
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp)
     ) {
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // CABEÇALHO
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onVoltar) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Voltar",
-                    tint = Color(0xFF002B5C)
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Image(
-                painter = painterResource(
-                    id = R.drawable.logo_fitcare
-                ),
-                contentDescription = "Ícaros FitCare",
-                modifier = Modifier.height(48.dp)
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.size(48.dp))
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Text(
-            text = "Modelos de Anamnese",
-            fontSize = 21.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF212121)
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Gerencie, visualize e envie modelos de avaliação aos alunos.",
-            fontSize = 13.sp,
-            color = Color(0xFF757575)
-        )
-
-        // MENSAGEM DE RESULTADO
-        mensagemEnvio?.let { mensagem ->
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (envioSucesso) {
-                        Color(0xFFE8F5E9)
-                    } else {
-                        Color(0xFFFFEBEE)
-                    }
-                )
-            ) {
-                Text(
-                    text = mensagem,
-                    modifier = Modifier.padding(12.dp),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (envioSucesso) {
-                        Color(0xFF2E7D32)
-                    } else {
-                        Color(0xFFC62828)
-                    }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // CRIAR NOVO MODELO
-        Button(
-            onClick = onNovoModelo,
+        // CABEÇALHO COM DEGRADÊ VERTICAL PARA CONTRASTE DA LOGO
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp),
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF002B5C),
-                contentColor = Color.White
-            )
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(corCabecalhoTopo, corCabecalhoBase)
+                    )
+                )
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Add,
-                contentDescription = null
+            IconButton(
+                onClick = onVoltar,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Voltar",
+                    tint = corDestaque
+                )
+            }
+
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 60.dp
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-                text = "Criar novo modelo",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+        ) {
+            Text(
+                text = "Modelos de Anamnese",
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
+                color = corTextoPrincipal
+            )
 
-        Text(
-            text = "Modelos cadastrados (${modelos.size})",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF212121)
-        )
+            Spacer(modifier = Modifier.height(4.dp))
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Gerencie, visualize e envie modelos de avaliação aos alunos.",
+                fontSize = 13.sp,
+                color = corTextoSecundario
+            )
 
-        if (modelos.isEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            mensagemEnvio?.let { mensagem ->
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (envioSucesso) {
+                            Color(0xFFE8F5E9)
+                        } else {
+                            Color(0xFFFFEBEE)
+                        }
+                    )
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.HelpOutline,
-                        contentDescription = null,
-                        tint = Color(0xFF1565C0),
-                        modifier = Modifier.size(38.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Nenhum modelo cadastrado",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF212121)
-                    )
-                    Spacer(modifier = Modifier.height(5.dp))
-                    Text(
-                        text = "Crie um modelo para começar a montar suas anamneses.",
-                        color = Color(0xFF757575),
-                        fontSize = 13.sp
+                        text = mensagem,
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (envioSucesso) {
+                            Color(0xFF2E7D32)
+                        } else {
+                            Color(0xFFC62828)
+                        }
                     )
                 }
             }
-        } else {
-            Column(
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Button(
+                onClick = onNovoModelo,
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxWidth()
+                    .height(46.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF002B5C),
+                    contentColor = Color.White
+                )
             ) {
-                modelos.forEach { modelo ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        ),
-                        elevation = CardDefaults.cardElevation(
-                            defaultElevation = 2.dp
-                        )
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Criar novo modelo",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Modelos cadastrados (${modelos.size})",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = corTextoPrincipal
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (modelos.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = corCartao
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
+                        Icon(
+                            imageVector = Icons.Default.HelpOutline,
+                            contentDescription = null,
+                            tint = corDestaque,
+                            modifier = Modifier.size(38.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Nenhum modelo cadastrado",
+                            fontWeight = FontWeight.Bold,
+                            color = corTextoPrincipal
+                        )
+                        Spacer(modifier = Modifier.height(5.dp))
+                        Text(
+                            text = "Crie um modelo para começar a montar suas anamneses.",
+                            color = corTextoSecundario,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    modelos.forEach { modelo ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = corCartao
+                            ),
+                            elevation = CardDefaults.cardElevation(
+                                defaultElevation = 2.dp
+                            )
                         ) {
-                            Text(
-                                text = modelo.nome,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF212121)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (modelo.categoria == "PADRAO") {
-                                    "Modelo padrão"
-                                } else {
-                                    "Modelo personalizado"
-                                },
-                                fontSize = 12.sp,
-                                color = Color(0xFF002B5C),
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (modelo.descricao.isNotBlank()) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = modelo.nome,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = corTextoPrincipal
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (modelo.categoria == "PADRAO") {
+                                        "Modelo padrão"
+                                    } else {
+                                        "Modelo personalizado"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = corDestaque,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (modelo.descricao.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = modelo.descricao,
+                                        fontSize = 13.sp,
+                                        color = corTextoSecundario
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = modelo.descricao,
-                                    fontSize = 13.sp,
-                                    color = Color(0xFF757575)
+                                    text = if (modelo.ativo) "Ativo" else "Inativo",
+                                    fontSize = 12.sp,
+                                    color = if (modelo.ativo) corDestaque else corTextoSecundario
                                 )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = if (modelo.ativo) "Ativo" else "Inativo",
-                                fontSize = 12.sp,
-                                color = if (modelo.ativo) {
-                                    Color(0xFF002B5C)
-                                } else {
-                                    Color(0xFF757575)
-                                }
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            HorizontalDivider(
-                                color = Color(0xFFF5F7FA)
-                            )
-// AÇÕES DO MODELO
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        onPerguntas(modelo)
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.HelpOutline,
-                                        contentDescription = null
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Perguntas")
-                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = corCartaoSecundario)
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (modelo.categoria == "PERSONALIZADO") {
-                                        IconButton(
-                                            onClick = {
-                                                onEditarModelo(modelo)
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Edit,
-                                                contentDescription = "Editar modelo",
-                                                tint = Color(0xFF1565C0)
-                                            )
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            modeloParaExcluir = modelo
-                                        }
+                                    TextButton(
+                                        onClick = { onPerguntas(modelo) }
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Excluir modelo",
-                                            tint = MaterialTheme.colorScheme.error
+                                            imageVector = Icons.Default.HelpOutline,
+                                            contentDescription = null
                                         )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Perguntas")
                                     }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-// BOTÃO 1: VISUALIZAR ANAMNESE (APENAS PRÉ-VISUALIZA O MODELO)
-                            OutlinedButton(
-                                onClick = {
-                                    modeloParaVisualizar = modelo
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = Color(0xFF002B5C)
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Visibility,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Visualizar anamnese",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-// BOTÃO 2: ENVIAR ANAMNESE AO ALUNO (APENAS ENVIA, SEM ABRIR VISUALIZAÇÃO)
-                            Button(
-                                onClick = {
-                                    if (
-                                        modeloEmPreenchimentoId == null &&
-                                        modelo.ativo
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (alunoId != null) {
-                                            executarEnvioParaAluno(
-                                                modelo = modelo,
-                                                destinoAlunoId = alunoId
+                                        if (modelo.categoria == "PERSONALIZADO") {
+                                            IconButton(
+                                                onClick = { onEditarModelo(modelo) }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = "Editar modelo",
+                                                    tint = corDestaque
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { modeloParaExcluir = modelo }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Excluir modelo",
+                                                tint = MaterialTheme.colorScheme.error
                                             )
-                                        } else {
-                                            modeloParaSelecionarAluno = modelo
                                         }
                                     }
-                                },
-                                enabled = modeloEmPreenchimentoId == null &&
-                                        modelo.ativo,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF002B5C),
-                                    contentColor = Color.White
-                                )
-                            ) {
-                                if (modeloEmPreenchimentoId == modelo.id) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Color.White
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedButton(
+                                    onClick = { modeloParaVisualizar = modelo },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = corDestaque
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Enviando anamnese...")
-                                } else {
+                                ) {
                                     Icon(
-                                        imageVector = Icons.Default.Send,
+                                        imageVector = Icons.Default.Visibility,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = if (modelo.ativo) {
-                                            "Enviar anamnese ao aluno"
-                                        } else {
-                                            "Modelo indisponível"
-                                        },
+                                        text = "Visualizar anamnese",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (
+                                            modeloEmPreenchimentoId == null &&
+                                            modelo.ativo
+                                        ) {
+                                            if (alunoId != null) {
+                                                executarEnvioParaAluno(
+                                                    modelo = modelo,
+                                                    destinoAlunoId = alunoId
+                                                )
+                                            } else {
+                                                modeloParaSelecionarAluno = modelo
+                                            }
+                                        }
+                                    },
+                                    enabled = modeloEmPreenchimentoId == null &&
+                                            modelo.ativo,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF002B5C),
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    if (modeloEmPreenchimentoId == modelo.id) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Enviando anamnese...")
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Send,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (modelo.ativo) {
+                                                "Enviar anamnese ao aluno"
+                                            } else {
+                                                "Modelo indisponível"
+                                            },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
-// DIÁLOGO DE PRÉ-VISUALIZAÇÃO DO MODELO
     modeloParaVisualizar?.let { modelo ->
         AlertDialog(
-            onDismissRequest = {
-                modeloParaVisualizar = null
-            },
+            onDismissRequest = { modeloParaVisualizar = null },
             title = {
                 Column {
                     Text(
                         text = "Pré-visualização da anamnese",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF002B5C)
+                        color = corDestaque
                     )
                     Text(
                         text = modelo.nome,
                         fontSize = 13.sp,
-                        color = Color(0xFF526579)
+                        color = corTextoSecundario
                     )
                 }
             },
@@ -554,9 +541,7 @@ fun TelaModelosAnamnese(
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(
-                            color = Color(0xFF002B5C)
-                        )
+                        CircularProgressIndicator(color = corDestaque)
                     }
                 } else {
                     Column(
@@ -570,7 +555,7 @@ fun TelaModelosAnamnese(
                             Text(
                                 text = modelo.descricao,
                                 fontSize = 12.sp,
-                                color = Color(0xFF526579)
+                                color = corTextoSecundario
                             )
                             HorizontalDivider()
                         }
@@ -578,25 +563,25 @@ fun TelaModelosAnamnese(
                             Text(
                                 text = "Este modelo ainda não possui perguntas cadastradas.",
                                 fontSize = 13.sp,
-                                color = Color(0xFF757575)
+                                color = corTextoSecundario
                             )
                         } else {
                             perguntasPreVisualizacao.forEachIndexed { index, pergunta ->
                                 val opcoes = remember(pergunta.opcoes) {
                                     try {
                                         val arr = JSONArray(pergunta.opcoes)
-                                        (0 until arr.length()).map {
-                                            arr.optString(it)
+                                        (0 until arr.length()).map { idx ->
+                                            arr.optString(idx)
                                         }
-                                    } catch (_: Exception) {
-                                        emptyList()
+                                    } catch (e: Exception) {
+                                        emptyList<String>()
                                     }
                                 }
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = Color(0xFFEAF3F9)
+                                        containerColor = corCartaoSecundario
                                     )
                                 ) {
                                     Column(
@@ -608,18 +593,18 @@ fun TelaModelosAnamnese(
                                                     if (pergunta.obrigatoria) " *" else "",
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF002B5C)
+                                            color = corTextoPrincipal
                                         )
                                         Text(
-                                            text = "Tipo: ${pergunta.tipoResposta.replace("_", " ")}",
+                                            text = "Tipo: ${pergunta.tipoResposta.replace("", " ")}",
                                             fontSize = 11.sp,
-                                            color = Color(0xFF526579)
+                                            color = corTextoSecundario
                                         )
                                         if (opcoes.isNotEmpty()) {
                                             Text(
                                                 text = "Opções: ${opcoes.joinToString(" • ")}",
                                                 fontSize = 11.sp,
-                                                color = Color(0xFF526579)
+                                                color = corTextoSecundario
                                             )
                                         }
                                     }
@@ -631,31 +616,26 @@ fun TelaModelosAnamnese(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        modeloParaVisualizar = null
-                    }
+                    onClick = { modeloParaVisualizar = null }
                 ) {
                     Text(
                         text = "Fechar",
-                        color = Color(0xFF002B5C),
+                        color = corDestaque,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         )
     }
-// DIÁLOGO DE SELEÇÃO DE ALUNO
     modeloParaSelecionarAluno?.let { modelo ->
         AlertDialog(
-            onDismissRequest = {
-                modeloParaSelecionarAluno = null
-            },
+            onDismissRequest = { modeloParaSelecionarAluno = null },
             title = {
                 Text(
                     text = "Selecionar aluno",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF002B5C)
+                    color = corDestaque
                 )
             },
             text = {
@@ -675,7 +655,7 @@ fun TelaModelosAnamnese(
                         Text(
                             text = "Escolha o aluno que receberá '${modelo.nome}':",
                             fontSize = 13.sp,
-                            color = Color(0xFF526579)
+                            color = corTextoSecundario
                         )
                         alunos.forEach { aluno: AlunoEntity ->
                             Card(
@@ -692,7 +672,7 @@ fun TelaModelosAnamnese(
                                     },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFFEAF3F9)
+                                    containerColor = corCartaoSecundario
                                 )
                             ) {
                                 Column(
@@ -702,13 +682,13 @@ fun TelaModelosAnamnese(
                                         text = aluno.nome,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF002B5C)
+                                        color = corTextoPrincipal
                                     )
                                     if (aluno.objetivo.isNotBlank()) {
                                         Text(
                                             text = aluno.objetivo,
                                             fontSize = 12.sp,
-                                            color = Color(0xFF526579)
+                                            color = corTextoSecundario
                                         )
                                     }
                                 }
@@ -720,21 +700,16 @@ fun TelaModelosAnamnese(
             confirmButton = {},
             dismissButton = {
                 TextButton(
-                    onClick = {
-                        modeloParaSelecionarAluno = null
-                    }
+                    onClick = { modeloParaSelecionarAluno = null }
                 ) {
                     Text("Cancelar")
                 }
             }
         )
     }
-// CONFIRMAÇÃO DE EXCLUSÃO
     modeloParaExcluir?.let { modelo ->
         AlertDialog(
-            onDismissRequest = {
-                modeloParaExcluir = null
-            },
+            onDismissRequest = { modeloParaExcluir = null },
             title = {
                 Text("Excluir modelo?")
             },
@@ -756,13 +731,10 @@ fun TelaModelosAnamnese(
                         scope.launch {
                             try {
                                 repository.excluir(modelo)
-                                mensagemEnvio =
-                                    "Modelo excluído com sucesso."
+                                mensagemEnvio = "Modelo excluído com sucesso."
                                 envioSucesso = true
                             } catch (e: Exception) {
-                                mensagemEnvio =
-                                    e.message
-                                        ?: "Não foi possível excluir o modelo."
+                                mensagemEnvio = e.message ?: "Não foi possível excluir o modelo."
                                 envioSucesso = false
                             } finally {
                                 modeloParaExcluir = null
@@ -778,9 +750,7 @@ fun TelaModelosAnamnese(
             },
             dismissButton = {
                 TextButton(
-                    onClick = {
-                        modeloParaExcluir = null
-                    }
+                    onClick = { modeloParaExcluir = null }
                 ) {
                     Text("Cancelar")
                 }

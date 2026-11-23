@@ -1,5 +1,9 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import br.com.icaros.fitcare.data.FcmTokenManager
 import com.google.firebase.firestore.FirebaseFirestore
 import android.os.Handler
@@ -107,7 +111,7 @@ import androidx.compose.ui.res.painterResource
 import br.com.icaros.fitcare.data.AlunoSyncWorker
 
 // Paleta de Cores Dinâmica (Tema White e Tema Dark)
-private var temaEscuroAtivoState by mutableStateOf(false)
+internal var temaEscuroAtivoState by mutableStateOf(false)
 
 private val AzulPrincipal: Color
     get() = if (temaEscuroAtivoState) Color(0xFF7AB8F5) else Color(0xFF002B5C)
@@ -125,9 +129,8 @@ private val TextoSecundario: Color
 private val Branco: Color
     get() = if (temaEscuroAtivoState) Color(0xFF172331) else Color(0xFFFFFFFF)
 private val Vermelho = Color(0xFFE34B63)
-
 private val CabecalhoTopoClaro: Color
-    get() = if (temaEscuroAtivoState) Color(0xFF162434) else Color(0xFFEAF3F9)
+    get() = if (temaEscuroAtivoState) Color(0xFF141F2E) else Color(0xFFEAF3F9)
 private val CabecalhoBaseClaro: Color
     get() = if (temaEscuroAtivoState) Color(0xFF0F1722) else Color(0xFFF5F9FC)
 
@@ -475,66 +478,49 @@ fun FitCareApp(
 
     val scopeGlobal = rememberCoroutineScope()
 
-    DisposableEffect(sessaoVersao, tela) {
+    DisposableEffect(sessaoVersao) {
         val usuarioLogado = SessaoUsuario.usuarioAtual
-        if (usuarioLogado != null && usuarioLogado.perfil == "PROFESSOR" && tela != AppScreen.Login) {
+        if (usuarioLogado != null && usuarioLogado.perfil == "PROFESSOR") {
             val db = FitCareDatabase.getDatabase(context)
-            val syncService = FirestoreSyncService(db.usuarioDao(), db)
-            var listenersAtivos: List<com.google.firebase.firestore.ListenerRegistration> =
-                emptyList()
-
-            fun ativarSincronizacao() {
-                if (listenersAtivos.isNotEmpty()) return
-                if (FirebaseAuth.getInstance().currentUser == null) return
-
-                scopeGlobal.launch(Dispatchers.IO) {
-                    try {
-                        syncService.sincronizarAlunos()
-                        syncService.sincronizarLeituraAlunos()
-                        syncService.sincronizarModelosAnamnese()
-                        syncService.sincronizarAnamnesesAtribuidas()
-                        syncService.sincronizarTreinos()
-                    } catch (_: Exception) {
+            val uid = FirebaseAuth.getInstance().currentUser?.uid
+            val regUsuario = if (!uid.isNullOrBlank()) {
+                FirebaseFirestore.getInstance().collection("usuarios")
+                    .document(uid)
+                    .addSnapshotListener { snapshot, _ ->
+                        if (snapshot != null && snapshot.exists()) {
+                            val ativo = snapshot.getBoolean("ativo") ?: false
+                            val perfil = snapshot.getString("perfil")
+                            if (!ativo || perfil != "PROFESSOR") {
+                                scopeGlobal.launch {
+                                    val local = db.usuarioDao().buscarPorFirebaseUid(uid)
+                                    if (local != null) {
+                                        db.usuarioDao().atualizarStatus(local.id, false)
+                                    }
+                                    FirebaseAuth.getInstance().signOut()
+                                    SessaoUsuario.encerrar()
+                                    FcmTokenManager.removerTokenAoSair(context, usuarioLogado, uid)
+                                    AlunoSyncWorker.cancelarPeriodica(context)
+                                    Toast.makeText(
+                                        context,
+                                        "Seu acesso profissional foi bloqueado pelo administrador.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    preferenciasSessao.edit()
+                                        .remove(CHAVE_USUARIO_ID)
+                                        .remove(CHAVE_PERFIL)
+                                        .apply()
+                                    sessaoVersao++
+                                    alunoAutenticado = false
+                                    perfilSelecionado = "PROFESSOR"
+                                    tela = AppScreen.Login
+                                }
+                            }
+                        }
                     }
-                }
-
-                listenersAtivos = syncService.iniciarMonitoramentoTempoRealProfessor(
-                    scope = scopeGlobal,
-                    onContaBloqueada = {
-                        val usuarioBloqueado = SessaoUsuario.usuarioAtual
-                        val uidBloqueado = FirebaseAuth.getInstance().currentUser?.uid
-                        FcmTokenManager.removerTokenAoSair(context, usuarioBloqueado, uidBloqueado)
-                        AlunoSyncWorker.cancelarPeriodica(context)
-                        Toast.makeText(
-                            context,
-                            "Seu acesso profissional foi bloqueado pelo administrador.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        preferenciasSessao.edit()
-                            .remove(CHAVE_USUARIO_ID)
-                            .remove(CHAVE_PERFIL)
-                            .apply()
-                        sessaoVersao++
-                        alunoAutenticado = false
-                        perfilSelecionado = "PROFESSOR"
-                        tela = AppScreen.Login
-                    }
-                )
-            }
-
-            val authListener = FirebaseAuth.AuthStateListener { auth ->
-                if (auth.currentUser != null) {
-                    ativarSincronizacao()
-                }
-            }
-
-            FirebaseAuth.getInstance().addAuthStateListener(authListener)
-            ativarSincronizacao()
+            } else null
 
             onDispose {
-                FirebaseAuth.getInstance().removeAuthStateListener(authListener)
-                listenersAtivos.forEach { it.remove() }
-                listenersAtivos = emptyList()
+                regUsuario?.remove()
             }
         } else {
             onDispose { }
@@ -613,7 +599,11 @@ fun FitCareApp(
                             onSair = {
                                 val usuarioSaindo = SessaoUsuario.usuarioAtual
                                 val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
-                                FcmTokenManager.removerTokenAoSair(context, usuarioSaindo, uidSaindo)
+                                FcmTokenManager.removerTokenAoSair(
+                                    context,
+                                    usuarioSaindo,
+                                    uidSaindo
+                                )
                                 AlunoSyncWorker.cancelarPeriodica(context)
                                 preferenciasSessao.edit()
                                     .remove(CHAVE_USUARIO_ID)
@@ -1252,24 +1242,82 @@ fun BotaoVoltarPadrao(
 }
 
 @Composable
+fun LogoFitCarePadrao(
+    modifier: Modifier = Modifier,
+    largura: androidx.compose.ui.unit.Dp = 135.dp,
+    altura: androidx.compose.ui.unit.Dp = 62.dp
+) {
+    val logoRes = if (temaEscuroAtivoState) {
+        R.drawable.logo_fitcare_dark
+    } else {
+        R.drawable.logo_fitcare
+    }
+    Image(
+        painter = painterResource(id = logoRes),
+        contentDescription = "Logo Ícaro's FitCare",
+        modifier = modifier
+            .width(largura)
+            .height(altura)
+    )
+}
+
+@Composable
 fun BotaoSairPadrao(
     onSair: () -> Unit
 ) {
-    OutlinedButton(
-        onClick = onSair,
-        modifier = Modifier.height(40.dp),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, Color(0xFFD32F2F)),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = Color(0xFFD32F2F)
-        ),
-        contentPadding = PaddingValues(horizontal = 14.dp)
+    var confirmarSaida by remember { mutableStateOf(false) }
+
+    IconButton(
+        onClick = { confirmarSaida = true }
     ) {
-        Text(
-            text = "SAIR",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFD32F2F)
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+            contentDescription = "Sair da conta",
+            tint = if (temaEscuroAtivoState) Color(0xFFB0BEC5) else TextoPrincipal,
+            modifier = Modifier.size(23.dp)
+        )
+    }
+
+    if (confirmarSaida) {
+        AlertDialog(
+            onDismissRequest = { confirmarSaida = false },
+            title = {
+                Text(
+                    text = "Sair do aplicativo",
+                    fontWeight = FontWeight.Bold,
+                    color = TextoPrincipal
+                )
+            },
+            text = {
+                Text(
+                    text = "Deseja realmente encerrar sua sessão atual?",
+                    color = TextoSecundario
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmarSaida = false
+                        onSair()
+                    }
+                ) {
+                    Text(
+                        text = "Sair",
+                        color = Color(0xFFD32F2F),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmarSaida = false }
+                ) {
+                    Text(
+                        text = "Cancelar",
+                        color = TextoSecundario
+                    )
+                }
+            }
         )
     }
 }
@@ -1918,13 +1966,7 @@ fun TelaLogin(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Image(
-                painter = painterResource(R.drawable.logo_fitcare),
-                contentDescription = "Logo Ícaros FitCare",
-                modifier = Modifier
-                    .width(220.dp)
-                    .height(145.dp)
-            )
+            LogoFitCarePadrao(largura = 210.dp, altura = 135.dp)
             Text(
                 text = "Bem-vindo de volta",
                 style = MaterialTheme.typography.headlineSmall,
@@ -2140,7 +2182,7 @@ fun TelaLogin(
     }
 }
 
-// Tela de Dashboard principal do professor (com sino zerando notificações lidas e Central de Atenção)
+// Tela de Dashboard principal do professor (com sino zerando notificações lidas, Central de Atenção e cabeçalho limpo)
 @Composable
 fun TelaDashboard(
     repository: AlunoRepository,
@@ -2169,9 +2211,9 @@ fun TelaDashboard(
 
     var idsNotificacoesLidas by remember {
         mutableStateOf(
-            prefsNotificacoes.getStringSet("notificacoes_lidas_ids", emptySet())
+            prefsNotificacoes.getStringSet("notificacoes_lidas_ids", emptySet<String>())
                 ?.toSet()
-                ?: emptySet()
+                ?: emptySet<String>()
         )
     }
 
@@ -2197,35 +2239,6 @@ fun TelaDashboard(
 
     LaunchedEffect(Unit) {
         verificarStatusNuvem()
-        withContext(Dispatchers.IO) {
-            try {
-                val db = FitCareDatabase.getDatabase(context)
-                val agora = System.currentTimeMillis()
-                val ultimaSync = prefsNotificacoes.getLong("ultima_sync_dashboard_ms", 0L)
-                // Só força sincronização completa se passaram mais de 5 minutos (300.000 ms)
-                if (agora - ultimaSync > 300_000L) {
-                    val syncService = FirestoreSyncService(db.usuarioDao(), db)
-                    syncService.sincronizarModelosAnamnese()
-                    syncService.sincronizarAnamnesesAtribuidas()
-                    prefsNotificacoes.edit()
-                        .putLong("ultima_sync_dashboard_ms", agora)
-                        .apply()
-                }
-                val pendentes = db.syncOperationDao().listarPendentes().size
-                withContext(Dispatchers.Main) {
-                    if (pendentes > 0) {
-                        nuvemSincronizada = false
-                        statusSincronizacao = "Sincronizando ($pendentes pendente(s))..."
-                    } else {
-                        verificarStatusNuvem()
-                    }
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    verificarStatusNuvem()
-                }
-            }
-        }
     }
 
     val alunos by repository
@@ -2281,7 +2294,7 @@ fun TelaDashboard(
                     .forEach { anamnese ->
                         lista.add(aluno to anamnese)
                     }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
             }
         }
         value = lista.sortedByDescending { it.second.updatedAtMillis }
@@ -2301,9 +2314,9 @@ fun TelaDashboard(
     LaunchedEffect(notificacoesAnamneseNaoLidas) {
         if (notificacoesAnamneseNaoLidas.isNotEmpty()) {
             val jaNotificadas = prefsNotificacoes
-                .getStringSet("notificacoes_push_exibidas_ids", emptySet())
+                .getStringSet("notificacoes_push_exibidas_ids", emptySet<String>())
                 ?.toMutableSet()
-                ?: mutableSetOf()
+                ?: mutableSetOf<String>()
 
             var houveNova = false
             for ((aluno, anamnese) in notificacoesAnamneseNaoLidas) {
@@ -2312,7 +2325,7 @@ fun TelaDashboard(
                     FitCareMessagingService.exibirNotificacao(
                         context = context,
                         titulo = "Anamnese concluída",
-                        mensagem = "${aluno.nome} respondeu a anamnese \"${anamnese.nomeModelo}\".",
+                        mensagem = "${aluno.nome} respondeu a anamnese ${anamnese.nomeModelo}.",
                         notificacaoId = (anamnese.id % Int.MAX_VALUE).toInt()
                     )
                     jaNotificadas.add(idStr)
@@ -2332,9 +2345,9 @@ fun TelaDashboard(
     LaunchedEffect(alertasTreinosNaoLidos) {
         if (alertasTreinosNaoLidos.isNotEmpty()) {
             val jaNotificadas = prefsNotificacoes
-                .getStringSet("notificacoes_push_exibidas_ids", emptySet())
+                .getStringSet("notificacoes_push_exibidas_ids", emptySet<String>())
                 ?.toMutableSet()
-                ?: mutableSetOf()
+                ?: mutableSetOf<String>()
 
             var houveNova = false
             for ((aluno, treino, tipo) in alertasTreinosNaoLidos) {
@@ -2346,9 +2359,9 @@ fun TelaDashboard(
                         "Treino próximo do vencimento"
                     }
                     val msgPush = if (tipo == "VENCIDO") {
-                        "O treino \"${treino.nome}\" de ${aluno.nome} venceu em ${treino.dataFim}."
+                        "O treino ${treino.nome} de ${aluno.nome} venceu em ${treino.dataFim}."
                     } else {
-                        "O treino \"${treino.nome}\" de ${aluno.nome} vence em ${treino.dataFim} (menos de 7 dias)."
+                        "O treino ${treino.nome} de ${aluno.nome} vence em ${treino.dataFim} (menos de 7 dias)."
                     }
                     FitCareMessagingService.exibirNotificacao(
                         context = context,
@@ -2391,6 +2404,7 @@ fun TelaDashboard(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
+            // 1. TOPO: Sino à esquerda | Logo ao centro | Tema (Sol/Lua) + Sair à direita
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2403,135 +2417,77 @@ fun TelaDashboard(
                         )
                     )
                     .statusBarsPadding()
-                    .padding(top = 4.dp, bottom = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier.align(Alignment.CenterStart)
                 ) {
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterStart)
+                    IconButton(
+                        onClick = { mostrarNotificacoes = true }
                     ) {
-                        IconButton(
-                            onClick = { mostrarNotificacoes = true }
-                        ) {
-                            BadgedBox(
-                                badge = {
-                                    if (totalNotificacoesNaoLidas > 0) {
-                                        Badge(
-                                            containerColor = Color(0xFFD32F2F),
-                                            contentColor = Color.White
-                                        ) {
-                                            Text(
-                                                text = totalNotificacoesNaoLidas.toString(),
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
+                        BadgedBox(
+                            badge = {
+                                if (totalNotificacoesNaoLidas > 0) {
+                                    Badge(
+                                        containerColor = Color(0xFFD32F2F),
+                                        contentColor = Color.White
+                                    ) {
+                                        Text(
+                                            text = totalNotificacoesNaoLidas.toString(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Notifications,
-                                    contentDescription = "Notificações",
-                                    tint = AzulPrincipal,
-                                    modifier = Modifier.size(26.dp)
-                                )
                             }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Notifications,
+                                contentDescription = "Notificações",
+                                tint = AzulPrincipal,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
-                    Image(
-                        painter = painterResource(
-                            id = R.drawable.logo_fitcare
-                        ),
-                        contentDescription = "Logo Ícaro's FitCare",
-                        modifier = Modifier
-                            .width(145.dp)
-                            .height(70.dp)
-                    )
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterEnd)
+                }
+                LogoFitCarePadrao(
+                    modifier = Modifier.align(Alignment.Center),
+                    largura = 135.dp,
+                    altura = 62.dp
+                )
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            val novoTema = !temaEscuroAtivoState
+                            temaEscuroAtivoState = novoTema
+                            context.getSharedPreferences(PREFERENCIAS_SESSAO, Context.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("tema_escuro_ativo", novoTema)
+                                .apply()
+                        }
                     ) {
-                        BotaoSairPadrao(
-                            onSair = onSair
+                        Icon(
+                            imageVector = if (temaEscuroAtivoState) {
+                                Icons.Filled.LightMode
+                            } else {
+                                Icons.Filled.DarkMode
+                            },
+                            contentDescription = if (temaEscuroAtivoState) {
+                                "Ativar tema claro"
+                            } else {
+                                "Ativar tema escuro"
+                            },
+                            tint = AzulPrincipal,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
+                    BotaoSairPadrao(onSair = onSair)
                 }
             }
-// Selo de Perfil + Indicador discreto de Sincronização
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, start = 18.dp, end = 18.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = AzulPrincipal.copy(alpha = 0.12f)
-                ) {
-                    Text(
-                        text = "PERFIL: PROFESSOR",
-                        modifier = Modifier.padding(
-                            horizontal = 14.dp,
-                            vertical = 5.dp
-                        ),
-                        color = AzulPrincipal,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (nuvemSincronizada) Color(0xFFD8F3DF) else Color(0xFFFFEAB5)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(
-                                    color = if (nuvemSincronizada) Color(0xFF2E7D32) else Color(0xFFB17B00),
-                                    shape = CircleShape
-                                )
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = statusSincronizacao,
-                            color = if (nuvemSincronizada) Color(0xFF2E7D32) else Color(0xFF9A7000),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    modifier = Modifier.clickable {
-                        val novoTema = !temaEscuroAtivoState
-                        temaEscuroAtivoState = novoTema
-                        context.getSharedPreferences(PREFERENCIAS_SESSAO, Context.MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("tema_escuro_ativo", novoTema)
-                            .apply()
-
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    color = AzulMuitoClaro
-                ) {
-                    Text(
-                        text = if (temaEscuroAtivoState) "☀ Claro" else "☾ Escuro",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        color = AzulPrincipal,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+// 2. IDENTIFICAÇÃO SUTIL DO PERFIL + SAUDAÇÃO
             var nomeRealProfessor by remember {
                 mutableStateOf(
                     SessaoUsuario.usuarioAtual?.nome
@@ -2553,7 +2509,7 @@ fun TelaDashboard(
                         if (nomeFirestore.isNotBlank()) {
                             nomeRealProfessor = nomeFirestore
                         }
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
                     }
                 }
             }
@@ -2569,21 +2525,53 @@ fun TelaDashboard(
                         )) -> "Ícaro"
                 else -> nomeRealProfessor.substringBefore(" ").trim()
             }
-            Text(
-                text = if (primeiroNomeProfessor.isNotBlank()) {
-                    "Bem-vindo de volta, $primeiroNomeProfessor!"
-                } else {
-                    "Bem-vindo de volta!"
-                },
-                style = MaterialTheme.typography.titleLarge,
-                color = TextoPrincipal,
-                modifier = Modifier.padding(
-                    start = 22.dp,
-                    end = 22.dp,
-                    top = 12.dp,
-                    bottom = 0.dp
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = if (primeiroNomeProfessor.isNotBlank()) {
+                        "PROFESSOR • ${primeiroNomeProfessor.uppercase()}"
+                    } else {
+                        "PROFESSOR"
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                    color = TextoSecundario
                 )
-            )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (primeiroNomeProfessor.isNotBlank()) {
+                        "Bem-vindo de volta, $primeiroNomeProfessor!"
+                    } else {
+                        "Bem-vindo de volta!"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextoPrincipal
+                )
+                if (!nuvemSincronizada && statusSincronizacao.contains("Offline", ignoreCase = true)) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CloudOff,
+                            contentDescription = null,
+                            tint = TextoSecundario,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Sem conexão • alterações serão enviadas automaticamente",
+                            fontSize = 11.sp,
+                            color = TextoSecundario
+                        )
+                    }
+                }
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2637,12 +2625,10 @@ fun TelaDashboard(
                 val alunosStatusNormal = alunos.count { it.status == "Normal" }
                 val alunosStatusAtencao = alunos.count { it.status == "Atenção" }
                 val alunosStatusPrioridade = alunos.count { it.status == "Prioridade" }
-
                 val eventosStorage = remember { EventoAlunoStorage(context) }
                 val todosEventos = remember(alunos, todosTreinos) {
                     eventosStorage.listarTodos()
                 }
-
                 val metricasFrequencia = remember(alunos, todosEventos, todosTreinos) {
                     val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply {
                         isLenient = false
@@ -2653,7 +2639,6 @@ fun TelaDashboard(
                         set(java.util.Calendar.SECOND, 59)
                     }
                     val hojeMs = agoraCal.timeInMillis
-
                     val inicioSemanaCal = java.util.Calendar.getInstance().apply {
                         set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.SUNDAY)
                         set(java.util.Calendar.HOUR_OF_DAY, 0)
@@ -2663,42 +2648,34 @@ fun TelaDashboard(
                     }
                     val inicioSemanaMs = inicioSemanaCal.timeInMillis
                     val seteDiasAtrasMs = hojeMs - (7L * 24L * 60L * 60L * 1000L)
-
                     val idsAlunosProfessor = alunos.map { it.id }.toSet()
                     val eventosTreinoCarteira = todosEventos.filter { ev ->
                         ev.alunoId in idsAlunosProfessor &&
                                 ev.tipo.equals("Treino", ignoreCase = true)
                     }
-
                     val frequenciaSemanalGeral = eventosTreinoCarteira.count { ev ->
                         val dataMs = runCatching { fmt.parse(ev.data)?.time }.getOrNull() ?: 0L
                         dataMs in inicioSemanaMs..hojeMs
                     }
-
                     val mediaSemanal = if (totalAlunos > 0) {
                         frequenciaSemanalGeral.toFloat() / totalAlunos.toFloat()
                     } else {
                         0f
                     }
-
                     val semTreinarMais7Dias = alunos.count { aluno ->
                         val ultimoEventoTreinoMs = eventosTreinoCarteira
                             .filter { it.alunoId == aluno.id }
                             .mapNotNull { runCatching { fmt.parse(it.data)?.time }.getOrNull() }
                             .maxOrNull()
-
                         val ultimoInicioFichaMs = todosTreinos
                             .filter { it.alunoId == aluno.id }
                             .mapNotNull { runCatching { fmt.parse(it.dataInicio)?.time }.getOrNull() }
                             .maxOrNull()
-
                         val ultimaAtividadeMs = listOfNotNull(ultimoEventoTreinoMs, ultimoInicioFichaMs).maxOrNull()
                         ultimaAtividadeMs == null || ultimaAtividadeMs < seteDiasAtrasMs
                     }
-
                     Triple(frequenciaSemanalGeral, mediaSemanal, semTreinarMais7Dias)
                 }
-
                 GraficoCarteiraAlunos(
                     totalAlunos = totalAlunos,
                     emDia = alunosStatusNormal,
@@ -2892,7 +2869,7 @@ fun TelaDashboard(
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
                                     containerColor = when {
-                                        jaLida -> Color(0xFFF2F4F7)
+                                        jaLida -> Branco
                                         ehVencido -> Color(0xFFFFD9DC)
                                         else -> Color(0xFFFFEAB5)
                                     }
@@ -2939,7 +2916,7 @@ fun TelaDashboard(
                                     },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (jaLida) Color(0xFFF2F4F7) else AzulMuitoClaro
+                                    containerColor = if (jaLida) Branco else AzulMuitoClaro
                                 )
                             ) {
                                 Column(
@@ -3135,455 +3112,439 @@ private fun DashboardAluno(
     }
 }
 
-    // Tela de Lista Completa de Alunos com filtros
-    @Composable
-    fun TelaAlunos(
-        repository: AlunoRepository,
-        filtroInicial: String = "Todos",
-        onVoltar: () -> Unit,
-        onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
-        onTreinos: () -> Unit,
-        modoSelecaoTreino: Boolean = false,
-        onCadastrarAluno: () -> Unit = {}
+// Tela de Lista Completa de Alunos com filtros
+@Composable
+fun TelaAlunos(
+    repository: AlunoRepository,
+    filtroInicial: String = "Todos",
+    onVoltar: () -> Unit,
+    onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
+    onTreinos: () -> Unit,
+    modoSelecaoTreino: Boolean = false,
+    onCadastrarAluno: () -> Unit = {}
+) {
+    var pesquisa by remember { mutableStateOf("") }
+    var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
+    var filtroAcompanhamento by remember { mutableStateOf("Todos") }
+
+    val alunos by repository
+        .listarAlunos()
+        .collectAsState(initial = emptyList())
+
+    val termo = pesquisa.trim()
+
+    val contextAlunos = LocalContext.current
+
+    val filtrados = alunos.filter { aluno ->
+
+        val correspondeAcompanhamento = when (filtroAcompanhamento) {
+            "Com restrições" -> aluno.restricoes.isNotBlank()
+            "Com observações" -> aluno.observacoesProfissionais.isNotBlank()
+            else -> true
+        }
+
+        val correspondeBusca = termo.isBlank() ||
+                aluno.nome.contains(termo, ignoreCase = true) ||
+                aluno.email.contains(termo, ignoreCase = true) ||
+                aluno.id.toString().contains(termo, ignoreCase = true) ||
+                aluno.dataCadastro.contains(termo, ignoreCase = true) ||
+                aluno.objetivo.contains(termo, ignoreCase = true) ||
+                aluno.observacoesProfissionais.contains(termo, ignoreCase = true) ||
+                aluno.condicoes.contains(termo, ignoreCase = true) ||
+                aluno.restricoes.contains(termo, ignoreCase = true)
+
+        val correspondeStatus =
+            filtroSelecionado == "Todos" ||
+                    aluno.status == filtroSelecionado
+
+        correspondeBusca &&
+                correspondeStatus &&
+                correspondeAcompanhamento
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FundoApp)
     ) {
-        var pesquisa by remember { mutableStateOf("") }
-        var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
-        var filtroAcompanhamento by remember { mutableStateOf("Todos") }
-
-        val alunos by repository
-            .listarAlunos()
-            .collectAsState(initial = emptyList())
-
-        val termo = pesquisa.trim()
-
-        val contextAlunos = LocalContext.current
-        LaunchedEffect(Unit) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val db = FitCareDatabase.getDatabase(contextAlunos)
-                    val syncService = FirestoreSyncService(db.usuarioDao(), db)
-                    syncService.sincronizarAlunos()
-                    syncService.sincronizarLeituraAlunos()
-                } catch (_: Exception) {
-                }
-            }
-        }
-
-        val filtrados = alunos.filter { aluno ->
-
-            val correspondeAcompanhamento = when (filtroAcompanhamento) {
-                "Com restrições" -> aluno.restricoes.isNotBlank()
-                "Com observações" -> aluno.observacoesProfissionais.isNotBlank()
-                else -> true
-            }
-
-            val correspondeBusca = termo.isBlank() ||
-                    aluno.nome.contains(termo, ignoreCase = true) ||
-                    aluno.email.contains(termo, ignoreCase = true) ||
-                    aluno.id.toString().contains(termo, ignoreCase = true) ||
-                    aluno.dataCadastro.contains(termo, ignoreCase = true) ||
-                    aluno.objetivo.contains(termo, ignoreCase = true) ||
-                    aluno.observacoesProfissionais.contains(termo, ignoreCase = true) ||
-                    aluno.condicoes.contains(termo, ignoreCase = true) ||
-                    aluno.restricoes.contains(termo, ignoreCase = true)
-
-            val correspondeStatus =
-                filtroSelecionado == "Todos" ||
-                        aluno.status == filtroSelecionado
-
-            correspondeBusca &&
-                    correspondeStatus &&
-                    correspondeAcompanhamento
-        }
-
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(FundoApp)
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
         ) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                CabecalhoTopoClaro,
+                                CabecalhoBaseClaro
+                            )
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(top = 4.dp, bottom = 10.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    CabecalhoTopoClaro,
-                                    CabecalhoBaseClaro
-                                )
-                            )
-                        )
-                        .statusBarsPadding()
-                        .padding(top = 4.dp, bottom = 10.dp)
+                        .padding(horizontal = 18.dp),
+                    contentAlignment = Alignment.Center
                 ) {
+                    LogoFitCarePadrao(
+                        modifier = Modifier.align(Alignment.Center),
+                        largura = 135.dp,
+                        altura = 62.dp
+                    )
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier.align(Alignment.CenterStart)
                     ) {
-                        Image(
-                            painter = painterResource(
-                                id = R.drawable.logo_fitcare
-                            ),
-                            contentDescription = "Logo Ícaro's FitCare",
-                            modifier = Modifier
-                                .width(145.dp)
-                                .height(70.dp)
+                        BotaoVoltarPadrao(
+                            onVoltar = onVoltar
                         )
+                    }
+                }
+            }
 
-                        Box(
-                            modifier = Modifier.align(Alignment.CenterStart)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 14.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (modoSelecaoTreino) {
+                            "Selecione o aluno"
+                        } else {
+                            "Meus alunos"
+                        },
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextoPrincipal
+                    )
+
+                    if (!modoSelecaoTreino) {
+                        IconButton(
+                            onClick = onCadastrarAluno,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(
+                                    color = AzulPrincipal,
+                                    shape = CircleShape
+                                )
                         ) {
-                            BotaoVoltarPadrao(
-                                onVoltar = onVoltar
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Adicionar novo aluno",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
                 }
 
-                Column(
+                OutlinedTextField(
+                    value = pesquisa,
+                    onValueChange = { pesquisa = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                        .height(54.dp),
+                    singleLine = true,
+                    placeholder = {
                         Text(
-                            text = if (modoSelecaoTreino) {
-                                "Selecione o aluno"
-                            } else {
-                                "Meus alunos"
-                            },
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextoPrincipal
+                            text = "Buscar aluno pelo nome...",
+                            color = TextoSecundario,
+                            fontSize = 14.sp
                         )
-
-                        if (!modoSelecaoTreino) {
-                            IconButton(
-                                onClick = onCadastrarAluno,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .background(
-                                        color = AzulPrincipal,
-                                        shape = CircleShape
-                                    )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Adicionar novo aluno",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = pesquisa,
-                        onValueChange = { pesquisa = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                text = "Buscar aluno pelo nome...",
-                                color = TextoSecundario,
-                                fontSize = 14.sp
-                            )
-                        },
-                        shape = RoundedCornerShape(13.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Branco,
-                            unfocusedContainerColor = Branco,
-                            focusedBorderColor = AzulPrincipal,
-                            unfocusedBorderColor = AzulMuitoClaro,
-                            focusedTextColor = TextoPrincipal,
-                            unfocusedTextColor = TextoPrincipal
-                        )
+                    },
+                    shape = RoundedCornerShape(13.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Branco,
+                        unfocusedContainerColor = Branco,
+                        focusedBorderColor = AzulPrincipal,
+                        unfocusedBorderColor = AzulMuitoClaro,
+                        focusedTextColor = TextoPrincipal,
+                        unfocusedTextColor = TextoPrincipal
                     )
+                )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            "Todos",
-                            "Normal",
-                            "Atenção",
-                            "Prioridade"
-                        ).forEach { tag ->
-                            val selecionado = filtroSelecionado == tag
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = if (selecionado) {
-                                            AzulPrincipal
-                                        } else {
-                                            Branco
-                                        },
-                                        shape = RoundedCornerShape(20.dp)
-                                    )
-                                    .clickable {
-                                        filtroSelecionado = tag
-                                    }
-                                    .padding(
-                                        horizontal = 18.dp,
-                                        vertical = 8.dp
-                                    )
-                            ) {
-                                Text(
-                                    text = tag,
-                                    color = if (selecionado) {
-                                        Color.White
-                                    } else {
-                                        TextoPrincipal
-                                    },
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Text(
-                        text = "Acompanhamento",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextoPrincipal
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            "Todos",
-                            "Com restrições",
-                            "Com observações"
-                        ).forEach { filtro ->
-                            val selecionado = filtroAcompanhamento == filtro
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (selecionado) {
-                                            AzulMuitoClaro
-                                        } else {
-                                            Branco
-                                        }
-                                    )
-                                    .clickable {
-                                        filtroAcompanhamento = filtro
-                                    }
-                                    .padding(
-                                        horizontal = 6.dp,
-                                        vertical = 12.dp
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = filtro,
-                                    fontSize = 11.sp,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "Todos",
+                        "Normal",
+                        "Atenção",
+                        "Prioridade"
+                    ).forEach { tag ->
+                        val selecionado = filtroSelecionado == tag
+                        Box(
+                            modifier = Modifier
+                                .background(
                                     color = if (selecionado) {
                                         AzulPrincipal
                                     } else {
-                                        TextoPrincipal
+                                        Branco
                                     },
-                                    fontWeight = if (selecionado) {
-                                        FontWeight.SemiBold
-                                    } else {
-                                        FontWeight.Normal
-                                    }
+                                    shape = RoundedCornerShape(20.dp)
                                 )
-                            }
+                                .clickable {
+                                    filtroSelecionado = tag
+                                }
+                                .padding(
+                                    horizontal = 18.dp,
+                                    vertical = 8.dp
+                                )
+                        ) {
+                            Text(
+                                text = tag,
+                                color = if (selecionado) {
+                                    Color.White
+                                } else {
+                                    TextoPrincipal
+                                },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.height(18.dp))
-                    if (filtrados.isEmpty()) {
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = "Acompanhamento",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextoPrincipal
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "Todos",
+                        "Com restrições",
+                        "Com observações"
+                    ).forEach { filtro ->
+                        val selecionado = filtroAcompanhamento == filtro
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (selecionado) {
+                                        AzulMuitoClaro
+                                    } else {
+                                        Branco
+                                    }
+                                )
+                                .clickable {
+                                    filtroAcompanhamento = filtro
+                                }
+                                .padding(
+                                    horizontal = 6.dp,
+                                    vertical = 12.dp
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = filtro,
+                                fontSize = 11.sp,
+                                color = if (selecionado) {
+                                    AzulPrincipal
+                                } else {
+                                    TextoPrincipal
+                                },
+                                fontWeight = if (selecionado) {
+                                    FontWeight.SemiBold
+                                } else {
+                                    FontWeight.Normal
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+                if (filtrados.isEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(13.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Branco
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Nenhum aluno encontrado.",
+                                color = TextoPrincipal,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (pesquisa.isBlank()) {
+                                    "Não há alunos cadastrados."
+                                } else {
+                                    "Tente buscar por outro nome ou altere o filtro."
+                                },
+                                color = TextoSecundario,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    filtrados.forEach { aluno ->
+                        val nome = aluno.nome
+                        val objetivo = aluno.objetivo
+                        val status = aluno.status
+                        val corStatus = when (status) {
+                            "Prioridade" -> Color(0xFFFFD9DC)
+                            "Atenção" -> Color(0xFFFFEAB5)
+                            else -> Color(0xFFDDF4E3)
+                        }
+                        val corTextoStatus = when (status) {
+                            "Prioridade" -> Color(0xFF9C4350)
+                            "Atenção" -> Color(0xFF9A7000)
+                            else -> Color(0xFF39754A)
+                        }
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 8.dp),
+                                .padding(bottom = 10.dp)
+                                .clickable {
+                                    onSelecionarAluno(aluno)
+                                },
                             shape = RoundedCornerShape(13.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = Branco
                             )
                         ) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(20.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                modifier = Modifier.padding(12.dp)
                             ) {
-                                Text(
-                                    text = "Nenhum aluno encontrado.",
-                                    color = TextoPrincipal,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = if (pesquisa.isBlank()) {
-                                        "Não há alunos cadastrados."
-                                    } else {
-                                        "Tente buscar por outro nome ou altere o filtro."
-                                    },
-                                    color = TextoSecundario,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                    } else {
-                        filtrados.forEach { aluno ->
-                            val nome = aluno.nome
-                            val objetivo = aluno.objetivo
-                            val status = aluno.status
-                            val corStatus = when (status) {
-                                "Prioridade" -> Color(0xFFFFD9DC)
-                                "Atenção" -> Color(0xFFFFEAB5)
-                                else -> Color(0xFFDDF4E3)
-                            }
-                            val corTextoStatus = when (status) {
-                                "Prioridade" -> Color(0xFF9C4350)
-                                "Atenção" -> Color(0xFF9A7000)
-                                else -> Color(0xFF39754A)
-                            }
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 10.dp)
-                                    .clickable {
-                                        onSelecionarAluno(aluno)
-                                    },
-                                shape = RoundedCornerShape(13.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Branco
-                                )
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(
+                                                Color(0xFFE9E7EC),
+                                                CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(44.dp)
-                                                .background(
-                                                    Color(0xFFE9E7EC),
-                                                    CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = nome.split(" ")
-                                                    .take(2)
-                                                    .mapNotNull {
-                                                        it.firstOrNull()
-                                                    }
-                                                    .joinToString(""),
-                                                color = Color(0xFF706A75),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
-                                        }
-                                        Spacer(
-                                            modifier = Modifier.width(12.dp)
-                                        )
-                                        Column(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                text = nome,
-                                                color = TextoPrincipal,
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = objetivo,
-                                                color = TextoSecundario,
-                                                fontSize = 12.sp
-                                            )
-                                        }
                                         Text(
-                                            text = "›",
-                                            color = Color(0xFF77717F),
-                                            fontSize = 26.sp
+                                            text = nome.split(" ")
+                                                .take(2)
+                                                .mapNotNull {
+                                                    it.firstOrNull()
+                                                }
+                                                .joinToString(""),
+                                            color = Color(0xFF706A75),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
                                         )
                                     }
                                     Spacer(
-                                        modifier = Modifier.height(10.dp)
+                                        modifier = Modifier.width(12.dp)
                                     )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Column(
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    color = corStatus,
-                                                    shape = RoundedCornerShape(20.dp)
-                                                )
-                                                .padding(
-                                                    horizontal = 12.dp,
-                                                    vertical = 5.dp
-                                                )
-                                        ) {
-                                            Text(
-                                                text = status,
-                                                color = corTextoStatus,
-                                                fontSize = 11.sp
-                                            )
-                                        }
                                         Text(
-                                            text = if (modoSelecaoTreino) {
-                                                "Selecionar ›"
-                                            } else {
-                                                "Ver perfil ›"
-                                            },
-                                            color = AzulPrincipal,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium
+                                            text = nome,
+                                            color = TextoPrincipal,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = objetivo,
+                                            color = TextoSecundario,
+                                            fontSize = 12.sp
                                         )
                                     }
+                                    Text(
+                                        text = "›",
+                                        color = Color(0xFF77717F),
+                                        fontSize = 26.sp
+                                    )
+                                }
+                                Spacer(
+                                    modifier = Modifier.height(10.dp)
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = corStatus,
+                                                shape = RoundedCornerShape(20.dp)
+                                            )
+                                            .padding(
+                                                horizontal = 12.dp,
+                                                vertical = 5.dp
+                                            )
+                                    ) {
+                                        Text(
+                                            text = status,
+                                            color = corTextoStatus,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = if (modoSelecaoTreino) {
+                                            "Selecionar ›"
+                                        } else {
+                                            "Ver perfil ›"
+                                        },
+                                        color = AzulPrincipal,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            DashboardBottomBar(
-                telaAtual = AppScreen.Alunos,
-                onInicio = onVoltar,
-                onAlunos = {},
-                onTreinos = onTreinos,
-                onRegistros = {},
-                onMais = {}
-            )
         }
+        DashboardBottomBar(
+            telaAtual = AppScreen.Alunos,
+            onInicio = onVoltar,
+            onAlunos = {},
+            onTreinos = onTreinos,
+            onRegistros = {},
+            onMais = {}
+        )
     }
+}
 
 data class EventoAluno(
     val id: Long,
@@ -3722,40 +3683,6 @@ fun TelaPerfilAluno(
     var erroExclusao by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val contextoEventosPerfil = LocalContext.current
-// Sincroniza imediatamente ao abrir o perfil do aluno para trazer atualizações de outros aparelhos
-    DisposableEffect(alunoId) {
-        var subListener: com.google.firebase.firestore.ListenerRegistration? = null
-        scope.launch(Dispatchers.IO) {
-            try {
-                val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
-                val syncService = FirestoreSyncService(db.usuarioDao(), db)
-                syncService.sincronizarLeituraAlunos()
-                syncService.sincronizarAnamnesesAtribuidas()
-
-                val fbId = db.alunoDao().buscarPorIdDireto(alunoId)?.firebaseId
-                if (!fbId.isNullOrBlank()) {
-                    subListener = FirebaseFirestore.getInstance()
-                        .collection("alunos")
-                        .document(fbId)
-                        .collection("anamneses_atribuidas")
-                        .addSnapshotListener { snap, err ->
-                            if (err == null && snap != null) {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        syncService.sincronizarAnamnesesAtribuidas()
-                                    } catch (_: Exception) {
-                                    }
-                                }
-                            }
-                        }
-                }
-            } catch (_: Exception) {
-            }
-        }
-        onDispose {
-            subListener?.remove()
-        }
-    }
 
     val documentosAnamnese by anamneseRepository
         .listarDocumentos(alunoId)
@@ -3933,15 +3860,7 @@ fun TelaPerfilAluno(
                     .padding(horizontal = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(
-                        id = R.drawable.logo_fitcare
-                    ),
-                    contentDescription = "Logo Ícaro's FitCare",
-                    modifier = Modifier
-                        .width(125.dp)
-                        .height(58.dp)
-                )
+                LogoFitCarePadrao(largura = 120.dp, altura = 54.dp)
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
@@ -5405,6 +5324,7 @@ fun GraficoIntensidadeDor(eventos: List<EventoAluno>) {
         }
     }
 }
+
 /// Gráfico visual da situação geral da carteira de alunos e indicadores de frequência (RF10 / CA06)
 @Composable
 fun GraficoCarteiraAlunos(
@@ -5760,11 +5680,15 @@ object CentralAtencaoAnalyzer {
                 inicio <= hojeMs + diaMs && fim >= inicioSemanaMs
             }
             if (treinosAtivosSemana.isNotEmpty()) {
-                val diasDecorridosSemana = (((hojeMs - inicioSemanaMs) / diaMs).toInt() + 1).coerceIn(1, 7)
+                val diasDecorridosSemana =
+                    (((hojeMs - inicioSemanaMs) / diaMs).toInt() + 1).coerceIn(1, 7)
                 val metaPrevista = (diasDecorridosSemana / 2).coerceAtLeast(2)
                 val realizadosSemana = eventosAluno.count { ev ->
                     val dMs = parseDataBr(ev.data) ?: 0L
-                    ev.tipo.equals("Treino", ignoreCase = true) && dMs in inicioSemanaMs..(hojeMs + diaMs)
+                    ev.tipo.equals(
+                        "Treino",
+                        ignoreCase = true
+                    ) && dMs in inicioSemanaMs..(hojeMs + diaMs)
                 }
                 val faltantes = metaPrevista - realizadosSemana
                 if (faltantes >= 2) {
@@ -5790,7 +5714,8 @@ object CentralAtencaoAnalyzer {
             }
             val doisConsecutivosComDor = eventosAluno.take(2).size == 2 &&
                     eventosAluno.take(2).all { ev ->
-                        ev.tipo.equals("Dor / desconforto", ignoreCase = true) || (ev.intensidade ?: 0) >= 4
+                        ev.tipo.equals("Dor / desconforto", ignoreCase = true) || (ev.intensidade
+                            ?: 0) >= 4
                     }
             val dorIntensa = eventosComDor.any { (it.intensidade ?: 0) >= 8 }
 
@@ -5904,7 +5829,8 @@ object CentralAtencaoAnalyzer {
                 }
             }
 // 7. Integração de Condições e Restrições Clínicas (RF12)
-            val textoClinico = "${aluno.condicoes} ${aluno.restricoes} ${aluno.observacoesProfissionais}".lowercase()
+            val textoClinico =
+                "${aluno.condicoes} ${aluno.restricoes} ${aluno.observacoesProfissionais}".lowercase()
             val possuiCondicao = aluno.condicoes.isNotBlank() &&
                     !aluno.condicoes.equals("Nenhuma", ignoreCase = true)
             val possuiRestricao = aluno.restricoes.isNotBlank() &&
@@ -5947,6 +5873,7 @@ object CentralAtencaoAnalyzer {
         }
     }
 }
+
 @Composable
 fun TelaCentralAtencao(
     repository: AlunoRepository,
@@ -5998,19 +5925,21 @@ fun TelaCentralAtencao(
         "Clínico"
     )
     val alunosRequeremAcompanhamento = remember(diagnosticos, filtroSituacao) {
-        val comparador = Comparator { a: DiagnosticoAcompanhamentoAluno, b: DiagnosticoAcompanhamentoAluno ->
-            val pA = when (a.classificacaoCalculada) {
-                "Prioridade" -> 0
-                "Atenção" -> 1
-                else -> 2
+        val comparador =
+            Comparator { a: DiagnosticoAcompanhamentoAluno, b: DiagnosticoAcompanhamentoAluno ->
+                val pA = when (a.classificacaoCalculada) {
+                    "Prioridade" -> 0
+                    "Atenção" -> 1
+                    else -> 2
+                }
+                val pB = when (b.classificacaoCalculada) {
+                    "Prioridade" -> 0
+                    "Atenção" -> 1
+                    else -> 2
+                }
+                if (pA != pB) pA.compareTo(pB) else a.aluno.nome.lowercase()
+                    .compareTo(b.aluno.nome.lowercase())
             }
-            val pB = when (b.classificacaoCalculada) {
-                "Prioridade" -> 0
-                "Atenção" -> 1
-                else -> 2
-            }
-            if (pA != pB) pA.compareTo(pB) else a.aluno.nome.lowercase().compareTo(b.aluno.nome.lowercase())
-        }
 
         val base = diagnosticos
             .filter { it.classificacaoCalculada != "Normal" || it.motivos.isNotEmpty() }
@@ -6046,13 +5975,10 @@ fun TelaCentralAtencao(
             Box(modifier = Modifier.align(Alignment.CenterStart)) {
                 BotaoVoltarPadrao(onVoltar = onVoltar)
             }
-            Image(
-                painter = painterResource(id = R.drawable.logo_fitcare),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(145.dp)
-                    .height(70.dp)
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 62.dp
             )
         }
         Column(
@@ -6198,7 +6124,10 @@ fun TelaCentralAtencao(
                                 ) {
                                     Text(
                                         text = diag.classificacaoCalculada.uppercase(),
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(
+                                            horizontal = 10.dp,
+                                            vertical = 4.dp
+                                        ),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = corBadgeTexto
@@ -6349,14 +6278,10 @@ fun TelaLinhaDoTempoAluno(
                 contentAlignment = Alignment.Center
             ) {
 
-                Image(
-                    painter = painterResource(
-                        id = R.drawable.logo_fitcare
-                    ),
-                    contentDescription = "Logo Ícaro's FitCare",
-                    modifier = Modifier
-                        .width(145.dp)
-                        .height(70.dp)
+                LogoFitCarePadrao(
+                    modifier = Modifier.align(Alignment.Center),
+                    largura = 135.dp,
+                    altura = 62.dp
                 )
 
                 Box(
@@ -6811,14 +6736,10 @@ fun TelaRegistroEventoAluno(
                     .padding(horizontal = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(
-                        id = R.drawable.logo_fitcare
-                    ),
-                    contentDescription = "Logo Ícaro's FitCare",
-                    modifier = Modifier
-                        .width(145.dp)
-                        .height(70.dp)
+                LogoFitCarePadrao(
+                    modifier = Modifier.align(Alignment.Center),
+                    largura = 135.dp,
+                    altura = 62.dp
                 )
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
@@ -7023,15 +6944,7 @@ fun CabecalhoPadrao(
                 .height(60.dp),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(
-                    id = R.drawable.logo_fitcare
-                ),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .width(140.dp)
-                    .height(60.dp)
-            )
+            LogoFitCarePadrao(largura = 135.dp, altura = 58.dp)
             BotaoVoltarPadrao(
                 onVoltar = onVoltar,
                 modifier = Modifier.align(Alignment.CenterStart)
@@ -7201,14 +7114,10 @@ fun TelaEditarAluno(
                     .padding(horizontal = 18.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(
-                        id = R.drawable.logo_fitcare
-                    ),
-                    contentDescription = "Logo Ícaro's FitCare",
-                    modifier = Modifier
-                        .width(145.dp)
-                        .height(70.dp)
+                LogoFitCarePadrao(
+                    modifier = Modifier.align(Alignment.Center),
+                    largura = 135.dp,
+                    altura = 62.dp
                 )
                 Box(
                     modifier = Modifier.align(Alignment.CenterStart)
@@ -7826,15 +7735,10 @@ fun TelaTreinos(
                     onVoltar = onVoltar
                 )
             }
-            Image(
-                painter = painterResource(
-                    id = R.drawable.logo_fitcare
-                ),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(145.dp)
-                    .height(70.dp)
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 62.dp
             )
         }
         Column(
@@ -8166,7 +8070,7 @@ fun TelaTreinos(
     }
 }
 
-// TELA FORMULÁRIO DE TREINO (COM ASSOCIAÇÃO DE VÍDEOS: LINK OU ARQUIVO IMPORTADO)
+// TELA FORMULÁRIO DE TREINO (LAYOUT COMPACTO ESTILO PACTO + CATÁLOGO COM VÍDEOS + SINCRONIZAÇÃO SOB DEMANDA)
 @Composable
 fun TelaFormularioTreino(
     alunoId: Long,
@@ -8184,10 +8088,16 @@ fun TelaFormularioTreino(
     var salvando by remember { mutableStateOf(false) }
     var mostrarDialogoExcluir by remember { mutableStateOf(false) }
     var indiceExercicioImportandoVideo by remember { mutableIntStateOf(-1) }
+    var indiceExercicioCatalogo by remember { mutableIntStateOf(-1) }
+    var assinaturaInicial by remember { mutableStateOf("") }
 
     val exercicios = remember {
         mutableStateListOf(ExercicioFormulario())
     }
+    val exerciciosExpandidos = remember {
+        mutableStateMapOf<Int, Boolean>()
+    }
+
     val scope = rememberCoroutineScope()
     val contextoEventos = LocalContext.current
     val eventoStorage = remember(contextoEventos) {
@@ -8205,7 +8115,8 @@ fun TelaFormularioTreino(
                     val mime = contextoEventos.contentResolver.getType(uri).orEmpty()
                     if (!mime.startsWith("video/", ignoreCase = true)) {
                         withContext(Dispatchers.Main) {
-                            mensagemErro = "Selecione um arquivo de vídeo válido (MP4, MOV, MKV, WEBM)."
+                            mensagemErro =
+                                "Selecione um arquivo de vídeo válido (MP4, MOV, MKV, WEBM)."
                         }
                         return@launch
                     }
@@ -8219,7 +8130,8 @@ fun TelaFormularioTreino(
                         null
                     )?.use { cursor ->
                         if (cursor.moveToFirst()) {
-                            val col = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            val col =
+                                cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                             if (col >= 0) {
                                 nomeOriginal = cursor.getString(col) ?: nomeOriginal
                             }
@@ -8231,7 +8143,8 @@ fun TelaFormularioTreino(
                         pastaVideos.mkdirs()
                     }
                     val nomeSeguro = nomeOriginal.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                    val destino = java.io.File(pastaVideos, "${System.currentTimeMillis()}_$nomeSeguro")
+                    val destino =
+                        java.io.File(pastaVideos, "${System.currentTimeMillis()}_$nomeSeguro")
 
                     contextoEventos.contentResolver.openInputStream(uri)?.use { entrada ->
                         destino.outputStream().use { saida ->
@@ -8249,7 +8162,8 @@ fun TelaFormularioTreino(
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        mensagemErro = "Não foi possível importar o vídeo: ${e.message ?: "erro inesperado"}"
+                        mensagemErro =
+                            "Não foi possível importar o vídeo: ${e.message ?: "erro inesperado"}"
                     }
                 }
             }
@@ -8269,9 +8183,10 @@ fun TelaFormularioTreino(
                     .listarExercicios(treinoId)
                     .first()
                 exercicios.clear()
+                exerciciosExpandidos.clear()
                 exerciciosExistentes
                     .sortedBy { it.ordem }
-                    .forEach { exercicio ->
+                    .forEachIndexed { idx, exercicio ->
                         exercicios.add(
                             ExercicioFormulario(
                                 nome = exercicio.nome,
@@ -8284,13 +8199,20 @@ fun TelaFormularioTreino(
                                 videoNome = exercicio.videoNome
                             )
                         )
+                        exerciciosExpandidos[idx] = false
                     }
                 if (exercicios.isEmpty()) {
                     exercicios.add(ExercicioFormulario())
+                    exerciciosExpandidos[0] = true
                 }
+                assinaturaInicial = "${treino.nome}|${treino.descricao}|${treino.dataInicio}|${treino.dataFim}|${treino.observacoes}|" +
+                        exercicios.joinToString(";") { "${it.nome}|${it.series}|${it.repeticoes}|${it.carga}|${it.observacoes}|${it.videoTipo}|${it.videoUrl}|${it.videoNome}" }
             }
+        } else {
+            exerciciosExpandidos[0] = true
         }
     }
+
     if (mostrarDialogoExcluir && treinoId != null) {
         AlertDialog(
             onDismissRequest = {
@@ -8321,18 +8243,14 @@ fun TelaFormularioTreino(
                                 kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                                     try {
                                         val db = FitCareDatabase.getDatabase(contextoEventos)
-                                        FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
-                                    } catch (_: Exception) {
+                                        FirestoreSyncService(
+                                            db.usuarioDao(),
+                                            db
+                                        ).sincronizarTreinos()
+                                    } catch (e: Exception) {
                                     }
                                 }
                                 mostrarDialogoExcluir = false
-                                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                                    try {
-                                        val db = FitCareDatabase.getDatabase(contextoEventos)
-                                        FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
-                                    } catch (_: Exception) {
-                                    }
-                                }
                                 onSalvo()
                             } catch (e: Exception) {
                                 mensagemErro =
@@ -8364,6 +8282,7 @@ fun TelaFormularioTreino(
             }
         )
     }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -8393,15 +8312,10 @@ fun TelaFormularioTreino(
                     onVoltar = onVoltar
                 )
             }
-            Image(
-                painter = painterResource(
-                    id = R.drawable.logo_fitcare
-                ),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(145.dp)
-                    .height(70.dp)
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 62.dp
             )
             if (treinoId != null) {
                 IconButton(
@@ -8474,42 +8388,47 @@ fun TelaFormularioTreino(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
-            OutlinedTextField(
-                value = dataInicio,
-                onValueChange = {
-                    dataInicio = it
-                    mensagemErro = null
-                },
-                label = {
-                    Text("Data de início *")
-                },
-                placeholder = {
-                    Text("dd/MM/aaaa")
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Ascii
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = dataInicio,
+                    onValueChange = {
+                        dataInicio = it
+                        mensagemErro = null
+                    },
+                    label = {
+                        Text("Início *")
+                    },
+                    placeholder = {
+                        Text("dd/MM/aaaa")
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii
+                    )
                 )
-            )
-            OutlinedTextField(
-                value = dataFim,
-                onValueChange = {
-                    dataFim = it
-                    mensagemErro = null
-                },
-                label = {
-                    Text("Data de término")
-                },
-                placeholder = {
-                    Text("dd/MM/aaaa")
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Ascii
+                OutlinedTextField(
+                    value = dataFim,
+                    onValueChange = {
+                        dataFim = it
+                        mensagemErro = null
+                    },
+                    label = {
+                        Text("Término")
+                    },
+                    placeholder = {
+                        Text("dd/MM/aaaa")
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii
+                    )
                 )
-            )
+            }
             OutlinedTextField(
                 value = observacoes,
                 onValueChange = {
@@ -8522,15 +8441,36 @@ fun TelaFormularioTreino(
                 minLines = 2
             )
             HorizontalDivider()
-            Text(
-                text = "Exercícios",
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Atividades na ficha (${exercicios.size})",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextoPrincipal
+                )
+                val algumFechado = exercicios.indices.any { exerciciosExpandidos[it] != true }
+                TextButton(
+                    onClick = {
+                        exercicios.indices.forEach { exerciciosExpandidos[it] = algumFechado }
+                    }
+                ) {
+                    Text(
+                        text = if (algumFechado) "Detalhar todos" else "Recolher todos",
+                        color = AzulPrincipal,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
             exercicios.forEachIndexed { index, exercicio ->
+                val expandido = exerciciosExpandidos[index] ?: (exercicio.nome.isBlank())
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = Branco
                     ),
@@ -8546,171 +8486,219 @@ fun TelaFormularioTreino(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Exercício ${index + 1}",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = FontWeight.Bold,
-                                color = TextoPrincipal
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(AzulMuitoClaro, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = AzulPrincipal
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = exercicio.nome.ifBlank { "Novo exercício ${index + 1}" },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = TextoPrincipal
+                                )
+                                Text(
+                                    text = buildString {
+                                        append("${exercicio.series.ifBlank { "3" }} séries × ${exercicio.repeticoes.ifBlank { "12" }}")
+                                        if (exercicio.carga.isNotBlank()) append(" • ${exercicio.carga}")
+                                        if (exercicio.videoUrl.isNotBlank()) append(" • ▶ Vídeo")
+                                    },
+                                    fontSize = 11.sp,
+                                    color = TextoSecundario
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    exerciciosExpandidos[index] = !expandido
+                                }
+                            ) {
+                                Text(
+                                    text = if (expandido) "Recolher" else "Detalhar",
+                                    color = AzulPrincipal,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                             if (exercicios.size > 1) {
-                                TextButton(
+                                IconButton(
                                     onClick = {
                                         exercicios.removeAt(index)
-                                    }
+                                    },
+                                    modifier = Modifier.size(32.dp)
                                 ) {
-                                    Text(
-                                        "Remover",
-                                        color = MaterialTheme.colorScheme.error
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Remover exercício",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                         }
-                        OutlinedTextField(
-                            value = exercicio.nome,
-                            onValueChange = {
-                                exercicios[index] =
-                                    exercicios[index].copy(nome = it)
-                            },
-                            label = {
-                                Text("Nome do exercício *")
-                            },
-                            placeholder = {
-                                Text("Ex.: Agachamento")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        if (expandido) {
+                            HorizontalDivider(color = AzulMuitoClaro)
+                            OutlinedButton(
+                                onClick = { indiceExercicioCatalogo = index },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("⌕ Buscar no catálogo de exercícios")
+                            }
                             OutlinedTextField(
-                                value = exercicio.series,
+                                value = exercicio.nome,
                                 onValueChange = {
                                     exercicios[index] =
-                                        exercicios[index].copy(series = it)
+                                        exercicios[index].copy(nome = it)
                                 },
                                 label = {
-                                    Text("Séries *")
+                                    Text("Nome do exercício *")
                                 },
                                 placeholder = {
-                                    Text("Ex.: 3 ou 3-4")
+                                    Text("Ex.: Agachamento")
                                 },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true
-                            )
-                            OutlinedTextField(
-                                value = exercicio.repeticoes,
-                                onValueChange = {
-                                    exercicios[index] =
-                                        exercicios[index].copy(repeticoes = it)
-                                },
-                                label = {
-                                    Text("Repetições *")
-                                },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true
-                            )
-                        }
-                        OutlinedTextField(
-                            value = exercicio.carga,
-                            onValueChange = {
-                                exercicios[index] =
-                                    exercicios[index].copy(carga = it)
-                            },
-                            label = {
-                                Text("Carga")
-                            },
-                            placeholder = {
-                                Text("Ex.: 20 kg")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = exercicio.observacoes,
-                            onValueChange = {
-                                exercicios[index] =
-                                    exercicios[index].copy(observacoes = it)
-                            },
-                            label = {
-                                Text("Observações do exercício")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 2
-                        )
-// Seção de Vídeo Demonstrativo (Opcional: Link YouTube ou Importar do Celular)
-                        Text(
-                            text = "Vídeo demonstrativo (opcional)",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextoPrincipal
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    exercicios[index] = exercicios[index].copy(
-                                        videoTipo = "LINK",
-                                        videoUrl = if (exercicio.videoTipo == "LINK") exercicio.videoUrl else "",
-                                        videoNome = "Link externo"
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Link (YouTube)", fontSize = 11.sp)
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    indiceExercicioImportandoVideo = index
-                                    seletorVideo.launch(arrayOf("video/*"))
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Importar vídeo", fontSize = 11.sp)
-                            }
-                        }
-                        if (exercicio.videoTipo == "LINK") {
-                            OutlinedTextField(
-                                value = exercicio.videoUrl,
-                                onValueChange = {
-                                    exercicios[index] = exercicios[index].copy(
-                                        videoTipo = "LINK",
-                                        videoUrl = it,
-                                        videoNome = "Link externo"
-                                    )
-                                },
-                                label = { Text("URL do vídeo (YouTube / Vimeo / HTTP)") },
-                                placeholder = { Text("youtube.com...") },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
-                        } else if (exercicio.videoTipo == "LOCAL" && exercicio.videoUrl.isNotBlank()) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(AzulMuitoClaro, RoundedCornerShape(8.dp))
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "Vídeo importado: ${exercicio.videoNome.ifBlank { "Arquivo local" }}",
-                                    fontSize = 12.sp,
-                                    color = TextoPrincipal,
-                                    modifier = Modifier.weight(1f)
+                                OutlinedTextField(
+                                    value = exercicio.series,
+                                    onValueChange = {
+                                        exercicios[index] =
+                                            exercicios[index].copy(series = it)
+                                    },
+                                    label = {
+                                        Text("Séries *")
+                                    },
+                                    placeholder = {
+                                        Text("Ex.: 3 ou 3-4")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
                                 )
-                                TextButton(
+                                OutlinedTextField(
+                                    value = exercicio.repeticoes,
+                                    onValueChange = {
+                                        exercicios[index] =
+                                            exercicios[index].copy(repeticoes = it)
+                                    },
+                                    label = {
+                                        Text("Repetições *")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                            }
+                            OutlinedTextField(
+                                value = exercicio.carga,
+                                onValueChange = {
+                                    exercicios[index] =
+                                        exercicios[index].copy(carga = it)
+                                },
+                                label = {
+                                    Text("Carga")
+                                },
+                                placeholder = {
+                                    Text("Ex.: 20 kg")
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = exercicio.observacoes,
+                                onValueChange = {
+                                    exercicios[index] =
+                                        exercicios[index].copy(observacoes = it)
+                                },
+                                label = {
+                                    Text("Observações / descanso")
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2
+                            )
+                            Text(
+                                text = "Vídeo demonstrativo (opcional)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextoPrincipal
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
                                     onClick = {
                                         exercicios[index] = exercicios[index].copy(
-                                            videoTipo = "",
-                                            videoUrl = "",
-                                            videoNome = ""
+                                            videoTipo = "LINK",
+                                            videoUrl = if (exercicio.videoTipo == "LINK") exercicio.videoUrl else "",
+                                            videoNome = "Link externo"
                                         )
-                                    }
+                                    },
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("Remover", color = Vermelho, fontSize = 11.sp)
+                                    Text("Link (YouTube)", fontSize = 11.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        indiceExercicioImportandoVideo = index
+                                        seletorVideo.launch(arrayOf("video/*"))
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Importar vídeo", fontSize = 11.sp)
+                                }
+                            }
+                            if (exercicio.videoTipo == "LINK") {
+                                OutlinedTextField(
+                                    value = exercicio.videoUrl,
+                                    onValueChange = {
+                                        exercicios[index] = exercicios[index].copy(
+                                            videoTipo = "LINK",
+                                            videoUrl = it,
+                                            videoNome = "Link externo"
+                                        )
+                                    },
+                                    label = { Text("URL do vídeo (YouTube / Vimeo / HTTP)") },
+                                    placeholder = { Text("youtube.com...") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            } else if (exercicio.videoTipo == "LOCAL" && exercicio.videoUrl.isNotBlank()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(AzulMuitoClaro, RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Vídeo importado: ${exercicio.videoNome.ifBlank { "Arquivo local" }}",
+                                        fontSize = 12.sp,
+                                        color = TextoPrincipal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            exercicios[index] = exercicios[index].copy(
+                                                videoTipo = "",
+                                                videoUrl = "",
+                                                videoNome = ""
+                                            )
+                                        }
+                                    ) {
+                                        Text("Remover", color = Vermelho, fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
@@ -8719,48 +8707,14 @@ fun TelaFormularioTreino(
             }
             OutlinedButton(
                 onClick = {
+                    val novoIdx = exercicios.size
                     exercicios.add(ExercicioFormulario())
+                    exerciciosExpandidos[novoIdx] = true
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("+ Adicionar exercício")
             }
-            if (treinoId != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        mostrarDialogoExcluir = true
-                    },
-                    enabled = !salvando,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = Color(0xFFC62828)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = Color(0xFFC62828)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Excluir treino",
-                        color = Color(0xFFC62828),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            if (mensagemErro != null) {
-                Text(
-                    text = mensagemErro.orEmpty(),
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
         }
         Row(
             modifier = Modifier
@@ -8797,7 +8751,7 @@ fun TelaFormularioTreino(
                         val data = formatoData.parse(dataInicio)
                         data != null &&
                                 formatoData.format(data) == dataInicio
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
                         false
                     }
                     if (!inicioValido) {
@@ -8810,7 +8764,7 @@ fun TelaFormularioTreino(
                             val data = formatoData.parse(dataFim)
                             data != null &&
                                     formatoData.format(data) == dataFim
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
                             false
                         }
                         if (!fimValido) {
@@ -8843,12 +8797,19 @@ fun TelaFormularioTreino(
                     val linkInvalido = exercicios.any { exercicio ->
                         exercicio.videoTipo == "LINK" &&
                                 exercicio.videoUrl.isNotBlank() &&
-                                !exercicio.videoUrl.trim().startsWith("http://", ignoreCase = true) &&
+                                !exercicio.videoUrl.trim()
+                                    .startsWith("http://", ignoreCase = true) &&
                                 !exercicio.videoUrl.trim().startsWith("https://", ignoreCase = true)
                     }
                     if (linkInvalido) {
                         mensagemErro =
                             "O link do vídeo deve iniciar com http:// ou https://."
+                        return@Button
+                    }
+                    val assinaturaAtual = "${nome.trim()}|${descricao.trim()}|${dataInicio.trim()}|${dataFim.trim()}|${observacoes.trim()}|" +
+                            exercicios.joinToString(";") { "${it.nome.trim()}|${it.series.trim()}|${it.repeticoes.trim()}|${it.carga.trim()}|${it.observacoes.trim()}|${it.videoTipo.trim()}|${it.videoUrl.trim()}|${it.videoNome.trim()}" }
+                    if (treinoId != null && assinaturaAtual == assinaturaInicial) {
+                        onSalvo()
                         return@Button
                     }
                     mensagemErro = null
@@ -8887,7 +8848,8 @@ fun TelaFormularioTreino(
                                 )
                             }
                             exercicios.forEachIndexed { index, exercicio ->
-                                val tipoVid = if (exercicio.videoUrl.isBlank()) "" else exercicio.videoTipo.trim()
+                                val tipoVid =
+                                    if (exercicio.videoUrl.isBlank()) "" else exercicio.videoTipo.trim()
                                 treinoRepository.inserirExercicio(
                                     ExercicioEntity(
                                         treinoId = idTreinoSalvo,
@@ -8918,6 +8880,13 @@ fun TelaFormularioTreino(
                                     )
                                 )
                             }
+                            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    val db = FitCareDatabase.getDatabase(contextoEventos)
+                                    FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
+                                } catch (e: Exception) {
+                                }
+                            }
                             onSalvo()
                         } catch (e: Exception) {
                             mensagemErro =
@@ -8945,6 +8914,24 @@ fun TelaFormularioTreino(
                 )
             }
         }
+    }
+    if (indiceExercicioCatalogo in exercicios.indices) {
+        DialogoCatalogoExercicios(
+            context = contextoEventos,
+            onDismiss = { indiceExercicioCatalogo = -1 },
+            onSelecionarItem = { itemEscolhido ->
+                val idx = indiceExercicioCatalogo
+                if (idx in exercicios.indices) {
+                    exercicios[idx] = exercicios[idx].copy(
+                        nome = itemEscolhido.nome,
+                        videoTipo = "LINK",
+                        videoUrl = itemEscolhido.videoUrl,
+                        videoNome = "Vídeo demonstrativo"
+                    )
+                }
+                indiceExercicioCatalogo = -1
+            }
+        )
     }
 }
 
@@ -9007,15 +8994,10 @@ fun TelaDetalhesTreino(
                 )
             }
 
-            Image(
-                painter = painterResource(
-                    id = R.drawable.logo_fitcare
-                ),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(145.dp)
-                    .height(70.dp)
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 62.dp
             )
 
             treino?.let { treinoParaEditar ->
@@ -9210,11 +9192,12 @@ fun TelaDetalhesTreino(
                                                     require(arquivo.exists()) {
                                                         "Arquivo de vídeo não encontrado."
                                                     }
-                                                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                                                        context,
-                                                        "${context.packageName}.fileprovider",
-                                                        arquivo
-                                                    )
+                                                    val uri =
+                                                        androidx.core.content.FileProvider.getUriForFile(
+                                                            context,
+                                                            "${context.packageName}.fileprovider",
+                                                            arquivo
+                                                        )
                                                     val intent = android.content.Intent(
                                                         android.content.Intent.ACTION_VIEW
                                                     ).apply {
@@ -9222,7 +9205,10 @@ fun TelaDetalhesTreino(
                                                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                                     }
                                                     context.startActivity(
-                                                        android.content.Intent.createChooser(intent, "Assistir vídeo")
+                                                        android.content.Intent.createChooser(
+                                                            intent,
+                                                            "Assistir vídeo"
+                                                        )
                                                     )
                                                 }
                                             } catch (e: Exception) {

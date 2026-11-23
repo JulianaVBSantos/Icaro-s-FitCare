@@ -50,6 +50,12 @@ fun TelaVisualizarAnamnese(
     onAnamneseExcluida: (() -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
+    val escuro = temaEscuroAtivoState
+
+    val corFundo = if (escuro) Color(0xFF0F1722) else Color(0xFFF5F9FC)
+    val corCartao = if (escuro) Color(0xFF172331) else Color.White
+    val corTextoPrincipal = if (escuro) Color(0xFFEAF2FA) else Color(0xFF002B5C)
+    val corTextoSecundario = if (escuro) Color(0xFFA2B5C8) else Color(0xFF526579)
 
     var anamnese by remember {
         mutableStateOf<AnamneseAtribuidaEntity?>(null)
@@ -85,12 +91,8 @@ fun TelaVisualizarAnamnese(
 
         try {
             anamnese = anamneseRepository.buscarPorId(anamneseId)
-
             perguntas = anamneseRepository.buscarPerguntas(anamneseId)
-
-            respostas = respostaRepository.buscarRespostasDaAnamnese(
-                anamneseId
-            )
+            respostas = respostaRepository.buscarRespostasDaAnamnese(anamneseId)
         } catch (e: Exception) {
             erro = e.message ?: "Não foi possível carregar a anamnese."
         } finally {
@@ -113,7 +115,7 @@ fun TelaVisualizarAnamnese(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F9FC))
+            .background(corFundo)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -130,7 +132,7 @@ fun TelaVisualizarAnamnese(
                 .padding(horizontal = 18.dp, vertical = 14.dp)
         ) {
             if (carregando) {
-                CircularProgressIndicator(color = Color(0xFF002B5C))
+                CircularProgressIndicator(color = corTextoPrincipal)
             } else if (erro.isNotBlank()) {
                 Text(
                     text = erro,
@@ -140,14 +142,15 @@ fun TelaVisualizarAnamnese(
             } else if (anamnese == null) {
                 Text(
                     text = "Anamnese não encontrada.",
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    color = corTextoPrincipal
                 )
             } else {
                 Text(
                     text = anamnese!!.nomeModelo,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF002B5C)
+                    color = corTextoPrincipal
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -156,7 +159,7 @@ fun TelaVisualizarAnamnese(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.White
+                        containerColor = corCartao
                     )
                 ) {
                     Column(
@@ -167,14 +170,14 @@ fun TelaVisualizarAnamnese(
                             text = "Status: $statusDescricao",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF002B5C)
+                            color = corTextoPrincipal
                         )
 
                         if (anamnese!!.profissionalResponsavel.isNotBlank()) {
                             Text(
                                 text = "Profissional: ${anamnese!!.profissionalResponsavel}",
                                 fontSize = 12.sp,
-                                color = Color(0xFF526579)
+                                color = corTextoSecundario
                             )
                         }
 
@@ -182,7 +185,7 @@ fun TelaVisualizarAnamnese(
                             Text(
                                 text = "Data de criação: ${anamnese!!.dataCriacao}",
                                 fontSize = 12.sp,
-                                color = Color(0xFF526579)
+                                color = corTextoSecundario
                             )
                         }
 
@@ -190,7 +193,7 @@ fun TelaVisualizarAnamnese(
                             Text(
                                 text = "Data de envio: ${anamnese!!.dataEnvio}",
                                 fontSize = 12.sp,
-                                color = Color(0xFF526579)
+                                color = corTextoSecundario
                             )
                         }
 
@@ -210,7 +213,7 @@ fun TelaVisualizarAnamnese(
                     text = "Perguntas e respostas",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF002B5C)
+                    color = corTextoPrincipal
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -219,7 +222,7 @@ fun TelaVisualizarAnamnese(
                     Text(
                         text = "Esta anamnese não possui perguntas.",
                         fontSize = 13.sp,
-                        color = Color(0xFF526579)
+                        color = corTextoSecundario
                     )
                 }
 
@@ -236,7 +239,7 @@ fun TelaVisualizarAnamnese(
                             .padding(bottom = 10.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color.White
+                            containerColor = corCartao
                         )
                     ) {
                         Column(
@@ -246,7 +249,7 @@ fun TelaVisualizarAnamnese(
                                 text = "${index + 1}. ${pergunta.texto}",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF002B5C)
+                                color = corTextoPrincipal
                             )
 
                             if (pergunta.obrigatoria) {
@@ -267,17 +270,15 @@ fun TelaVisualizarAnamnese(
                                 color = if (respostaFormatada.isBlank()) {
                                     MaterialTheme.colorScheme.error
                                 } else {
-                                    MaterialTheme.colorScheme.onSurface
+                                    corTextoPrincipal
                                 }
                             )
-
                             if (resposta?.dataAtualizacao?.isNotBlank() == true) {
                                 Spacer(modifier = Modifier.height(4.dp))
-
                                 Text(
                                     text = "Última atualização: ${resposta.dataAtualizacao}",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF526579)
+                                    color = corTextoSecundario
                                 )
                             }
                         }
@@ -287,7 +288,7 @@ fun TelaVisualizarAnamnese(
                 Text(
                     text = "Total de perguntas: ${perguntas.size}",
                     fontSize = 12.sp,
-                    color = Color(0xFF526579)
+                    color = corTextoSecundario
                 )
                 Text(
                     text = "Perguntas respondidas: ${
@@ -296,7 +297,7 @@ fun TelaVisualizarAnamnese(
                         }
                     }",
                     fontSize = 12.sp,
-                    color = Color(0xFF526579)
+                    color = corTextoSecundario
                 )
                 if (onAnamneseExcluida != null) {
                     Spacer(modifier = Modifier.height(14.dp))

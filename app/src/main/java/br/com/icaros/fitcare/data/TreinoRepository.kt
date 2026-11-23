@@ -208,7 +208,6 @@ class TreinoRepository(
     }
 
     // EXCLUIR TREINO
-
     suspend fun excluirTreino(
         treino: TreinoEntity
     ) {

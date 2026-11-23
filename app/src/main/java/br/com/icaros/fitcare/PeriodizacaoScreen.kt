@@ -1,15 +1,17 @@
 package br.com.icaros.fitcare
 
-import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -21,10 +23,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.icaros.fitcare.data.*
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 private val DIAS_SEMANA_PERIODIZACAO = listOf(
     "SEGUNDA" to "Segunda-feira",
@@ -35,6 +43,28 @@ private val DIAS_SEMANA_PERIODIZACAO = listOf(
     "SABADO" to "Sábado",
     "DOMINGO" to "Domingo"
 )
+
+private fun formatarDataUtcParaBr(utcMillis: Long): String {
+    val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+    return fmt.format(Date(utcMillis))
+}
+
+private fun parseDataBrParaCalendar(dataStr: String): Calendar? {
+    if (dataStr.isBlank()) return null
+    val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply {
+        isLenient = false
+    }
+    val date = runCatching { fmt.parse(dataStr.trim()) }.getOrNull() ?: return null
+    return Calendar.getInstance().apply {
+        time = date
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+}
 
 @Composable
 fun TelaPeriodizacaoAluno(
@@ -69,7 +99,20 @@ fun TelaPeriodizacaoAluno(
 
     var mensagemErro by remember { mutableStateOf("") }
 
-    // Mantém referências selecionadas sincronizadas se excluídas
+    fun voltarNivelAnterior() {
+        when {
+            microSelecionado != null -> microSelecionado = null
+            mesoSelecionado != null -> mesoSelecionado = null
+            macroSelecionado != null -> macroSelecionado = null
+            else -> onVoltar()
+        }
+    }
+
+    // Intercepta o botão Voltar do sistema Android para navegar sequencialmente pelos níveis
+    BackHandler {
+        voltarNivelAnterior()
+    }
+
     LaunchedEffect(macrociclos) {
         macroSelecionado?.let { sel ->
             macroSelecionado = macrociclos.firstOrNull { it.id == sel.id }
@@ -116,7 +159,7 @@ fun TelaPeriodizacaoAluno(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                             MaterialTheme.colorScheme.background
                         )
                     )
@@ -126,23 +169,13 @@ fun TelaPeriodizacaoAluno(
         ) {
             Box(modifier = Modifier.align(Alignment.CenterStart)) {
                 BotaoVoltarPadrao(
-                    onVoltar = {
-                        when {
-                            microSelecionado != null -> microSelecionado = null
-                            mesoSelecionado != null -> mesoSelecionado = null
-                            macroSelecionado != null -> macroSelecionado = null
-                            else -> onVoltar()
-                        }
-                    }
+                    onVoltar = { voltarNivelAnterior() }
                 )
             }
-            Image(
-                painter = painterResource(id = R.drawable.logo_fitcare),
-                contentDescription = "Logo Ícaro's FitCare",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(145.dp)
-                    .height(70.dp)
+            LogoFitCarePadrao(
+                modifier = Modifier.align(Alignment.Center),
+                largura = 135.dp,
+                altura = 62.dp
             )
         }
 
@@ -166,7 +199,7 @@ fun TelaPeriodizacaoAluno(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Trilha de navegação (Breadcrumb hierárquico)
+            // Trilha de navegação clicável (Breadcrumb)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
@@ -176,7 +209,7 @@ fun TelaPeriodizacaoAluno(
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Text(
-                        text = "Hierarquia atual:",
+                        text = "Hierarquia atual (toque no botão voltar para subir um nível):",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -229,7 +262,6 @@ fun TelaPeriodizacaoAluno(
                             Text("Macrociclo", fontSize = 12.sp)
                         }
                     }
-
                     if (macrociclos.isEmpty()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -293,7 +325,7 @@ fun TelaPeriodizacaoAluno(
                                         }
                                     }
                                     Text(
-                                        text = "Toque para gerenciar os mesociclos ›",
+                                        text = "Toque para abrir o calendário consolidado e mesociclos ›",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.primary
@@ -303,17 +335,19 @@ fun TelaPeriodizacaoAluno(
                         }
                     }
                 }
-                // NÍVEL 2: MESOCICLOS
+// NÍVEL 2: CALENDÁRIO CONSOLIDADO DO MACROCICLO + MESOCICLOS
                 mesoSelecionado == null -> {
                     val macro = macroSelecionado!!
-
+                    CalendarioMacrocicloConsolidado(
+                        macrociclo = macro,
+                        mesociclos = mesociclos
+                    )
                     VisaoCompletaMacrociclo(
                         macrociclo = macro,
                         periodizacaoRepository = periodizacaoRepository,
                         treinosAluno = treinosAluno,
                         onVisualizarTreino = onVisualizarTreino
                     )
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -509,7 +543,7 @@ fun TelaPeriodizacaoAluno(
                         }
                     }
                 }
-// NÍVEL 4: SESSÕES POR DIAS DA SEMANA VINCULADAS A TREINOS
+// NÍVEL 4: SESSÕES POR DIAS DA SEMANA
                 else -> {
                     val micro = microSelecionado!!
                     Row(
@@ -629,7 +663,7 @@ fun TelaPeriodizacaoAluno(
             }
         }
     }
-// DIÁLOGO MACROCICLO
+// DIÁLOGOS COM SELETOR GRÁFICO DE CALENDÁRIO
     if (mostrarDialogoMacro) {
         DialogoFormCiclo(
             tituloDialogo = if (editarMacro == null) "Novo Macrociclo" else "Editar Macrociclo",
@@ -661,7 +695,6 @@ fun TelaPeriodizacaoAluno(
             }
         )
     }
-// DIÁLOGO MESOCICLO
     if (mostrarDialogoMeso && macroSelecionado != null) {
         DialogoFormCiclo(
             tituloDialogo = if (editarMeso == null) "Novo Mesociclo" else "Editar Mesociclo",
@@ -694,7 +727,6 @@ fun TelaPeriodizacaoAluno(
             }
         )
     }
-// DIÁLOGO MICROCICLO
     if (mostrarDialogoMicro && mesoSelecionado != null) {
         DialogoFormCiclo(
             tituloDialogo = if (editarMicro == null) "Novo Microciclo" else "Editar Microciclo",
@@ -727,7 +759,6 @@ fun TelaPeriodizacaoAluno(
             }
         )
     }
-// DIÁLOGO SESSÃO DA SEMANA
     if (mostrarDialogoSessao && microSelecionado != null) {
         var diaSelecionado by remember { mutableStateOf(editarSessao?.diaSemana ?: "SEGUNDA") }
         var tituloSessao by remember { mutableStateOf(editarSessao?.titulo ?: "") }
@@ -838,6 +869,192 @@ fun TelaPeriodizacaoAluno(
         )
     }
 }
+// Visualização Consolidada do Macrociclo em Calendário
+@Composable
+fun CalendarioMacrocicloConsolidado(
+    macrociclo: MacrocicloEntity,
+    mesociclos: List<MesocicloEntity>
+) {
+    val inicioCal = remember(macrociclo.dataInicio) { parseDataBrParaCalendar(macrociclo.dataInicio) }
+    val fimCal = remember(macrociclo.dataFim) { parseDataBrParaCalendar(macrociclo.dataFim) }
+    if (inicioCal == null) return
+    val mesesNoPeriodo = remember(inicioCal, fimCal) {
+        val lista = mutableListOf<Pair<Int, Int>>() // (Ano, Mês 0..11)
+        val cursor = (inicioCal.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val limite = ((fimCal ?: inicioCal).clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+        var seguranca = 0
+        while (!cursor.after(limite) && seguranca < 12) {
+            lista.add(cursor.get(Calendar.YEAR) to cursor.get(Calendar.MONTH))
+            cursor.add(Calendar.MONTH, 1)
+            seguranca++
+        }
+        lista
+    }
+    var indiceMesAtual by remember(mesesNoPeriodo) { mutableIntStateOf(0) }
+    val (anoExibido, mesExibido) = mesesNoPeriodo.getOrElse(indiceMesAtual) {
+        inicioCal.get(Calendar.YEAR) to inicioCal.get(Calendar.MONTH)
+    }
+    val nomesMeses = listOf(
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Calendário do Macrociclo",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (mesesNoPeriodo.size > 1) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = { if (indiceMesAtual > 0) indiceMesAtual-- },
+                            enabled = indiceMesAtual > 0
+                        ) { Text("‹") }
+                        Text(
+                            text = "${nomesMeses[mesExibido].take(3)}/$anoExibido",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        TextButton(
+                            onClick = { if (indiceMesAtual < mesesNoPeriodo.lastIndex) indiceMesAtual++ },
+                            enabled = indiceMesAtual < mesesNoPeriodo.lastIndex
+                        ) { Text("›") }
+                    }
+                } else {
+                    Text(
+                        text = "${nomesMeses[mesExibido]} $anoExibido",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+// Cabeçalho dos dias da semana
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("D", "S", "T", "Q", "Q", "S", "S").forEach { d ->
+                    Text(
+                        text = d,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+// Grade mensal
+            val primeiroDiaMes = Calendar.getInstance().apply {
+                set(anoExibido, mesExibido, 1, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val offsetInicial = primeiroDiaMes.get(Calendar.DAY_OF_WEEK) - 1
+            val diasNoMes = primeiroDiaMes.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val celulas = buildList<Int?> {
+                repeat(offsetInicial) { add(null) }
+                for (dia in 1..diasNoMes) add(dia)
+                while (size % 7 != 0) add(null)
+            }
+            celulas.chunked(7).forEach { semana ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    semana.forEach { dia ->
+                        if (dia == null) {
+                            Box(modifier = Modifier.weight(1f).height(30.dp))
+                        } else {
+                            val dataCelula = Calendar.getInstance().apply {
+                                set(anoExibido, mesExibido, dia, 0, 0, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            val dentroMacro = !dataCelula.before(inicioCal) &&
+                                    (fimCal == null || !dataCelula.after(fimCal))
+                            val dentroMeso = mesociclos.any { m ->
+                                val mi = parseDataBrParaCalendar(m.dataInicio)
+                                val mf = parseDataBrParaCalendar(m.dataFim)
+                                mi != null && !dataCelula.before(mi) && (mf == null || !dataCelula.after(mf))
+                            }
+                            val corFundoDia = when {
+                                dentroMeso -> MaterialTheme.colorScheme.primary
+                                dentroMacro -> MaterialTheme.colorScheme.primaryContainer
+                                else -> Color.Transparent
+                            }
+                            val corTextoDia = when {
+                                dentroMeso -> Color.White
+                                dentroMacro -> MaterialTheme.colorScheme.onPrimaryContainer
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(30.dp)
+                                    .clip(CircleShape)
+                                    .background(corFundoDia),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = dia.toString(),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (dentroMacro) FontWeight.Bold else FontWeight.Normal,
+                                    color = corTextoDia
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Período Macrociclo", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Fases (Mesociclos)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+// Diálogo com Seletor Gráfico de Calendário (DatePickerDialog)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DialogoFormCiclo(
     tituloDialogo: String,
@@ -853,11 +1070,51 @@ private fun DialogoFormCiclo(
     var subtitulo by remember { mutableStateOf(subtituloInicial) }
     var dataInicio by remember { mutableStateOf(inicioInicial) }
     var dataFim by remember { mutableStateOf(fimInicial) }
+    var abrirPickerInicio by remember { mutableStateOf(false) }
+    var abrirPickerFim by remember { mutableStateOf(false) }
+    if (abrirPickerInicio) {
+        val stateInicio = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { abrirPickerInicio = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    stateInicio.selectedDateMillis?.let { millis ->
+                        dataInicio = formatarDataUtcParaBr(millis)
+                    }
+                    abrirPickerInicio = false
+                }) { Text("Selecionar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { abrirPickerInicio = false }) { Text("Cancelar") }
+            }
+        ) {
+            DatePicker(state = stateInicio)
+        }
+    }
+    if (abrirPickerFim) {
+        val stateFim = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { abrirPickerFim = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    stateFim.selectedDateMillis?.let { millis ->
+                        dataFim = formatarDataUtcParaBr(millis)
+                    }
+                    abrirPickerFim = false
+                }) { Text("Selecionar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { abrirPickerFim = false }) { Text("Cancelar") }
+            }
+        ) {
+            DatePicker(state = stateFim)
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(tituloDialogo) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = nome,
                     onValueChange = { nome = it },
@@ -872,20 +1129,28 @@ private fun DialogoFormCiclo(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = dataInicio,
-                    onValueChange = { dataInicio = it },
-                    label = { Text("Data de início * (dd/MM/aaaa)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = dataFim,
-                    onValueChange = { dataFim = it },
-                    label = { Text("Data de término (dd/MM/aaaa)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedButton(
+                    onClick = { abrirPickerInicio = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (dataInicio.isBlank()) "Selecionar data de início *" else "Início: $dataInicio"
+                    )
+                }
+                OutlinedButton(
+                    onClick = { abrirPickerFim = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (dataFim.isBlank()) "Selecionar data de término" else "Término: $dataFim"
+                    )
+                }
             }
         },
         confirmButton = {
@@ -900,6 +1165,7 @@ private fun DialogoFormCiclo(
         }
     )
 }
+
 @Composable
 fun VisaoCompletaMacrociclo(
     macrociclo: MacrocicloEntity,
@@ -910,9 +1176,7 @@ fun VisaoCompletaMacrociclo(
     val mesociclos by periodizacaoRepository
         .listarMesociclos(macrociclo.id)
         .collectAsState(initial = emptyList())
-
     if (mesociclos.isEmpty()) return
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -930,12 +1194,10 @@ fun VisaoCompletaMacrociclo(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-
             mesociclos.forEach { meso ->
                 val microciclos by periodizacaoRepository
                     .listarMicrociclos(meso.id)
                     .collectAsState(initial = emptyList())
-
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -953,7 +1215,6 @@ fun VisaoCompletaMacrociclo(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-
                     if (microciclos.isEmpty()) {
                         Text(
                             text = "Nenhum microciclo neste mesociclo.",
@@ -965,7 +1226,6 @@ fun VisaoCompletaMacrociclo(
                             val sessoes by periodizacaoRepository
                                 .listarSessoes(micro.id)
                                 .collectAsState(initial = emptyList())
-
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
