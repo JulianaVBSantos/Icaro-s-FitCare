@@ -953,7 +953,7 @@ abstract class FitCareDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): FitCareDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     FitCareDatabase::class.java,
                     "fitcare_database"
@@ -977,9 +977,7 @@ abstract class FitCareDatabase : RoomDatabase() {
                         MIGRATION_16_17
                     )
                     .build()
-
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
         }
     }

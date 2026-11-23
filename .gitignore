@@ -1,12 +1,15 @@
-# Arquivos locais do Android Studio e Gradle
+# Arquivos locais do Android Studio, Gradle e Kotlin
 .gradle/
-build/
-**/build/
-local.properties
 .idea/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
 *.iml
 
-# Configurações locais
+# Arquivos do sistema operacional
 .DS_Store
 Thumbs.db
 
@@ -19,7 +22,7 @@ keystore.properties
 .env
 .env.*
 
-# Firebase - credenciais privadas
+# Firebase
+app/google-services.json
 *service-account*.json
 *firebase-adminsdk*.json
-/.kotlin/errors/errors-1794483651433.log
