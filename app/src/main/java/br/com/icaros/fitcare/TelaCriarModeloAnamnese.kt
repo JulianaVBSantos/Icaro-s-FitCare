@@ -1,4 +1,3 @@
-
 package br.com.icaros.fitcare
 
 import androidx.compose.foundation.background
@@ -7,7 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -26,10 +25,6 @@ import br.com.icaros.fitcare.data.PerguntaModeloAnamneseRepository
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
-private val AzulAnamnese = Color(0xFF002B5C)
-private val FundoAnamnese = Color(0xFFF5F7FA)
-
-// Converte as opções digitadas para JSON antes de salvar.
 private fun opcoesParaJson(texto: String): String {
     val array = JSONArray()
 
@@ -41,24 +36,22 @@ private fun opcoesParaJson(texto: String): String {
     return array.toString()
 }
 
-// Converte o JSON armazenado para texto ao editar uma pergunta.
 private fun jsonParaOpcoes(json: String): String {
     return try {
         val array = JSONArray(json)
         (0 until array.length()).joinToString("\n") {
             array.optString(it)
         }
-    } catch (_: Exception) {
+    } catch (e: Exception) {
         ""
     }
 }
 
-// Perguntas que já vêm disponíveis no modelo padrão.
 private fun perguntasPadrao(): List<PerguntaModeloAnamneseEntity> {
     return listOf(
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
-            texto = "Qual é o seu objetivo principal?",
+            texto = "Qual é o seu principal objetivo?",
             tipoResposta = "MULTIPLA_ESCOLHA",
             opcoes = opcoesParaJson(
                 "Emagrecimento\nHipertrofia\nCondicionamento físico\nSaúde e qualidade de vida\nOutro"
@@ -141,6 +134,14 @@ fun TelaCriarModeloAnamnese(
     onSalvo: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val escuro = temaEscuroAtivoState
+
+    val corFundo = if (escuro) Color(0xFF0F1722) else Color(0xFFF5F7FA)
+    val corCartao = if (escuro) Color(0xFF172331) else Color.White
+    val corItemInterno = if (escuro) Color(0xFF1E2D3D) else Color(0xFFF5F7FA)
+    val corTextoPrincipal = if (escuro) Color(0xFFEAF2FA) else Color(0xFF212121)
+    val corTextoSecundario = if (escuro) Color(0xFFA2B5C8) else Color(0xFF757575)
+    val corDestaque = if (escuro) Color(0xFF7AB8F5) else Color(0xFF002B5C)
 
     var nome by remember { mutableStateOf("") }
     var descricao by remember { mutableStateOf("") }
@@ -151,8 +152,6 @@ fun TelaCriarModeloAnamnese(
         mutableStateOf<List<PerguntaModeloAnamneseEntity>>(emptyList())
     }
 
-    // Mantém uma cópia das perguntas originalmente salvas.
-    // Ela será utilizada para identificar perguntas removidas.
     var perguntasOriginais by remember {
         mutableStateOf<List<PerguntaModeloAnamneseEntity>>(emptyList())
     }
@@ -176,7 +175,6 @@ fun TelaCriarModeloAnamnese(
 
     var expandirTipos by remember { mutableStateOf(false) }
 
-    // Identifica se a categoria anterior era Padrão.
     var categoriaAnteriorPadrao by remember {
         mutableStateOf(false)
     }
@@ -192,7 +190,6 @@ fun TelaCriarModeloAnamnese(
         "CHECKBOX"
     )
 
-    // Carrega os dados do modelo e suas perguntas na edição.
     LaunchedEffect(modeloId) {
         if (modeloId != null) {
             try {
@@ -220,7 +217,6 @@ fun TelaCriarModeloAnamnese(
         }
     }
 
-    // Abre o formulário para adicionar ou editar uma pergunta.
     fun abrirPergunta(pergunta: PerguntaModeloAnamneseEntity? = null) {
         perguntaEmEdicao = pergunta
         textoPergunta = pergunta?.texto ?: ""
@@ -232,7 +228,6 @@ fun TelaCriarModeloAnamnese(
         mostrarDialogPergunta = true
     }
 
-    // Altera a categoria e prepara as perguntas correspondentes.
     fun selecionarCategoria(novaCategoria: String) {
         if (categoria == novaCategoria) return
 
@@ -251,22 +246,22 @@ fun TelaCriarModeloAnamnese(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(FundoAnamnese)
+            .background(corFundo)
             .statusBarsPadding()
     ) {
-        // CABEÇALHO
+        // CABEÇALHO ADAPTADO AO TEMA
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.White)
+                .background(corCartao)
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onVoltar) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Voltar",
-                    tint = AzulAnamnese
+                    tint = corDestaque
                 )
             }
 
@@ -275,13 +270,13 @@ fun TelaCriarModeloAnamnese(
                     text = if (editando) "Editar modelo" else "Novo modelo",
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF212121)
+                    color = corTextoPrincipal
                 )
 
                 Text(
                     text = "Configuração da anamnese",
                     fontSize = 12.sp,
-                    color = Color(0xFF757575)
+                    color = corTextoSecundario
                 )
             }
         }
@@ -291,7 +286,7 @@ fun TelaCriarModeloAnamnese(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = AzulAnamnese)
+                CircularProgressIndicator(color = corDestaque)
             }
         } else {
             Column(
@@ -301,12 +296,11 @@ fun TelaCriarModeloAnamnese(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // NOME DO MODELO
                 Text(
-                    "Nome do modelo *",
-                    fontWeight = FontWeight.Bold
+                    text = "Nome do modelo *",
+                    fontWeight = FontWeight.Bold,
+                    color = corTextoPrincipal
                 )
-
                 OutlinedTextField(
                     value = nome,
                     onValueChange = {
@@ -320,13 +314,11 @@ fun TelaCriarModeloAnamnese(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
                 )
-
-                // DESCRIÇÃO
                 Text(
-                    "Descrição",
-                    fontWeight = FontWeight.Bold
+                    text = "Descrição",
+                    fontWeight = FontWeight.Bold,
+                    color = corTextoPrincipal
                 )
-
                 OutlinedTextField(
                     value = descricao,
                     onValueChange = { descricao = it },
@@ -338,18 +330,16 @@ fun TelaCriarModeloAnamnese(
                     maxLines = 4,
                     shape = RoundedCornerShape(12.dp)
                 )
-
-                // CATEGORIA
                 Text(
-                    "Categoria do modelo",
-                    fontWeight = FontWeight.Bold
+                    text = "Categoria do modelo",
+                    fontWeight = FontWeight.Bold,
+                    color = corTextoPrincipal
                 )
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.White
+                        containerColor = corCartao
                     )
                 ) {
                     Column(
@@ -366,22 +356,21 @@ fun TelaCriarModeloAnamnese(
                                 }
                             )
                             Text(
-                                "Padrão",
-                                fontWeight = FontWeight.Bold
+                                text = "Padrão",
+                                fontWeight = FontWeight.Bold,
+                                color = corTextoPrincipal
                             )
                         }
-
                         Text(
-                            "Modelo com perguntas iniciais disponibilizadas pelo aplicativo.",
+                            text = "Modelo com perguntas iniciais disponibilizadas pelo aplicativo.",
                             fontSize = 12.sp,
-                            color = Color.Gray,
+                            color = corTextoSecundario,
                             modifier = Modifier.padding(start = 48.dp)
                         )
-
                         HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp)
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = corItemInterno
                         )
-
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -394,26 +383,25 @@ fun TelaCriarModeloAnamnese(
                                 }
                             )
                             Text(
-                                "Personalizado",
-                                fontWeight = FontWeight.Bold
+                                text = "Personalizado",
+                                fontWeight = FontWeight.Bold,
+                                color = corTextoPrincipal
                             )
                         }
-
                         Text(
-                            "Crie suas próprias perguntas e configure os tipos de resposta.",
+                            text = "Crie suas próprias perguntas e configure os tipos de resposta.",
                             fontSize = 12.sp,
-                            color = Color.Gray,
+                            color = corTextoSecundario,
                             modifier = Modifier.padding(start = 48.dp)
                         )
                     }
                 }
-
-                // ÁREA DE PERGUNTAS
+// ÁREA DE PERGUNTAS
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.White
+                        containerColor = corCartao
                     )
                 ) {
                     Column(
@@ -421,61 +409,57 @@ fun TelaCriarModeloAnamnese(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            "Perguntas da anamnese",
+                            text = "Perguntas da anamnese",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
+                            fontSize = 17.sp,
+                            color = corTextoPrincipal
                         )
-
                         Text(
-                            if (categoria == "PADRAO") {
+                            text = if (categoria == "PADRAO") {
                                 "Perguntas sugeridas pelo aplicativo. Você pode editar, excluir ou adicionar outras."
                             } else {
                                 "Adicione as perguntas que deseja utilizar neste formulário."
                             },
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = corTextoSecundario
                         )
-
                         if (perguntas.isEmpty()) {
                             Text(
-                                "Nenhuma pergunta adicionada ainda.",
-                                color = Color.Gray,
+                                text = "Nenhuma pergunta adicionada ainda.",
+                                color = corTextoSecundario,
                                 fontSize = 13.sp
                             )
                         }
-
                         perguntas.forEachIndexed { index, pergunta ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = FundoAnamnese
+                                    containerColor = corItemInterno
                                 )
                             ) {
                                 Column(
                                     modifier = Modifier.padding(12.dp)
                                 ) {
                                     Text(
-                                        "${index + 1}. ${pergunta.texto}",
-                                        fontWeight = FontWeight.Bold
+                                        text = "${index + 1}. ${pergunta.texto}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = corTextoPrincipal
                                     )
-
                                     Text(
-                                        "Tipo: ${pergunta.tipoResposta.replace("_", " ")}",
+                                        text = "Tipo: ${pergunta.tipoResposta.replace("_", " ")}",
                                         fontSize = 12.sp,
-                                        color = Color.Gray
+                                        color = corTextoSecundario
                                     )
-
                                     Text(
-                                        if (pergunta.obrigatoria) {
+                                        text = if (pergunta.obrigatoria) {
                                             "Resposta obrigatória"
                                         } else {
                                             "Resposta opcional"
                                         },
                                         fontSize = 12.sp,
-                                        color = Color.Gray
+                                        color = corTextoSecundario
                                     )
-
                                     Row(
                                         horizontalArrangement =
                                             Arrangement.spacedBy(8.dp)
@@ -487,11 +471,12 @@ fun TelaCriarModeloAnamnese(
                                         ) {
                                             Icon(
                                                 Icons.Default.Edit,
-                                                contentDescription = null
+                                                contentDescription = null,
+                                                tint = corDestaque
                                             )
-                                            Text("Editar")
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Editar", color = corDestaque)
                                         }
-
                                         TextButton(
                                             onClick = {
                                                 perguntas = perguntas
@@ -508,6 +493,7 @@ fun TelaCriarModeloAnamnese(
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.error
                                             )
+                                            Spacer(Modifier.width(4.dp))
                                             Text(
                                                 "Excluir",
                                                 color = MaterialTheme.colorScheme.error
@@ -517,7 +503,6 @@ fun TelaCriarModeloAnamnese(
                                 }
                             }
                         }
-
                         OutlinedButton(
                             onClick = { abrirPergunta() },
                             modifier = Modifier.fillMaxWidth()
@@ -531,12 +516,11 @@ fun TelaCriarModeloAnamnese(
                         }
                     }
                 }
-
-                // STATUS
+// STATUS
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.White
+                        containerColor = corCartao
                     )
                 ) {
                     Row(
@@ -549,27 +533,26 @@ fun TelaCriarModeloAnamnese(
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(
-                                "Modelo ativo",
-                                fontWeight = FontWeight.Bold
+                                text = "Modelo ativo",
+                                fontWeight = FontWeight.Bold,
+                                color = corTextoPrincipal
                             )
                             Text(
-                                if (ativo) {
+                                text = if (ativo) {
                                     "Disponível para utilização"
                                 } else {
                                     "Indisponível para novas utilizações"
                                 },
                                 fontSize = 12.sp,
-                                color = Color.Gray
+                                color = corTextoSecundario
                             )
                         }
-
                         Switch(
                             checked = ativo,
                             onCheckedChange = { ativo = it }
                         )
                     }
                 }
-
                 if (erro != null) {
                     Text(
                         text = erro!!,
@@ -577,31 +560,26 @@ fun TelaCriarModeloAnamnese(
                         fontSize = 13.sp
                     )
                 }
-
                 Text(
-                    "* Campos obrigatórios",
+                    text = "* Campos obrigatórios",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = corTextoSecundario
                 )
             }
-
-            // SALVAR MODELO E PERGUNTAS
+// SALVAR MODELO E PERGUNTAS
             Button(
                 onClick = {
                     if (nome.isBlank()) {
                         erro = "Informe o nome do modelo."
                         return@Button
                     }
-
                     if (perguntas.isEmpty()) {
                         erro = "Adicione pelo menos uma pergunta."
                         return@Button
                     }
-
                     scope.launch {
                         salvando = true
                         erro = null
-
                         try {
                             val modelo = ModeloAnamneseEntity(
                                 id = modeloId ?: 0L,
@@ -610,24 +588,16 @@ fun TelaCriarModeloAnamnese(
                                 categoria = categoria,
                                 ativo = ativo
                             )
-
-                            // Primeiro salva o modelo e recupera seu ID.
                             val idSalvo = repository.salvar(modelo)
-
-                            // Remove somente perguntas antigas que foram
-                            // excluídas pelo profissional.
                             val idsMantidos = perguntas
                                 .filter { it.id != 0L }
                                 .map { it.id }
                                 .toSet()
-
                             perguntasOriginais
                                 .filter { it.id !in idsMantidos }
                                 .forEach {
                                     perguntaRepository.excluir(it)
                                 }
-
-                            // Salva as perguntas novas e atualiza as antigas.
                             perguntas.forEachIndexed { index, pergunta ->
                                 perguntaRepository.salvar(
                                     pergunta.copy(
@@ -636,7 +606,6 @@ fun TelaCriarModeloAnamnese(
                                     )
                                 )
                             }
-
                             onSalvo()
                         } catch (e: Exception) {
                             erro = e.message
@@ -653,7 +622,8 @@ fun TelaCriarModeloAnamnese(
                 enabled = !salvando,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AzulAnamnese
+                    containerColor = Color(0xFF002B5C),
+                    contentColor = Color.White
                 )
             ) {
                 if (salvando) {
@@ -664,15 +634,15 @@ fun TelaCriarModeloAnamnese(
                     )
                 } else {
                     Text(
-                        if (editando) "Salvar alterações" else "Criar modelo",
-                        fontWeight = FontWeight.Bold
+                        text = if (editando) "Salvar alterações" else "Criar modelo",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
         }
     }
-
-    // FORMULÁRIO PARA ADICIONAR OU EDITAR PERGUNTAS
+// FORMULÁRIO PARA ADICIONAR OU EDITAR PERGUNTAS
     if (mostrarDialogPergunta) {
         AlertDialog(
             onDismissRequest = {
@@ -704,12 +674,10 @@ fun TelaCriarModeloAnamnese(
                             Text("Digite sua pergunta")
                         }
                     )
-
                     Text(
                         "Tipo de resposta",
                         fontWeight = FontWeight.Bold
                     )
-
                     ExposedDropdownMenuBox(
                         expanded = expandirTipos,
                         onExpandedChange = {
@@ -730,7 +698,6 @@ fun TelaCriarModeloAnamnese(
                                 )
                             }
                         )
-
                         ExposedDropdownMenu(
                             expanded = expandirTipos,
                             onDismissRequest = {
@@ -756,7 +723,6 @@ fun TelaCriarModeloAnamnese(
                             }
                         }
                     }
-
                     if (
                         tipoPergunta == "MULTIPLA_ESCOLHA" ||
                         tipoPergunta == "CHECKBOX"
@@ -772,7 +738,6 @@ fun TelaCriarModeloAnamnese(
                             minLines = 3
                         )
                     }
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -793,7 +758,6 @@ fun TelaCriarModeloAnamnese(
                             erro = "Informe o texto da pergunta."
                             return@TextButton
                         }
-
                         if (
                             (tipoPergunta == "MULTIPLA_ESCOLHA" ||
                                     tipoPergunta == "CHECKBOX") &&
@@ -804,7 +768,6 @@ fun TelaCriarModeloAnamnese(
                             erro = "Informe pelo menos uma opção."
                             return@TextButton
                         }
-
                         val pergunta = PerguntaModeloAnamneseEntity(
                             id = perguntaEmEdicao?.id ?: 0L,
                             modeloId = modeloId ?: 0L,
@@ -822,7 +785,6 @@ fun TelaCriarModeloAnamnese(
                             ordem = perguntaEmEdicao?.ordem
                                 ?: perguntas.size
                         )
-
                         perguntas = if (perguntaEmEdicao == null) {
                             (perguntas + pergunta).mapIndexed { index, item ->
                                 item.copy(ordem = index)
@@ -843,7 +805,6 @@ fun TelaCriarModeloAnamnese(
                                 }
                             }
                         }
-
                         erro = null
                         mostrarDialogPergunta = false
                     }

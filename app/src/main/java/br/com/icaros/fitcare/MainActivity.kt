@@ -2241,8 +2241,19 @@ fun TelaDashboard(
         }
     }
 
+    var eventosSyncVersao by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         verificarStatusNuvem()
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(context)
+                FirestoreSyncService(db.usuarioDao(), db).sincronizarEventosAlunosProfessor(context)
+                withContext(Dispatchers.Main) {
+                    eventosSyncVersao++
+                }
+            } catch (e: Exception) {
+            }
+        }
     }
 
     val alunos by repository
@@ -2630,7 +2641,7 @@ fun TelaDashboard(
                 val alunosStatusAtencao = alunos.count { it.status == "Atenção" }
                 val alunosStatusPrioridade = alunos.count { it.status == "Prioridade" }
                 val eventosStorage = remember { EventoAlunoStorage(context) }
-                val todosEventos = remember(alunos, todosTreinos) {
+                val todosEventos = remember(alunos, todosTreinos, eventosSyncVersao) {
                     eventosStorage.listarTodos()
                 }
                 val metricasFrequencia = remember(alunos, todosEventos, todosTreinos) {
@@ -3771,7 +3782,19 @@ fun TelaPerfilAluno(
     }
     LaunchedEffect(alunoId) {
         eventosAluno = storageEventosPerfil.listarPorAluno(alunoId)
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                val sync = FirestoreSyncService(db.usuarioDao(), db)
+                sync.sincronizarLeituraAlunos()
+                sync.sincronizarAnamnesesAtribuidas()
+                sync.sincronizarEventosAlunosProfessor(contextoEventosPerfil)
+            } catch (e: Exception) {
+            }
+        }
+        eventosAluno = storageEventosPerfil.listarPorAluno(alunoId)
     }
+
     if (carregando) {
         Column(
             modifier = Modifier
@@ -6237,6 +6260,13 @@ fun TelaLinhaDoTempoAluno(
     val aluno by repository.buscarPorId(alunoId).collectAsState(initial = null)
 
     LaunchedEffect(alunoId) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(context)
+                FirestoreSyncService(db.usuarioDao(), db).sincronizarEventosAlunosProfessor(context)
+            } catch (e: Exception) {
+            }
+        }
         eventos = storage.listarPorAluno(alunoId)
     }
 
@@ -8176,6 +8206,13 @@ fun TelaFormularioTreino(
 
     LaunchedEffect(treinoId) {
         if (treinoId != null) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val db = FitCareDatabase.getDatabase(contextoEventos)
+                    FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
+                } catch (e: Exception) {
+                }
+            }
             val treino = treinoRepository.buscarTreinoPorId(treinoId)
             if (treino != null) {
                 nome = treino.nome
@@ -8207,13 +8244,13 @@ fun TelaFormularioTreino(
                     }
                 if (exercicios.isEmpty()) {
                     exercicios.add(ExercicioFormulario())
-                    exerciciosExpandidos[0] = true
+                    exerciciosExpandidos.put(0, true)
                 }
                 assinaturaInicial = "${treino.nome}|${treino.descricao}|${treino.dataInicio}|${treino.dataFim}|${treino.observacoes}|" +
                         exercicios.joinToString(";") { "${it.nome}|${it.series}|${it.repeticoes}|${it.carga}|${it.observacoes}|${it.videoTipo}|${it.videoUrl}|${it.videoNome}" }
             }
         } else {
-            exerciciosExpandidos[0] = true
+            exerciciosExpandidos.put(0, true)
         }
     }
 
@@ -8958,6 +8995,13 @@ fun TelaDetalhesTreino(
         mutableStateOf(true)
     }
     LaunchedEffect(treinoId) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(context)
+                FirestoreSyncService(db.usuarioDao(), db).sincronizarTreinos()
+            } catch (e: Exception) {
+            }
+        }
         treino = treinoRepository.buscarTreinoPorId(treinoId)
         carregando = false
     }
