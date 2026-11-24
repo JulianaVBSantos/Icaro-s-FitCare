@@ -346,4 +346,10 @@ abstract class PerguntaAnamneseAtribuidaDao {
         id: Long,
         firestoreId: String
     ): Int
+    @Query("""
+        DELETE FROM perguntas_anamnese_atribuidas
+        WHERE anamneseAtribuidaId = :anamneseId
+        AND (firestoreId IS NULL OR firestoreId NOT IN (:idsAtivos))
+    """)
+    abstract suspend fun excluirObsoletas(anamneseId: Long, idsAtivos: List<String>)
 }

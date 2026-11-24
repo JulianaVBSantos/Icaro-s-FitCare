@@ -347,4 +347,20 @@ abstract class AnamneseAtribuidaDao {
         dataResposta: String,
         updatedAtMillis: Long
     ): Int
+    @Query("""
+        UPDATE anamneses_atribuidas
+        SET status = :status,
+            dataEnvio = :dataEnvio,
+            dataInicioResposta = '',
+            dataResposta = '',
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+    """)
+    abstract suspend fun atualizarStatusEDataEnvio(
+        id: Long,
+        status: String,
+        dataEnvio: String,
+        updatedAtMillis: Long
+    ): Int
+
 }

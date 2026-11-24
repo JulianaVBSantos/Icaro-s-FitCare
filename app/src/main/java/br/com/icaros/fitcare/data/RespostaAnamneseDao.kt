@@ -346,4 +346,13 @@ interface RespostaAnamneseDao {
         anamneseId: Long,
         professorId: Long
     ): List<RespostaAnamneseEntity>
+    @Query("""
+        DELETE FROM respostas_anamnese
+        WHERE perguntaAtribuidaId IN (
+            SELECT id
+            FROM perguntas_anamnese_atribuidas
+            WHERE anamneseAtribuidaId = :anamneseId
+        )
+    """)
+    suspend fun excluirPorAnamnese(anamneseId: Long)
 }

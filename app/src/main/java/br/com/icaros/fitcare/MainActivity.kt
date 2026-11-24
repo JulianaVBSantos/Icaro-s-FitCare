@@ -4384,28 +4384,108 @@ fun TelaPerfilAluno(
                                         Text("Visualizar anamnese")
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    OutlinedButton(
-                                        onClick = {
-                                            anamneseParaExcluirId = avaliacao.id
-                                            erroExclusaoAnamnese = ""
-                                        },
-                                        enabled = !excluindoAnamnese,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = Vermelho
-                                        ),
-                                        border = BorderStroke(
-                                            width = 1.dp,
-                                            color = Vermelho
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(17.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Excluir anamnese")
+                                    val ehPadraoObrigatoria =
+                                        avaliacao.identificadorExterno == "PADRAO_OBRIGATORIA" ||
+                                                avaliacao.nomeModelo.equals("Anamnese Padrão Inicial", ignoreCase = true)
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    if (ehPadraoObrigatoria) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    try {
+                                                        val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                                                        val hojeStr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+                                                        val agoraMs = System.currentTimeMillis()
+                                                        // 1. Limpa respostas locais e redefine status para PENDENTE
+                                                        db.respostaAnamneseDao().excluirPorAnamnese(avaliacao.id)
+                                                        db.anamneseAtribuidaDao().atualizarStatusEDataEnvio(
+                                                            id = avaliacao.id,
+                                                            status = "PENDENTE",
+                                                            dataEnvio = hojeStr,
+                                                            updatedAtMillis = agoraMs
+                                                        )
+                                                        // 2. Limpa respostas remotas e marca como PENDENTE no Firestore
+                                                        val alunoFbId = alunoAtual?.firebaseId
+                                                        val anamFbId = avaliacao.firestoreId ?: "padrao_inicial_$alunoFbId"
+                                                        if (!alunoFbId.isNullOrBlank()) {
+                                                            withContext(Dispatchers.IO) {
+                                                                val docAnamRef = FirebaseFirestore.getInstance()
+                                                                    .collection("alunos")
+                                                                    .document(alunoFbId)
+                                                                    .collection("anamneses_atribuidas")
+                                                                    .document(anamFbId)
+                                                                val respsSnap = docAnamRef.collection("respostas").get().await()
+                                                                for (rDoc in respsSnap.documents) {
+                                                                    rDoc.reference.delete().await()
+                                                                }
+                                                                docAnamRef.update(
+                                                                    mapOf(
+                                                                        "status" to "PENDENTE",
+                                                                        "dataEnvio" to hojeStr,
+                                                                        "dataInicioResposta" to "",
+                                                                        "dataResposta" to "",
+                                                                        "updatedAtMillis" to agoraMs
+                                                                    )
+                                                                ).await()
+                                                            }
+                                                        }
+                                                        Toast.makeText(
+                                                            contextoEventosPerfil,
+                                                            "Anamnese Padrão reenviada para o aluno preencher novamente.",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(
+                                                            contextoEventosPerfil,
+                                                            e.message ?: "Não foi possível reenviar a anamnese.",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = AzulPrincipal
+                                            ),
+                                            border = BorderStroke(
+                                                width = 1.dp,
+                                                color = AzulPrincipal
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Send,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Reenviar anamnese")
+                                        }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = {
+                                                anamneseParaExcluirId = avaliacao.id
+                                                erroExclusaoAnamnese = ""
+                                            },
+                                            enabled = !excluindoAnamnese,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = Vermelho
+                                            ),
+                                            border = BorderStroke(
+                                                width = 1.dp,
+                                                color = Vermelho
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Excluir anamnese")
+                                        }
                                     }
                                 }
                             }

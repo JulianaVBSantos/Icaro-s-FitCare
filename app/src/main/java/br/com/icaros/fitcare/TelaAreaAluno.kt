@@ -439,6 +439,7 @@ fun TelaAreaAluno(
             mensagemSucesso = ""
             try {
                 perguntas = anamneseRepository.buscarPerguntas(id)
+                    .distinctBy { it.texto.trim().lowercase() }
                 val respostasSalvas = respostaRepository.buscarRespostasDaAnamnese(id)
                 respostas = respostasSalvas.associate { it.perguntaAtribuidaId to it.resposta }
             } catch (e: Exception) {
@@ -727,13 +728,21 @@ fun TelaAreaAluno(
                                     carregando = true
                                     mensagemErro = ""
                                     aguardarSalvamentos()
-                                    for (pergunta in perguntas) {
+                                    val todasDoRoom = anamneseRepository.buscarPerguntas(anamneseSelecionadaId!!)
+                                    val respostasPorTexto = perguntas.associate { p ->
+                                        p.texto.trim().lowercase() to (respostas[p.id] ?: "")
+                                    }
+                                    for (pRoom in todasDoRoom) {
+                                        val respVal = respostas[pRoom.id]
+                                            ?: respostasPorTexto[pRoom.texto.trim().lowercase()]
+                                            ?: ""
                                         respostaRepository.salvarRespostaDoAluno(
                                             alunoId = idAluno,
-                                            perguntaId = pergunta.id,
-                                            resposta = respostas[pergunta.id] ?: ""
+                                            perguntaId = pRoom.id,
+                                            resposta = respVal
                                         )
                                     }
+
                                     respostaRepository.concluirDoAluno(
                                         alunoId = idAluno,
                                         anamneseId = anamneseSelecionadaId!!

@@ -817,51 +817,19 @@ class FirestoreSyncService(
                 }
             }
             val anamnesesLocaisAluno =
-                database.anamneseAtribuidaDao().listarPorAluno(alunoId).first()
+                database.anamneseAtribuidaDao().listarTodasParaSincronizacaoDoAluno(alunoId)
             for (local in anamnesesLocaisAluno) {
-                if (local.excluida) continue
                 val fbIdLocal = local.firestoreId?.takeIf { it.isNotBlank() }
-                if (fbIdLocal == null && local.identificadorExterno == "PADRAO_OBRIGATORIA") {
-                    val novoFbId = "padrao_inicial_$alunoFirebaseId"
-                    database.anamneseAtribuidaDao()
-                        .atualizarFirestoreId(local.id, novoFbId, System.currentTimeMillis())
-                    val docSnap = colecaoAnamneses.document(novoFbId).get().await()
-                    enviarRespostasLocaisDoAluno(
-                        documento = docSnap,
-                        anamneseFirestoreId = novoFbId,
-                        anamneseLocalId = local.id,
-                        anamneseLocal = local.copy(firestoreId = novoFbId),
+                if (fbIdLocal == null || fbIdLocal !in idsRemotosAtivos) {
+                    database.respostaAnamneseDao().excluirPorAnamnese(local.id)
+                    database.anamneseAtribuidaDao().excluirLogicamenteDoAluno(
+                        id = local.id,
                         alunoId = alunoId,
-                        uid = uid
+                        updatedAtMillis = System.currentTimeMillis()
                     )
-                } else if (!fbIdLocal.isNullOrBlank() && fbIdLocal !in idsRemotosAtivos) {
-                    if (local.identificadorExterno == "PADRAO_OBRIGATORIA") {
-                        val docSnap = colecaoAnamneses.document(fbIdLocal).get().await()
-                        enviarRespostasLocaisDoAluno(
-                            documento = docSnap,
-                            anamneseFirestoreId = fbIdLocal,
-                            anamneseLocalId = local.id,
-                            anamneseLocal = local,
-                            alunoId = alunoId,
-                            uid = uid
-                        )
-                    } else {
-                        database.anamneseAtribuidaDao().atualizarRecebidaDoFirestore(
-                            firestoreId = fbIdLocal,
-                            nomeModelo = local.nomeModelo,
-                            status = local.status,
-                            dataCriacao = local.dataCriacao,
-                            dataEnvio = local.dataEnvio,
-                            dataInicioResposta = local.dataInicioResposta,
-                            dataResposta = local.dataResposta,
-                            profissionalResponsavel = local.profissionalResponsavel,
-                            identificadorExterno = local.identificadorExterno,
-                            updatedAtMillis = System.currentTimeMillis(),
-                            excluida = true
-                        )
-                    }
                 }
             }
+
             sincronizarTreinosDoAluno()
             sucesso
         } catch (e: CancellationException) {
@@ -1311,11 +1279,42 @@ class FirestoreSyncService(
             val dataEnvioLocal = existente?.dataEnvio ?: ""
             val dataInicioLocal = existente?.dataInicioResposta ?: ""
             val dataRespostaLocal = existente?.dataResposta ?: ""
-            val statusFinal = combinarStatus(statusLocal, statusRemoto)
-            val dataEnvioFinal = escolherDataMaisCompleta(dataEnvioLocal, dataEnvioRemota)
-            val dataInicioFinal = escolherDataMaisCompleta(dataInicioLocal, dataInicioRemota)
-            val dataRespostaFinal = escolherDataMaisCompleta(dataRespostaLocal, dataRespostaRemota)
-            val excluidaFinal = (existente?.excluida == true) || excluidaRemota
+
+            val foiReenviadaPeloProfessor =
+                existente != null &&
+                        updatedAtMillis > existente.updatedAtMillis &&
+                        statusRemoto == "PENDENTE"
+
+            val statusFinal = if (foiReenviadaPeloProfessor) {
+                "PENDENTE"
+            } else {
+                combinarStatus(statusLocal, statusRemoto)
+            }
+
+            val dataEnvioFinal = if (foiReenviadaPeloProfessor) {
+                dataEnvioRemota
+            } else {
+                escolherDataMaisCompleta(dataEnvioLocal, dataEnvioRemota)
+            }
+            val dataInicioFinal = if (foiReenviadaPeloProfessor) {
+                ""
+            } else {
+                escolherDataMaisCompleta(dataInicioLocal, dataInicioRemota)
+            }
+            val dataRespostaFinal = if (foiReenviadaPeloProfessor) {
+                ""
+            } else {
+                escolherDataMaisCompleta(dataRespostaLocal, dataRespostaRemota)
+            }
+            val ehPadraoObrigatoria = identificadorExterno == "PADRAO_OBRIGATORIA" ||
+                    nomeModelo.equals("Anamnese Padrão Inicial", ignoreCase = true)
+
+            val excluidaFinal = if (ehPadraoObrigatoria && !excluidaRemota) {
+                false
+            } else {
+                (existente?.excluida == true) || excluidaRemota
+            }
+
             val anamneseLocalId = if (existente == null) {
                 anamneseDao.inserirRecebidaDoFirestore(
                     AnamneseAtribuidaEntity(
@@ -1355,12 +1354,20 @@ class FirestoreSyncService(
                 )
                 existente.id
             }
+
             if (anamneseLocalId <= 0L) {
                 throw IllegalStateException("Não foi possível importar a anamnese $firestoreId.")
             }
+
+            if (foiReenviadaPeloProfessor) {
+                respostaDao.excluirPorAnamnese(anamneseLocalId)
+            }
+
+            val idsPerguntasAtivas = mutableListOf<String>()
             for (perguntaDocumento in perguntasRemotas.documents) {
                 val perguntaFirestoreId =
                     perguntaDocumento.getString("firestoreId") ?: perguntaDocumento.id
+                idsPerguntasAtivas.add(perguntaFirestoreId)
                 val pergunta = PerguntaAnamneseAtribuidaEntity(
                     id = 0L,
                     anamneseAtribuidaId = anamneseLocalId,
@@ -1374,7 +1381,11 @@ class FirestoreSyncService(
                 )
                 perguntaDao.inserirOuAtualizarParaSincronizacao(pergunta)
             }
-            if (importarRespostas) {
+            if (idsPerguntasAtivas.isNotEmpty()) {
+                perguntaDao.excluirObsoletas(anamneseLocalId, idsPerguntasAtivas)
+            }
+
+            if (importarRespostas && !foiReenviadaPeloProfessor) {
                 val perfilUsuario = usuarioDao.buscarPorFirebaseUid(uidAutenticado)?.perfil
                 for (respostaDocumento in respostasRemotasDocs) {
                     val respostaUid = respostaDocumento.getString("alunoAuthUid")
@@ -1397,9 +1408,11 @@ class FirestoreSyncService(
                     )
                 }
             }
+
             anamneseLocalId
         }
     }
+
     private suspend fun enviarRespostasLocaisDoAluno(
         documento: DocumentSnapshot,
         anamneseFirestoreId: String,
@@ -1429,9 +1442,9 @@ class FirestoreSyncService(
                     "professorUid" to profUid,
                     "alunoFirebaseId" to alunoFirebaseId,
                     "alunoAuthUid" to uid,
-                    "nomeModelo" to anamneseLocal.nomeModelo,
+                    "nomeModelo" to anamneseLocal.nomeModelo.ifBlank { "Anamnese Padrão Inicial" },
                     "profissionalResponsavel" to anamneseLocal.profissionalResponsavel,
-                    "identificadorExterno" to anamneseLocal.identificadorExterno.ifBlank { "PADRAO_OBRIGATORIA" },
+                    "identificadorExterno" to "PADRAO_OBRIGATORIA",
                     "excluida" to false,
                     "status" to anamneseLocal.status,
                     "dataCriacao" to anamneseLocal.dataCriacao,
