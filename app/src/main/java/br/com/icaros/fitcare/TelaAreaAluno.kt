@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.foundation.horizontalScroll
 import kotlinx.coroutines.tasks.await
 import android.content.Intent
 import android.net.Uri
@@ -149,7 +150,9 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("saude") ||
                     tituloLower.contains("dor") -> {
                 atualizouCondicoes = true
-                condicoesExtraidas.addAll(itens)
+                if (!respostaBruta.equals("Não", ignoreCase = true)) {
+                    condicoesExtraidas.addAll(itens)
+                }
             }
 
             tituloLower.contains("restriç") ||
@@ -157,7 +160,9 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     tituloLower.contains("limitaç") ||
                     tituloLower.contains("limitac") -> {
                 atualizouRestricoes = true
-                restricoesExtraidas.addAll(itens)
+                if (!respostaBruta.equals("Não", ignoreCase = true)) {
+                    restricoesExtraidas.addAll(itens)
+                }
             }
         }
     }
@@ -755,13 +760,13 @@ fun TelaAreaAluno(
                                     )
                                     withContext(Dispatchers.IO) {
                                         try {
-                                            val syncService =
-                                                FirestoreSyncService(db.usuarioDao(), db)
+                                            val syncService = FirestoreSyncService(db.usuarioDao(), db)
                                             syncService.sincronizarAnamnesesAtribuidasDoAluno()
                                             syncService.sincronizarTreinosDoAluno()
-                                        } catch (e: Exception) {
+                                        } catch (_: Exception) {
                                         }
                                     }
+
                                     AlunoSyncWorker.agendar(context)
                                     anamneseSelecionadaId = null
                                     perguntas = emptyList()
@@ -1299,6 +1304,21 @@ fun TelaAreaAluno(
                                                         treino = tr,
                                                         exerciciosAtualizados = todosAtualizados
                                                     )
+                                                val prefsHist = context.getSharedPreferences(
+                                                    "fitcare_hist_cargas_$idAluno",
+                                                    android.content.Context.MODE_PRIVATE
+                                                )
+                                                val hojeHist = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+                                                val chaveEx = atualizado.nome.trim()
+                                                val atualHist = prefsHist.getString(chaveEx, "").orEmpty()
+                                                val entradas = atualHist.split("|").filter { it.isNotBlank() }.toMutableList()
+                                                val novaEntrada = "$hojeHist:${atualizado.carga.trim()}"
+                                                if (entradas.isEmpty() && exAlvo.carga.isNotBlank() && exAlvo.carga.trim() != atualizado.carga.trim()) { entradas.add("$hojeHist:${exAlvo.carga.trim()}") }
+                                                if (entradas.lastOrNull() != novaEntrada) {
+                                                    entradas.add(novaEntrada)
+                                                }
+                                                prefsHist.edit().putString(chaveEx, entradas.joinToString("|")).apply()
+
                                                 withContext(Dispatchers.Main) {
                                                     exercicioEditandoCarga = null
                                                     Toast.makeText(
@@ -1990,6 +2010,17 @@ private fun SecaoProgressoCargasAluno(
     corTextoSecundario: Color,
     corDestaque: Color
 ) {
+    val context = LocalContext.current
+    var abaProgresso by remember { mutableStateOf("GRAFICOS") }
+    val azulGrafico = Color(0xFF2196F3)
+
+    val prefsHist = remember(idAluno) {
+        context.getSharedPreferences(
+            "fitcare_hist_cargas_$idAluno",
+            android.content.Context.MODE_PRIVATE
+        )
+    }
+
     val todosExercicios by produceState(
         initialValue = emptyList<Pair<String, ExercicioEntity>>(),
         key1 = treinosAluno
@@ -2005,53 +2036,280 @@ private fun SecaoProgressoCargasAluno(
         }
         value = lista
     }
-    if (todosExercicios.isEmpty()) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = corCartao)
+
+    val seriesPorExercicio = remember(todosExercicios) {
+        val hojeStr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+        todosExercicios.distinctBy { it.second.nome.trim().lowercase() }.map { (_, ex) ->
+            val bruto = prefsHist.getString(ex.nome.trim(), "").orEmpty()
+            val pontos = bruto.split("|")
+                .mapNotNull { item ->
+                    val partes = item.split(":")
+                    if (partes.size >= 2) {
+                        val data = partes[0].trim()
+                        val cargaTxt = partes[1].trim()
+                        val valorNum = cargaTxt
+                            .replace(",", ".")
+                            .replace(Regex("[^0-9.]"), "")
+                            .toFloatOrNull()
+                        if (data.isNotBlank() && valorNum != null) {
+                            Triple(data, cargaTxt, valorNum)
+                        } else null
+                    } else null
+                }
+                .toMutableList()
+
+            if (pontos.isEmpty() && ex.carga.isNotBlank()) {
+                val valAtual = ex.carga
+                    .replace(",", ".")
+                    .replace(Regex("[^0-9.]"), "")
+                    .toFloatOrNull()
+                if (valAtual != null) {
+                    pontos.add(Triple(hojeStr, ex.carga, valAtual))
+                }
+            }
+            ex.nome to pontos
+        }.filter { it.second.isNotEmpty() }
+    }
+
+    // Seletor de Abas: Gráficos | Planilha
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(corCartao)
+            .padding(3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (abaProgresso == "GRAFICOS") azulGrafico else Color.Transparent)
+                .clickable { abaProgresso = "GRAFICOS" }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Registre as cargas nos seus exercícios para acompanhar sua evolução aqui.",
+                text = "Gráficos",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = if (abaProgresso == "GRAFICOS") Color.White else corTextoPrincipal
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (abaProgresso == "PLANILHA") azulGrafico else Color.Transparent)
+                .clickable { abaProgresso = "PLANILHA" }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Planilha",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = if (abaProgresso == "PLANILHA") Color.White else corTextoPrincipal
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    if (seriesPorExercicio.isEmpty()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = corCartao),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text(
+                text = "Atualize as cargas numéricas nos seus exercícios (ex.: 25 kg) para visualizar seus gráficos e planilha de evolução.",
                 modifier = Modifier.padding(16.dp),
                 color = corTextoSecundario,
                 fontSize = 13.sp
             )
         }
-    } else {
-        todosExercicios.forEach { (nomeFicha, ex) ->
+        return
+    }
+
+    if (abaProgresso == "GRAFICOS") {
+        seriesPorExercicio.forEach { (nomeExercicio, pontos) ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = corCartao)
+                    .padding(bottom = 14.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = corCartao),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = ex.nome,
+                        text = nomeExercicio,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = corTextoPrincipal
-                    )
-                    Text(
-                        text = "Ficha: $nomeFicha • ${ex.series} × ${ex.repeticoes}",
-                        fontSize = 12.sp,
-                        color = corTextoSecundario
+                        color = corTextoPrincipal,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Carga atual registrada: ${ex.carga.ifBlank { "Ainda não registrada" }}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = corDestaque
-                    )
-                    if (ex.observacoes.isNotBlank()) {
-                        Text(
-                            text = "Obs.: ${ex.observacoes}",
-                            fontSize = 12.sp,
-                            color = corTextoSecundario
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(28.dp)
+                                .height(10.dp)
+                                .background(azulGrafico.copy(alpha = 0.25f))
+                                .padding(1.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Kg", fontSize = 12.sp, color = corTextoSecundario)
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val valores = pontos.map { it.third }
+                    val minVal = ((valores.minOrNull() ?: 0f) - 5f).coerceAtLeast(0f)
+                    val maxVal = (valores.maxOrNull() ?: 10f) + 5f
+                    val range = (maxVal - minVal).coerceAtLeast(1f)
+
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        val stepX = if (pontos.size > 1) size.width / (pontos.size - 1) else size.width / 2f
+                        val path = androidx.compose.ui.graphics.Path()
+
+                        // Linhas de grade horizontais
+                        for (i in 0..3) {
+                            val yGrid = size.height * (i / 3f)
+                            drawLine(
+                                color = Color.Gray.copy(alpha = 0.25f),
+                                start = androidx.compose.ui.geometry.Offset(0f, yGrid),
+                                end = androidx.compose.ui.geometry.Offset(size.width, yGrid),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+
+                        pontos.forEachIndexed { idx, (_, _, valor) ->
+                            val x = if (pontos.size > 1) idx * stepX else size.width / 2f
+                            val y = size.height - ((valor - minVal) / range) * size.height
+                            if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+
+                        drawPath(
+                            path = path,
+                            color = azulGrafico,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx())
+                        )
+
+                        pontos.forEachIndexed { idx, (_, _, valor) ->
+                            val x = if (pontos.size > 1) idx * stepX else size.width / 2f
+                            val y = size.height - ((valor - minVal) / range) * size.height
+                            drawCircle(
+                                color = azulGrafico,
+                                radius = 4.dp.toPx(),
+                                center = androidx.compose.ui.geometry.Offset(x, y)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        pontos.forEach { (data, cargaTxt, _) ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = cargaTxt,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = azulGrafico
+                                )
+                                Text(
+                                    text = data,
+                                    fontSize = 10.sp,
+                                    color = corTextoSecundario
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+// ABA PLANILHA (Arraste horizontal com datas e badges azuis de carga)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = corCartao)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                seriesPorExercicio.forEach { (nomeExercicio, pontos) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = nomeExercicio,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = corTextoPrincipal,
+                            modifier = Modifier.width(120.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            pontos.forEach { (data, cargaTxt, _) ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "→ $data",
+                                        fontSize = 11.sp,
+                                        color = corTextoSecundario
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .background(azulGrafico, RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (cargaTxt.contains("kg", ignoreCase = true)) cargaTxt else "${cargaTxt}kg",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = corTextoSecundario.copy(alpha = 0.15f))
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(azulGrafico.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Arraste a planilha para o lado e veja todos os valores.",
+                        fontSize = 12.sp,
+                        color = azulGrafico,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -2065,12 +2323,38 @@ private fun CampoRespostaAnamnese(
     corTextoPrincipal: Color = Color(0xFF002B5C),
     onChange: (String) -> Unit
 ) {
-    val alternativas = remember(pergunta.opcoes) {
-        try {
+    val tituloLowerCampo = pergunta.texto.lowercase(Locale.ROOT)
+    val tipoEfetivo = when {
+        pergunta.tipoResposta == "TEXTO" && (tituloLowerCampo.contains("frequência") || tituloLowerCampo.contains("frequencia")) -> "CHECKBOX"
+        pergunta.tipoResposta == "TEXTO" && tituloLowerCampo.contains("disponibilidade") -> "CHECKBOX"
+        else -> pergunta.tipoResposta
+    }
+
+    val alternativas = remember(pergunta.opcoes, pergunta.texto) {
+        val doBanco = try {
             val json = JSONArray(pergunta.opcoes)
             (0 until json.length()).map { json.getString(it) }
         } catch (e: Exception) {
             emptyList()
+        }
+        when {
+            doBanco.isNotEmpty() -> doBanco
+            tituloLowerCampo.contains("frequência") || tituloLowerCampo.contains("frequencia") -> listOf(
+                "Não pratico atualmente",
+                "1 a 2 vezes por semana",
+                "3 a 4 vezes por semana",
+                "5 ou mais vezes por semana"
+            )
+            tituloLowerCampo.contains("disponibilidade") -> listOf(
+                "Segunda-feira",
+                "Terça-feira",
+                "Quarta-feira",
+                "Quinta-feira",
+                "Sexta-feira",
+                "Sábado",
+                "Domingo"
+            )
+            else -> emptyList()
         }
     }
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -2088,7 +2372,7 @@ private fun CampoRespostaAnamnese(
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
-        when (pergunta.tipoResposta) {
+        when (tipoEfetivo) {
             "TEXTO" -> {
                 OutlinedTextField(
                     value = valor,

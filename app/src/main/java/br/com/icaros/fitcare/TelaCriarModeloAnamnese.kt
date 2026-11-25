@@ -48,69 +48,85 @@ private fun jsonParaOpcoes(json: String): String {
 }
 
 private fun perguntasPadrao(): List<PerguntaModeloAnamneseEntity> {
+    val opcoesCondicoes = JSONArray().apply {
+        listOf(
+            "Hipertensão",
+            "Diabetes",
+            "Dor lombar",
+            "Dor no joelho",
+            "Dor no ombro",
+            "Problema cardíaco",
+            "Outro"
+        ).forEach { put(it) }
+    }.toString()
+
+    val opcoesRestricoes = JSONArray().apply {
+        listOf(
+            "Evitar exercícios de alto impacto",
+            "Evitar agachamentos profundos",
+            "Limitar cargas elevadas",
+            "Evitar exercícios acima da cabeça",
+            "Limitar amplitude de movimento",
+            "Outro"
+        ).forEach { put(it) }
+    }.toString()
+
     return listOf(
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
-            texto = "Qual é o seu principal objetivo?",
-            tipoResposta = "MULTIPLA_ESCOLHA",
-            opcoes = opcoesParaJson(
-                "Emagrecimento\nHipertrofia\nCondicionamento físico\nSaúde e qualidade de vida\nOutro"
-            ),
+            texto = "Qual é o seu principal objetivo com o treinamento?",
+            tipoResposta = "TEXTO",
             obrigatoria = true,
             ordem = 0
+        ),
+        PerguntaModeloAnamneseEntity(
+            modeloId = 0,
+            texto = "Condições de saúde ou dores articulares",
+            tipoResposta = "SIM_NAO_CHECKBOX",
+            opcoes = opcoesCondicoes,
+            obrigatoria = true,
+            ordem = 1
+        ),
+        PerguntaModeloAnamneseEntity(
+            modeloId = 0,
+            texto = "Restrições físicas ou limitações de exercício",
+            tipoResposta = "SIM_NAO_CHECKBOX",
+            opcoes = opcoesRestricoes,
+            obrigatoria = true,
+            ordem = 2
         ),
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
             texto = "Você pratica atividade física atualmente?",
             tipoResposta = "SIM_NAO",
             obrigatoria = true,
-            ordem = 1
-        ),
-        PerguntaModeloAnamneseEntity(
-            modeloId = 0,
-            texto = "Com que frequência pratica atividade física?",
-            tipoResposta = "MULTIPLA_ESCOLHA",
-            opcoes = opcoesParaJson(
-                "Não pratico\n1 a 2 vezes por semana\n3 a 4 vezes por semana\n5 ou mais vezes por semana"
-            ),
-            obrigatoria = false,
-            ordem = 2
-        ),
-        PerguntaModeloAnamneseEntity(
-            modeloId = 0,
-            texto = "Possui alguma lesão ou limitação física?",
-            tipoResposta = "SIM_NAO",
-            obrigatoria = true,
             ordem = 3
         ),
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
-            texto = "Descreva suas lesões ou limitações, se houver.",
+            texto = "Com que frequência pratica atividade física?",
             tipoResposta = "TEXTO",
             obrigatoria = false,
             ordem = 4
         ),
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
-            texto = "Possui alguma restrição médica para atividade física?",
-            tipoResposta = "SIM_NAO",
+            texto = "Possui alguma lesão ou limitação física?",
+            tipoResposta = "SIM_NAO_TEXTO",
             obrigatoria = true,
             ordem = 5
         ),
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
             texto = "Utiliza algum medicamento?",
-            tipoResposta = "SIM_NAO",
+            tipoResposta = "SIM_NAO_TEXTO",
             obrigatoria = false,
             ordem = 6
         ),
         PerguntaModeloAnamneseEntity(
             modeloId = 0,
             texto = "Qual é a sua disponibilidade semanal para treinar?",
-            tipoResposta = "MULTIPLA_ESCOLHA",
-            opcoes = opcoesParaJson(
-                "1 a 2 dias\n3 a 4 dias\n5 a 6 dias\nTodos os dias"
-            ),
+            tipoResposta = "TEXTO",
             obrigatoria = true,
             ordem = 7
         ),

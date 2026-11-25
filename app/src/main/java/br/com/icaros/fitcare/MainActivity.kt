@@ -3795,6 +3795,54 @@ fun TelaPerfilAluno(
         eventosAluno = storageEventosPerfil.listarPorAluno(alunoId)
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, alunoId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                        val sync = FirestoreSyncService(db.usuarioDao(), db)
+                        sync.sincronizarLeituraAlunos()
+                        sync.sincronizarAnamnesesAtribuidas()
+                        sync.sincronizarEventosAlunosProfessor(contextoEventosPerfil)
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    val fbIdAlunoPerfil = alunoAtual?.firebaseId
+    DisposableEffect(alunoId, fbIdAlunoPerfil) {
+        var regSub: com.google.firebase.firestore.ListenerRegistration? = null
+        if (!fbIdAlunoPerfil.isNullOrBlank()) {
+            regSub = FirebaseFirestore.getInstance()
+                .collection("alunos")
+                .document(fbIdAlunoPerfil)
+                .collection("anamneses_atribuidas")
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                                val sync = FirestoreSyncService(db.usuarioDao(), db)
+                                sync.sincronizarAnamnesesAtribuidas()
+                                sync.sincronizarLeituraAlunos()
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                }
+        }
+        onDispose {
+            regSub?.remove()
+        }
+    }
     if (carregando) {
         Column(
             modifier = Modifier

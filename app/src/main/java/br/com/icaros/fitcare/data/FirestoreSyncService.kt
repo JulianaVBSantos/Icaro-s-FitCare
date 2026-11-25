@@ -462,6 +462,92 @@ class FirestoreSyncService(
                             Log.e(TAG, "Erro ao importar atribuição ${documento.id}.", e)
                         }
                     }
+                    // Atualiza Objetivo, Condições e Restrições do aluno a partir da última anamnese respondida
+                    val todasAtribAluno = anamneseDao.listarTodasParaSincronizacaoDoProfessor(usuario.id)
+                        .filter { it.alunoId == alunoLocal.id && !it.excluida && it.status == "RESPONDIDA" }
+                        .sortedByDescending { it.updatedAtMillis }
+
+                    val maisRecente = todasAtribAluno.firstOrNull()
+                    if (maisRecente != null) {
+                        val pergsRecente = perguntaDao.listarParaSincronizacao(maisRecente.id)
+                        val respsRecente = database.respostaAnamneseDao()
+                            .buscarTodasPorAnamneseDoAluno(maisRecente.id, alunoLocal.id)
+                            .associate { it.perguntaAtribuidaId to it.resposta }
+
+                        var objAtualizado = alunoLocal.objetivo
+                        val condsNovas = linkedSetOf<String>()
+                        val restsNovas = linkedSetOf<String>()
+                        var leuCond = false
+                        var leuRest = false
+
+                        for (p in pergsRecente) {
+                            val txt = p.texto.lowercase(java.util.Locale.ROOT)
+                            val resp = respsRecente[p.id]?.trim().orEmpty()
+                            if (resp.isBlank()) continue
+
+                            if (txt.contains("objetivo")) {
+                                objAtualizado = resp.removePrefix("Outro:").trim()
+                            } else if (txt.contains("condiç") || txt.contains("condic") || txt.contains("saúde") || txt.contains("saude")) {
+                                leuCond = true
+                                if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
+                                    val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
+                                    if (arr != null) {
+                                        for (i in 0 until arr.length()) {
+                                            val item = arr.optString(i).removePrefix("Outro:").removePrefix("Detalhes:").trim()
+                                            if (item.isNotBlank() && !item.equals("Outro", ignoreCase = true)) condsNovas.add(item)
+                                        }
+                                    } else {
+                                        condsNovas.add(resp)
+                                    }
+                                }
+                            } else if (txt.contains("restriç") || txt.contains("restric") || txt.contains("limitaç") || txt.contains("limitac")) {
+                                leuRest = true
+                                if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
+                                    val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
+                                    if (arr != null) {
+                                        for (i in 0 until arr.length()) {
+                                            val item = arr.optString(i).removePrefix("Outro:").removePrefix("Detalhes:").trim()
+                                            if (item.isNotBlank() && !item.equals("Outro", ignoreCase = true)) restsNovas.add(item)
+                                        }
+                                    } else {
+                                        restsNovas.add(resp)
+                                    }
+                                }
+                            }
+                        }
+
+                        val condFinal = if (leuCond) condsNovas.joinToString(", ") else alunoLocal.condicoes
+                        val restFinal = if (leuRest) restsNovas.joinToString(", ") else alunoLocal.restricoes
+                        val totalItens = condFinal.split(",").count { it.trim().isNotBlank() } +
+                                restFinal.split(",").count { it.trim().isNotBlank() }
+                        val statusFinal = when {
+                            totalItens == 0 -> "Normal"
+                            totalItens == 1 -> "Atenção"
+                            else -> "Prioridade"
+                        }
+
+                        val alunoAtualizado = alunoLocal.copy(
+                            objetivo = objAtualizado.ifBlank { alunoLocal.objetivo },
+                            condicoes = condFinal,
+                            restricoes = restFinal,
+                            status = statusFinal
+                        )
+                        if (alunoAtualizado != alunoLocal) {
+                            alunoDao.atualizar(alunoAtualizado)
+                            firestore.collection(COLECAO_ALUNOS)
+                                .document(alunoFirebaseId)
+                                .set(
+                                    mapOf(
+                                        "objetivo" to alunoAtualizado.objetivo,
+                                        "condicoes" to alunoAtualizado.condicoes,
+                                        "restricoes" to alunoAtualizado.restricoes,
+                                        "status" to alunoAtualizado.status
+                                    ),
+                                    SetOptions.merge()
+                                )
+                                .await()
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -537,7 +623,9 @@ class FirestoreSyncService(
                         if (alunoAuthUid != null) {
                             dados["alunoAuthUid"] = alunoAuthUid
                         }
-                        documentoAnamnese.set(dados, SetOptions.merge()).await()
+                        val batch = firestore.batch()
+                        batch.set(documentoAnamnese, dados, SetOptions.merge())
+
                         val perguntas = perguntaDao.listarParaSincronizacao(anamnese.id)
                         for (pergunta in perguntas) {
                             val perguntaFirestoreId =
@@ -553,12 +641,13 @@ class FirestoreSyncService(
                                 "obrigatoria" to pergunta.obrigatoria,
                                 "ordem" to pergunta.ordem
                             )
-                            documentoAnamnese
+                            val refPergunta = documentoAnamnese
                                 .collection("perguntas")
                                 .document(perguntaFirestoreId)
-                                .set(dadosPergunta, SetOptions.merge())
-                                .await()
+                            batch.set(refPergunta, dadosPergunta, SetOptions.merge())
                         }
+                        batch.commit().await()
+
                     } else {
                         val statusRemoto = remotoExistente.getString("status") ?: anamnese.status
                         val statusCombinado = combinarStatus(anamnese.status, statusRemoto)
@@ -1221,10 +1310,16 @@ class FirestoreSyncService(
         docAnamnese.set(dadosAnamnese, SetOptions.merge()).await()
         val perguntasPadrao = listOf(
             Triple("Qual é o seu principal objetivo com o treinamento?", "TEXTO", ""),
-            Triple("Possui alguma condição de saúde ou dor?", "SIM_NAO_CHECKBOX", opcoesCondicoesJson),
-            Triple("Possui alguma restrição física ou limitação de exercícios?", "SIM_NAO_CHECKBOX", opcoesRestricoesJson),
-            Triple("Utiliza algum medicamento?", "SIM_NAO_TEXTO", "")
+            Triple("Condições de saúde ou dores articulares", "SIM_NAO_CHECKBOX", opcoesCondicoesJson),
+            Triple("Restrições físicas ou limitações de exercício", "SIM_NAO_CHECKBOX", opcoesRestricoesJson),
+            Triple("Você pratica atividade física atualmente?", "SIM_NAO", ""),
+            Triple("Com que frequência pratica atividade física?", "TEXTO", ""),
+            Triple("Possui alguma lesão ou limitação física?", "SIM_NAO_TEXTO", ""),
+            Triple("Utiliza algum medicamento?", "SIM_NAO_TEXTO", ""),
+            Triple("Qual é a sua disponibilidade semanal para treinar?", "TEXTO", ""),
+            Triple("Existe alguma informação adicional que gostaria de compartilhar?", "TEXTO", "")
         )
+        val obrigatoriasIdx = setOf(0, 1, 2, 3, 5, 7)
         perguntasPadrao.forEachIndexed { idx, (texto, tipo, opcoes) ->
             val pergId = "perg_padrao_${alunoFirebaseId}_$idx"
             docAnamnese.collection("perguntas").document(pergId).set(
@@ -1233,7 +1328,7 @@ class FirestoreSyncService(
                     "texto" to texto,
                     "tipoResposta" to tipo,
                     "opcoes" to opcoes,
-                    "obrigatoria" to (idx < 3),
+                    "obrigatoria" to (idx in obrigatoriasIdx),
                     "ordem" to idx
                 ),
                 SetOptions.merge()
@@ -1456,12 +1551,19 @@ class FirestoreSyncService(
                 SetOptions.merge()
             ).await()
         }
+        val anamneseJaExisteNoServidor = documento.exists()
         val firestoreIdPorPerguntaLocal = mutableMapOf<Long, String>()
         for (pergunta in perguntasLocais) {
-            val pFbId = pergunta.firestoreId?.takeIf { it.isNotBlank() }
-                ?: UUID.randomUUID().toString().also {
-                    perguntaDao.atribuirFirestoreId(pergunta.id, it)
+            val idExistente = pergunta.firestoreId?.takeIf { it.isNotBlank() }
+            if (anamneseJaExisteNoServidor) {
+                if (idExistente != null) {
+                    firestoreIdPorPerguntaLocal[pergunta.id] = idExistente
                 }
+                continue
+            }
+            val pFbId = idExistente ?: UUID.randomUUID().toString().also {
+                perguntaDao.atribuirFirestoreId(pergunta.id, it)
+            }
             firestoreIdPorPerguntaLocal[pergunta.id] = pFbId
             documentoAnamnese.collection("perguntas").document(pFbId).set(
                 hashMapOf(
