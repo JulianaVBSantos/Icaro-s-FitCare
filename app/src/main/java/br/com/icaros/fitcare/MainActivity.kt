@@ -1,5 +1,6 @@
 package br.com.icaros.fitcare
 
+
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
@@ -332,7 +333,8 @@ enum class AppScreen {
     VisualizarAnamnese,
     AdminDashboard,
     CadastroAdminInicial,
-    Periodizacao
+    Periodizacao,
+    GerenciarExercicios
 }
 
 // Fluxo do aplicativo
@@ -564,6 +566,15 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
+                    AppScreen.GerenciarExercicios -> {
+                        TelaGerenciarExercicios(
+                            onVoltar = { tela = AppScreen.Dashboard },
+                            onInicio = { tela = AppScreen.Dashboard },
+                            onAlunos = { tela = AppScreen.Alunos },
+                            onTreinos = { tela = AppScreen.Treinos }
+                        )
+                    }
+
                     AppScreen.Periodizacao -> {
                         alunoSelecionadoId?.let { id ->
                             TelaPeriodizacaoAluno(
@@ -600,6 +611,7 @@ fun FitCareApp(
                             onTreinos = {
                                 tela = AppScreen.Treinos
                             },
+                            onExercicios = { tela = AppScreen.GerenciarExercicios },
                             onSair = {
                                 val usuarioSaindo = SessaoUsuario.usuarioAtual
                                 val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
@@ -614,6 +626,7 @@ fun FitCareApp(
                                     .remove(CHAVE_PERFIL)
                                     .apply()
                                 SessaoUsuario.encerrar()
+                                FirebaseAuth.getInstance().signOut()
                                 sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = "PROFESSOR"
@@ -669,6 +682,7 @@ fun FitCareApp(
                                     .remove(CHAVE_PERFIL)
                                     .apply()
                                 SessaoUsuario.encerrar()
+                                FirebaseAuth.getInstance().signOut()
                                 sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = null
@@ -699,6 +713,7 @@ fun FitCareApp(
                                         .remove(CHAVE_PERFIL)
                                         .apply()
                                     SessaoUsuario.encerrar()
+                                    FirebaseAuth.getInstance().signOut()
                                     sessaoVersao++
                                     alunoAutenticado = false
                                     perfilSelecionado = "ALUNO"
@@ -828,6 +843,9 @@ fun FitCareApp(
                                 alunoSelecionadoId = aluno.id
                                 tela = AppScreen.PerfilAluno
                             },
+                            onExercicios = {
+                                tela = AppScreen.GerenciarExercicios
+                            },
                             onSair = {
                                 val usuarioSaindo = SessaoUsuario.usuarioAtual
                                 val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
@@ -842,6 +860,7 @@ fun FitCareApp(
                                     .remove(CHAVE_PERFIL)
                                     .apply()
                                 SessaoUsuario.encerrar()
+                                FirebaseAuth.getInstance().signOut()
                                 sessaoVersao++
                                 alunoAutenticado = false
                                 perfilSelecionado = "PROFESSOR"
@@ -883,6 +902,7 @@ fun FitCareApp(
                                 }
                             },
                             onTreinos = { tela = AppScreen.Treinos },
+                            onExercicios = { tela = AppScreen.GerenciarExercicios },
                             onCadastrarAluno = {
                                 tela = AppScreen.CadastroAluno
                             }
@@ -907,6 +927,7 @@ fun FitCareApp(
                                 onTreinos = {
                                     tela = AppScreen.Treinos
                                 },
+                                onExercicios = { tela = AppScreen.GerenciarExercicios },
                                 onEditar = {
                                     tela = AppScreen.EditarAluno
                                 },
@@ -953,9 +974,8 @@ fun FitCareApp(
                                 onAlunos = {
                                     tela = AppScreen.Alunos
                                 },
-                                onTreinos = {
-                                    tela = AppScreen.Treinos
-                                },
+                                onTreinos = { tela = AppScreen.Treinos },
+                                onExercicios = { tela = AppScreen.GerenciarExercicios },
                                 onRegistros = {},
                                 onMais = {}
                             )
@@ -998,7 +1018,8 @@ fun FitCareApp(
                                 },
                                 onTreinos = {
                                     tela = AppScreen.Treinos
-                                }
+                                },
+                                onExercicios = { tela = AppScreen.GerenciarExercicios }
                             )
                         }
                     }
@@ -1013,6 +1034,7 @@ fun FitCareApp(
                             onAlunos = {
                                 tela = AppScreen.Alunos
                             },
+                            onExercicios = { tela = AppScreen.GerenciarExercicios },
                             onSelecionarTreino = { treino ->
                                 alunoSelecionadoId = treino.alunoId
                                 treinoSelecionadoId = treino.id
@@ -1333,7 +1355,8 @@ fun TelaCadastroAluno(
     usuarioRepository: UsuarioRepository,
     onVoltar: () -> Unit,
     onCadastroConcluido: () -> Unit,
-    onTreinos: () -> Unit
+    onTreinos: () -> Unit,
+    onExercicios: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -1891,8 +1914,7 @@ fun TelaCadastroAluno(
             onInicio = onVoltar,
             onAlunos = onCadastroConcluido,
             onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
+            onExercicios = onExercicios
         )
     }
 }
@@ -2200,7 +2222,8 @@ fun TelaDashboard(
     onPerfil: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onModelosAnamnese: () -> Unit = {},
     onSair: () -> Unit,
-    onCentralAtencao: () -> Unit = {}
+    onCentralAtencao: () -> Unit = {},
+    onExercicios: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var pesquisa by remember { mutableStateOf("") }
@@ -2799,8 +2822,7 @@ fun TelaDashboard(
             onInicio = {},
             onAlunos = onAlunos,
             onTreinos = onTreinos,
-            onRegistros = onAlunos,
-            onMais = onSair
+            onExercicios = onExercicios
         )
     }
     if (mostrarDialogoCentralAtencao) {
@@ -3136,7 +3158,8 @@ fun TelaAlunos(
     onSelecionarAluno: (br.com.icaros.fitcare.data.AlunoEntity) -> Unit,
     onTreinos: () -> Unit,
     modoSelecaoTreino: Boolean = false,
-    onCadastrarAluno: () -> Unit = {}
+    onCadastrarAluno: () -> Unit = {},
+    onExercicios: () -> Unit = {}
 ) {
     var pesquisa by remember { mutableStateOf("") }
     var filtroSelecionado by remember(filtroInicial) { mutableStateOf(filtroInicial) }
@@ -3555,8 +3578,7 @@ fun TelaAlunos(
             onInicio = onVoltar,
             onAlunos = {},
             onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
+            onExercicios = onExercicios
         )
     }
 }
@@ -3687,7 +3709,8 @@ fun TelaPerfilAluno(
     onModelosAnamnese: () -> Unit,
     onVisualizarAnamnese: (Long) -> Unit = {},
     onVisualizarTreino: (Long) -> Unit = {},
-    onPeriodizacao: () -> Unit = {}
+    onPeriodizacao: () -> Unit = {},
+    onExercicios: () -> Unit = {}
 ) {
     var alunoAtual by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
@@ -3820,21 +3843,24 @@ fun TelaPerfilAluno(
     val fbIdAlunoPerfil = alunoAtual?.firebaseId
     DisposableEffect(alunoId, fbIdAlunoPerfil) {
         var regSub: com.google.firebase.firestore.ListenerRegistration? = null
+        var ultimoSyncMs = 0L
         if (!fbIdAlunoPerfil.isNullOrBlank()) {
             regSub = FirebaseFirestore.getInstance()
                 .collection("alunos")
                 .document(fbIdAlunoPerfil)
                 .collection("anamneses_atribuidas")
-                .addSnapshotListener { snap, _ ->
-                    if (snap != null) {
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
-                                val sync = FirestoreSyncService(db.usuarioDao(), db)
-                                sync.sincronizarAnamnesesAtribuidas()
-                                sync.sincronizarLeituraAlunos()
-                            } catch (_: Exception) {
-                            }
+                .addSnapshotListener { snap, err ->
+                    if (err != null || snap == null || snap.metadata.hasPendingWrites()) return@addSnapshotListener
+                    val agora = System.currentTimeMillis()
+                    if (agora - ultimoSyncMs < 3000L) return@addSnapshotListener
+                    ultimoSyncMs = agora
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
+                            val sync = FirestoreSyncService(db.usuarioDao(), db)
+                            sync.sincronizarAnamnesesAtribuidas()
+                            sync.sincronizarLeituraAlunos()
+                        } catch (_: Exception) {
                         }
                     }
                 }
@@ -4834,8 +4860,7 @@ fun TelaPerfilAluno(
             onInicio = onDashboard,
             onAlunos = onVoltar,
             onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
+            onExercicios = onExercicios
         )
     }
 // Diálogo exclusão de anamnese (com sincronização imediata)
@@ -6038,7 +6063,8 @@ fun TelaCentralAtencao(
     onDashboard: () -> Unit,
     onAlunos: () -> Unit,
     onTreinos: () -> Unit,
-    onSair: () -> Unit
+    onSair: () -> Unit,
+    onExercicios: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val alunos by repository.listarAlunos().collectAsState(initial = emptyList())
@@ -6347,8 +6373,7 @@ fun TelaCentralAtencao(
             onInicio = onDashboard,
             onAlunos = onAlunos,
             onTreinos = onTreinos,
-            onRegistros = onAlunos,
-            onMais = onSair
+            onExercicios = onExercicios
         )
     }
 }
@@ -6365,7 +6390,8 @@ fun TelaLinhaDoTempoAluno(
     onAlunos: () -> Unit,
     onTreinos: () -> Unit,
     onRegistros: () -> Unit,
-    onMais: () -> Unit
+    onMais: () -> Unit,
+    onExercicios: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -6691,12 +6717,11 @@ fun TelaLinhaDoTempoAluno(
             }
         }
         DashboardBottomBar(
-            telaAtual = AppScreen.LinhaDoTempoAluno,
+            telaAtual = AppScreen.EditarAluno,
             onInicio = onDashboard,
             onAlunos = onAlunos,
             onTreinos = onTreinos,
-            onRegistros = onRegistros,
-            onMais = onMais
+            onExercicios = onExercicios
         )
     }
     eventoSelecionado?.let { evento ->
@@ -7151,7 +7176,8 @@ fun TelaEditarAluno(
     onSalvo: () -> Unit,
     onDashboard: () -> Unit,
     onAlunos: () -> Unit,
-    onTreinos: () -> Unit
+    onTreinos: () -> Unit,
+    onExercicios: () -> Unit = {}
 ) {
     var alunoOriginal by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
@@ -7679,20 +7705,18 @@ fun TelaEditarAluno(
             onInicio = onDashboard,
             onAlunos = onAlunos,
             onTreinos = onTreinos,
-            onRegistros = {},
-            onMais = {}
+            onExercicios = onExercicios
         )
     }
 }
 
 @Composable
-private fun DashboardBottomBar(
+internal fun DashboardBottomBar(
     telaAtual: AppScreen,
     onInicio: () -> Unit,
     onAlunos: () -> Unit,
     onTreinos: () -> Unit,
-    onRegistros: () -> Unit,
-    onMais: () -> Unit
+    onExercicios: () -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -7727,16 +7751,10 @@ private fun DashboardBottomBar(
                 onClick = onTreinos
             )
             DashboardNavItem(
-                icone = "▣",
-                titulo = "Registros",
-                selecionado = false,
-                onClick = onRegistros
-            )
-            DashboardNavItem(
-                icone = "⋯",
-                titulo = "Mais",
-                selecionado = telaAtual == AppScreen.Login,
-                onClick = onMais
+                icone = "🏋",
+                titulo = "Exercícios",
+                selecionado = telaAtual == AppScreen.GerenciarExercicios,
+                onClick = onExercicios
             )
         }
     }
@@ -7797,7 +7815,8 @@ fun TelaTreinos(
     onVoltar: () -> Unit,
     onAlunos: () -> Unit,
     onSelecionarTreino: (br.com.icaros.fitcare.data.TreinoEntity) -> Unit,
-    onNovoTreino: () -> Unit
+    onNovoTreino: () -> Unit,
+    onExercicios: () -> Unit = {}
 ) {
     var pesquisa by remember {
         mutableStateOf("")
@@ -8226,8 +8245,7 @@ fun TelaTreinos(
             onInicio = onVoltar,
             onAlunos = onAlunos,
             onTreinos = {},
-            onRegistros = {},
-            onMais = {}
+            onExercicios = onExercicios
         )
     }
 }
@@ -8870,6 +8888,36 @@ fun TelaFormularioTreino(
                                     }
                                 }
                             }
+                            if (exercicio.videoUrl.isNotBlank()) {
+                                var abrirPreviewForm by remember { mutableStateOf(false) }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CardPreviewVideoExercicio(
+                                        tituloExercicio = exercicio.nome.ifBlank { "Preview do exercício" },
+                                        videoUrl = exercicio.videoUrl,
+                                        videoTipo = exercicio.videoTipo.ifBlank { if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK" },
+                                        modifier = Modifier.width(84.dp).height(110.dp),
+                                        onAbrirPlayer = { abrirPreviewForm = true }
+                                    )
+                                    Text(
+                                        text = "Toque na miniatura para testar o vídeo no player do app.",
+                                        fontSize = 11.sp,
+                                        color = TextoSecundario,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (abrirPreviewForm) {
+                                    DialogoPlayerVideoExercicio(
+                                        tituloExercicio = exercicio.nome.ifBlank { "Vídeo demonstrativo" },
+                                        videoUrl = exercicio.videoUrl,
+                                        videoTipo = exercicio.videoTipo.ifBlank { if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK" },
+                                        onFechar = { abrirPreviewForm = false }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -9091,12 +9139,20 @@ fun TelaFormularioTreino(
             onSelecionarItem = { itemEscolhido ->
                 val idx = indiceExercicioCatalogo
                 if (idx in exercicios.indices) {
+                    val temVideo = itemEscolhido.videoUrl.isNotBlank()
                     exercicios[idx] = exercicios[idx].copy(
                         nome = itemEscolhido.nome,
-                        videoTipo = "LINK",
+                        videoTipo = if (temVideo) "LINK" else "",
                         videoUrl = itemEscolhido.videoUrl,
-                        videoNome = "Vídeo demonstrativo"
+                        videoNome = if (temVideo) "Vídeo demonstrativo" else ""
                     )
+                    if (!temVideo) {
+                        Toast.makeText(
+                            contextoEventos,
+                            "Esse exercício ainda não tem vídeo demonstrativo.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
                 indiceExercicioCatalogo = -1
             }
@@ -9311,6 +9367,7 @@ fun TelaDetalhesTreino(
                         )
                     }
                 } else {
+                    var videoEmReproducao by remember { mutableStateOf<Pair<String, String>?>(null) }
                     exercicios.forEachIndexed { index, exercicio ->
                         Card(
                             modifier = Modifier
@@ -9356,14 +9413,10 @@ fun TelaDetalhesTreino(
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
-                                            try {
-                                                if (exercicio.videoTipo == "LINK") {
-                                                    val intent = android.content.Intent(
-                                                        android.content.Intent.ACTION_VIEW,
-                                                        android.net.Uri.parse(exercicio.videoUrl)
-                                                    )
-                                                    context.startActivity(intent)
-                                                } else {
+                                            if (exercicio.videoTipo == "LINK") {
+                                                videoEmReproducao = exercicio.nome to exercicio.videoUrl
+                                            } else {
+                                                try {
                                                     val arquivo = java.io.File(exercicio.videoUrl)
                                                     require(arquivo.exists()) {
                                                         "Arquivo de vídeo não encontrado."
@@ -9386,13 +9439,13 @@ fun TelaDetalhesTreino(
                                                             "Assistir vídeo"
                                                         )
                                                     )
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        e.message ?: "Não foi possível abrir o vídeo.",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
                                                 }
-                                            } catch (e: Exception) {
-                                                Toast.makeText(
-                                                    context,
-                                                    e.message ?: "Não foi possível abrir o vídeo.",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
@@ -9402,7 +9455,7 @@ fun TelaDetalhesTreino(
                                     ) {
                                         Text(
                                             text = if (exercicio.videoTipo == "LINK") {
-                                                "▶ Assistir vídeo (Link)"
+                                                "▶ Assistir vídeo demonstrativo"
                                             } else {
                                                 "▶ Assistir vídeo importado"
                                             },
@@ -9414,6 +9467,13 @@ fun TelaDetalhesTreino(
                                 }
                             }
                         }
+                    }
+                    videoEmReproducao?.let { (titulo, url) ->
+                        DialogoPlayerVideoExercicio(
+                            tituloExercicio = titulo,
+                            videoUrl = url,
+                            onFechar = { videoEmReproducao = null }
+                        )
                     }
                 }
             }

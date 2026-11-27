@@ -226,8 +226,18 @@ fun TelaVisualizarAnamnese(
                     )
                 }
 
-                perguntas.forEachIndexed { index, pergunta ->
+                val respostasPorTexto = perguntas.mapNotNull { p ->
+                    val r = respostasPorPergunta[p.id]
+                    if (r != null && r.resposta.isNotBlank()) {
+                        p.texto.trim().lowercase() to r
+                    } else null
+                }.toMap()
+
+                val perguntasUnicas = perguntas.distinctBy { it.texto.trim().lowercase() }
+
+                perguntasUnicas.forEachIndexed { index, pergunta ->
                     val resposta = respostasPorPergunta[pergunta.id]
+                        ?: respostasPorTexto[pergunta.texto.trim().lowercase()]
                     val respostaFormatada = formatarRespostaExibicao(
                         tipoResposta = pergunta.tipoResposta,
                         respostaBruta = resposta?.resposta.orEmpty()
@@ -286,20 +296,25 @@ fun TelaVisualizarAnamnese(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Total de perguntas: ${perguntas.size}",
+                    text = "Total de perguntas: ${perguntasUnicas.size}",
                     fontSize = 12.sp,
                     color = corTextoSecundario
                 )
                 Text(
                     text = "Perguntas respondidas: ${
-                        perguntas.count {
-                            !respostasPorPergunta[it.id]?.resposta.isNullOrBlank()
+                        perguntasUnicas.count { p ->
+                            val r = respostasPorPergunta[p.id] ?: respostasPorTexto[p.texto.trim().lowercase()]
+                            !r?.resposta.isNullOrBlank()
                         }
                     }",
                     fontSize = 12.sp,
                     color = corTextoSecundario
                 )
-                if (onAnamneseExcluida != null) {
+                val ehPadraoObrigatoriaVis =
+                    anamnese?.identificadorExterno == "PADRAO_OBRIGATORIA" ||
+                            anamnese?.nomeModelo.equals("Anamnese Padrão Inicial", ignoreCase = true)
+
+                if (onAnamneseExcluida != null && !ehPadraoObrigatoriaVis) {
                     Spacer(modifier = Modifier.height(14.dp))
                     OutlinedButton(
                         onClick = { confirmarExclusao = true },

@@ -481,13 +481,13 @@ class FirestoreSyncService(
                         var leuRest = false
 
                         for (p in pergsRecente) {
-                            val txt = p.texto.lowercase(java.util.Locale.ROOT)
+                            val txt = p.texto.trim().lowercase(java.util.Locale.ROOT)
                             val resp = respsRecente[p.id]?.trim().orEmpty()
                             if (resp.isBlank()) continue
 
-                            if (txt.contains("objetivo")) {
+                            if (txt.contains("principal objetivo")) {
                                 objAtualizado = resp.removePrefix("Outro:").trim()
-                            } else if (txt.contains("condiç") || txt.contains("condic") || txt.contains("saúde") || txt.contains("saude")) {
+                            } else if (txt.startsWith("condições de saúde") || txt.startsWith("condicoes de saude")) {
                                 leuCond = true
                                 if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
                                     val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
@@ -500,7 +500,7 @@ class FirestoreSyncService(
                                         condsNovas.add(resp)
                                     }
                                 }
-                            } else if (txt.contains("restriç") || txt.contains("restric") || txt.contains("limitaç") || txt.contains("limitac")) {
+                            } else if (txt.startsWith("restrições físicas") || txt.startsWith("restricoes fisicas")) {
                                 leuRest = true
                                 if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
                                     val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
@@ -518,19 +518,11 @@ class FirestoreSyncService(
 
                         val condFinal = if (leuCond) condsNovas.joinToString(", ") else alunoLocal.condicoes
                         val restFinal = if (leuRest) restsNovas.joinToString(", ") else alunoLocal.restricoes
-                        val totalItens = condFinal.split(",").count { it.trim().isNotBlank() } +
-                                restFinal.split(",").count { it.trim().isNotBlank() }
-                        val statusFinal = when {
-                            totalItens == 0 -> "Normal"
-                            totalItens == 1 -> "Atenção"
-                            else -> "Prioridade"
-                        }
 
                         val alunoAtualizado = alunoLocal.copy(
                             objetivo = objAtualizado.ifBlank { alunoLocal.objetivo },
                             condicoes = condFinal,
-                            restricoes = restFinal,
-                            status = statusFinal
+                            restricoes = restFinal
                         )
                         if (alunoAtualizado != alunoLocal) {
                             alunoDao.atualizar(alunoAtualizado)
@@ -540,13 +532,13 @@ class FirestoreSyncService(
                                     mapOf(
                                         "objetivo" to alunoAtualizado.objetivo,
                                         "condicoes" to alunoAtualizado.condicoes,
-                                        "restricoes" to alunoAtualizado.restricoes,
-                                        "status" to alunoAtualizado.status
+                                        "restricoes" to alunoAtualizado.restricoes
                                     ),
                                     SetOptions.merge()
                                 )
                                 .await()
                         }
+
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -831,14 +823,10 @@ class FirestoreSyncService(
             val objRemoto = documentoAluno.getString("objetivo") ?: ""
             val condicoesRemotas = documentoAluno.getString("condicoes") ?: ""
             val restricoesRemotas = documentoAluno.getString("restricoes") ?: ""
-            val obsRemotas = documentoAluno.getString("observacoesProfissionais") ?: ""
-            val statusRemotoAluno = documentoAluno.getString("status") ?: "Normal"
             if (
                 aluno.objetivo != objRemoto ||
                 aluno.condicoes != condicoesRemotas ||
-                aluno.restricoes != restricoesRemotas ||
-                aluno.observacoesProfissionais != obsRemotas ||
-                aluno.status != statusRemotoAluno
+                aluno.restricoes != restricoesRemotas
             ) {
                 try {
                     firestore.collection(COLECAO_ALUNOS)
@@ -847,9 +835,7 @@ class FirestoreSyncService(
                             mapOf(
                                 "objetivo" to aluno.objetivo,
                                 "condicoes" to aluno.condicoes,
-                                "restricoes" to aluno.restricoes,
-                                "observacoesProfissionais" to aluno.observacoesProfissionais,
-                                "status" to aluno.status
+                                "restricoes" to aluno.restricoes
                             ),
                             SetOptions.merge()
                         )

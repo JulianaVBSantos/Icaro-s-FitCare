@@ -211,13 +211,12 @@ private suspend fun sincronizarAcompanhamentoAlunoComRespostas(
                     mapOf(
                         "objetivo" to novoObjetivo,
                         "condicoes" to novasCondicoes,
-                        "restricoes" to novasRestricoes,
-                        "status" to novoStatus
+                        "restricoes" to novasRestricoes
                     ),
                     com.google.firebase.firestore.SetOptions.merge()
                 )
                 .await()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
     }
 
@@ -1181,7 +1180,7 @@ fun TelaAreaAluno(
                                 )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
-
+                            var videoEmReproducao by remember { mutableStateOf<Triple<String, String, String>?>(null) }
                             exerciciosDoTreino.sortedBy { it.ordem }.forEachIndexed { index, ex ->
                                 val concluido = exerciciosConcluidosSessao[ex.id] == true
                                 Card(
@@ -1193,73 +1192,81 @@ fun TelaAreaAluno(
                                         containerColor = if (concluido) Color(0xFF36844A).copy(alpha = 0.14f) else corCartao
                                     )
                                 ) {
-                                    Column(modifier = Modifier.padding(14.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (treinoEmExecucao) {
-                                                Checkbox(
-                                                    checked = concluido,
-                                                    onCheckedChange = {
-                                                        exerciciosConcluidosSessao[ex.id] = it
-                                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (treinoEmExecucao) {
+                                                    Checkbox(
+                                                        checked = concluido,
+                                                        onCheckedChange = {
+                                                            exerciciosConcluidosSessao[ex.id] = it
+                                                        }
+                                                    )
+                                                }
+                                                Text(
+                                                    text = "${index + 1}. ${ex.nome}",
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = corTextoPrincipal,
+                                                    modifier = Modifier.weight(1f)
                                                 )
+                                                IconButton(onClick = { exercicioEditandoCarga = ex }) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Edit,
+                                                        contentDescription = "Atualizar carga e observações",
+                                                        tint = corDestaque
+                                                    )
+                                                }
                                             }
                                             Text(
-                                                text = "${index + 1}. ${ex.nome}",
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = corTextoPrincipal,
-                                                modifier = Modifier.weight(1f)
+                                                text = "Séries: ${ex.series} × ${ex.repeticoes}",
+                                                fontSize = 13.sp,
+                                                color = corTextoPrincipal
                                             )
-                                            IconButton(onClick = { exercicioEditandoCarga = ex }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Edit,
-                                                    contentDescription = "Atualizar carga e observações",
-                                                    tint = corDestaque
-                                                )
-                                            }
-                                        }
-                                        Text(
-                                            text = "${ex.series} séries × ${ex.repeticoes}",
-                                            fontSize = 13.sp,
-                                            color = corTextoPrincipal
-                                        )
-                                        Text(
-                                            text = "Carga utilizada: ${ex.carga.ifBlank { "Não informada" }}",
-                                            fontSize = 12.sp,
-                                            color = corTextoSecundario
-                                        )
-                                        if (ex.observacoes.isNotBlank()) {
                                             Text(
-                                                text = "Observações: ${ex.observacoes}",
+                                                text = "Carga: ${ex.carga.ifBlank { "Não informada" }}",
                                                 fontSize = 12.sp,
                                                 color = corTextoSecundario
                                             )
-                                        }
-                                        if (ex.videoUrl.isNotBlank() && ex.videoTipo == "LINK") {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            OutlinedButton(
-                                                onClick = {
-                                                    try {
-                                                        val intent = Intent(
-                                                            Intent.ACTION_VIEW,
-                                                            Uri.parse(ex.videoUrl)
-                                                        )
-                                                        context.startActivity(intent)
-                                                    } catch (e: Exception) {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Não foi possível abrir o vídeo.",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("▶ Assistir vídeo demonstrativo")
+                                            if (ex.observacoes.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Instruções: ${ex.observacoes}",
+                                                    fontSize = 12.sp,
+                                                    color = corTextoSecundario
+                                                )
                                             }
+                                        }
+                                        if (ex.videoUrl.isNotBlank()) {
+                                            val tipoVid = ex.videoTipo.ifBlank { if (ex.videoUrl.startsWith("/")) "LOCAL" else "LINK" }
+                                            CardPreviewVideoExercicio(
+                                                tituloExercicio = ex.nome,
+                                                videoUrl = ex.videoUrl,
+                                                videoTipo = tipoVid,
+                                                modifier = Modifier
+                                                    .width(102.dp)
+                                                    .height(138.dp),
+                                                onAbrirPlayer = {
+                                                    videoEmReproducao = Triple(ex.nome, ex.videoUrl, tipoVid)
+                                                }
+                                            )
                                         }
                                     }
                                 }
+                            }
+                            videoEmReproducao?.let { (titulo, url, tipo) ->
+                                DialogoPlayerVideoExercicio(
+                                    tituloExercicio = titulo,
+                                    videoUrl = url,
+                                    videoTipo = tipo,
+                                    onFechar = { videoEmReproducao = null }
+                                )
                             }
 
                             exercicioEditandoCarga?.let { exAlvo ->

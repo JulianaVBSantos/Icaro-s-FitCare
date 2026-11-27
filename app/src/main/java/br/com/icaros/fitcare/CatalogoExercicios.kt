@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
+import androidx.compose.foundation.background
 
 data class ItemCatalogoExercicio(
     val nome: String,
@@ -22,9 +23,83 @@ data class ItemCatalogoExercicio(
 
 object CatalogoExerciciosStorage {
 
-    private fun gerarLinkVideoDemonstrativo(nomeExercicio: String): String {
-        val query = Uri.encode("execução correta $nomeExercicio academia")
-        return "https://youtube.com"
+    private val SHORTS_IDS_MAP = mapOf(
+        "abdominal completo com joelhos estendidos" to "Q4cd3l9tAxE",
+        "abdm completo com joelhos estendidos" to "Q4cd3l9tAxE",
+        "cadeira flexora" to "siiTqRvLQgA",
+        "passadas halter" to "yNldoM28Dp0",
+        "elevação pélvica máquina hammer" to "3Qu8iCxQOC0",
+        "prancha com elevação de perna" to "rChIiS9dBHc",
+        "isometria em l" to "biXVs0YRvVk",
+        "escada" to "7ToIwnOIF0Q",
+        "elíptico" to "UfEB5fG871c",
+        "burpee com agachamento" to "PaqnXQ6lN2A",
+        "polichinelo com prancha" to "1w2PQQzlQk0",
+        "pulo lateral" to "C-Pos61X6NU",
+        "burpee over" to "S7FAo7HG8g4",
+        "prancha com rotação de quadril" to "VpWu34kmU1Q",
+        "v-up + remador" to "CjMLPbEYmPI",
+        "cadeira flexora unilateral" to "_nTNhwk69ZU",
+        "prancha com base no cotovelo" to "0nyqBKMAFwQ",
+        "prancha lateral" to "dWAzUEzl2ss",
+        "corrida com joelho alto" to "jv_YU1DXfws",
+        "polichinelo" to "rsVqgClekSA",
+        "polichinelo adaptado" to "2-7eJlLrhJM",
+        "prancha com mão no ombro" to "PwxK6KH8g9o",
+        "corrida no lugar com joelho baixo" to "MVFFkMhYiAo",
+        "elevação de quadril unilateral" to "RxiZe7cM7Go",
+        "elevação de quadril" to "EuR8khoZScw",
+        "agachamento unilateral com apoio" to "Y_VBJuKG8TI",
+        "prancha mão no pé" to "BhxW4VtCoHo",
+        "burpee" to "-9NB8pLgf7M",
+        "mountain climbers" to "xCaLAO5shTw",
+        "agachamento com salto" to "FLCHGa3FXWs",
+        "crucifixo curvado" to "mUST8bUbkmc",
+        "rosca barra w" to "F1RKQCaDELY",
+        "rosca direta barra w" to "F1RKQCaDELY",
+        "abdominal convencional com mão na frente" to "OajnonOVcbU",
+        "panturrilha unilateral" to "X0T4Ug-Ii0w",
+        "panturrilha livre em pé unilateral" to "X0T4Ug-Ii0w",
+        "deadlift unilateral alternado" to "II44g1jkZaQ"
+    )
+
+    private fun gerarLinkVideoDemonstrativo(context: Context, nomeExercicio: String): String {
+        val chave = nomeExercicio.trim().lowercase()
+        val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
+        val linkSalvoProfessor = prefsVideos.getString(chave, null)
+        if (linkSalvoProfessor != null) {
+            if (linkSalvoProfessor.contains("://youtube.com") && !linkSalvoProfessor.contains("/shorts/") && !linkSalvoProfessor.contains("/embed/") && !linkSalvoProfessor.contains("v=")) {
+                val idRecuperado = linkSalvoProfessor.substringAfter("youtube.com").trim()
+                if (idRecuperado.isNotBlank()) {
+                    return Uri.Builder()
+                        .scheme("https")
+                        .authority("://youtube.com")
+                        .appendPath("shorts")
+                        .appendPath(idRecuperado)
+                        .build()
+                        .toString()
+                }
+            }
+            return linkSalvoProfessor
+        }
+        val idShort = SHORTS_IDS_MAP[chave]
+        if (!idShort.isNullOrBlank()) {
+            return Uri.Builder()
+                .scheme("https")
+                .authority("://youtube.com")
+                .appendPath("shorts")
+                .appendPath(idShort)
+                .build()
+                .toString()
+        }
+        return ""
+    }
+
+    fun salvarVideoExercicio(context: Context, nomeExercicio: String, videoUrl: String) {
+        val chave = nomeExercicio.trim().lowercase()
+        if (chave.isBlank()) return
+        val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
+        prefsVideos.edit().putString(chave, videoUrl.trim()).apply()
     }
 
     private fun detectarGrupoMuscular(nome: String): String {
@@ -32,18 +107,17 @@ object CatalogoExerciciosStorage {
         return when {
             n.contains("supino") || n.contains("crucifixo") || n.contains("crossover") || n.contains("peitoral") || n.contains("apoio solo") -> "Peito"
             n.contains("puxada") || n.contains("remada") || n.contains("barra fixa") || n.contains("pull") || n.contains("dorsal") -> "Costas"
-            n.contains("agachamento") || n.contains("leg press") || n.contains("extensora") || n.contains("flexora") || n.contains("avanço") || n.contains("afundo") || n.contains("passada") || n.contains("hack") || n.contains("squat") || n.contains("stiff") || n.contains("terra") || n.contains("panturrilha") || n.contains("tibial") -> "Pernas"
-            n.contains("glúteo") || n.contains("glute") || n.contains("elevação pélvica") || n.contains("abdução") || n.contains("abdutora") || n.contains("adutora") || n.contains("extensão quadril") || n.contains("extensão de quadril") || n.contains("3 apoios") || n.contains("ponte") -> "Glúteos e Quadril"
+            n.contains("agachamento") || n.contains("leg press") || n.contains("extensora") || n.contains("flexora") || n.contains("avanço") || n.contains("afundo") || n.contains("passada") || n.contains("hack") || n.contains("squat") || n.contains("stiff") || n.contains("terra") || n.contains("deadlift") || n.contains("panturrilha") || n.contains("tibial") -> "Pernas"
+            n.contains("glúteo") || n.contains("glute") || n.contains("elevação pélvica") || n.contains("elevação de quadril") || n.contains("abdução") || n.contains("abdutora") || n.contains("adutora") || n.contains("extensão quadril") || n.contains("extensão de quadril") || n.contains("3 apoios") || n.contains("ponte") -> "Glúteos e Quadril"
             n.contains("desenvolvimento") || n.contains("elevação lateral") || n.contains("elevação frontal") || n.contains("ombro") || n.contains("encolhimento") -> "Ombros"
             n.contains("rosca") -> "Bíceps"
             n.contains("tríceps") || n.contains("triceps") || n.contains("paralela") -> "Tríceps"
-            n.contains("abdominal") || n.contains("abd ") || n.contains("prancha") || n.contains("core") || n.contains("lombar") || n.contains("perdigueiro") -> "Abdômen e Core"
+            n.contains("abdominal") || n.contains("abd ") || n.contains("abdm") || n.contains("prancha") || n.contains("isometria em l") || n.contains("v-up") || n.contains("core") || n.contains("lombar") || n.contains("perdigueiro") -> "Abdômen e Core"
             n.contains("alongamento") || n.contains("mobilidade") || n.contains("mob ") || n.contains("mob.") || n.contains("liberação") -> "Mobilidade e Alongamento"
             else -> "Cardio e Funcional"
         }
     }
 
-    // Lista completa extraída do arquivo .txt do sistema (limpa e normalizada)
     private val NOMES_EXERCICIOS_SISTEMA = listOf(
         "3 Apoios Perna Estendida",
         "3 Apoios Perna Flexionada",
@@ -53,9 +127,11 @@ object CatalogoExerciciosStorage {
         "Abdominal Bosu Flexionado",
         "Abdominal Bosu Solo",
         "Abdominal Canivete Medicine Ball",
+        "Abdominal Completo com Joelhos Estendidos",
         "Abdominal Completo Máquina Hammer",
         "Abdominal Completo Máquina Nautilus",
         "Abdominal Completo Solo",
+        "Abdominal Convencional com Mão na Frente",
         "Abdominal Curto Solo",
         "Abdominal Curto Solo Anilha",
         "Abdominal Curto Solo Barra",
@@ -89,6 +165,7 @@ object CatalogoExerciciosStorage {
         "Agachamento com Desenvolvimento Halter",
         "Agachamento com Desenvolvimento Kettlebell",
         "Agachamento com Halter",
+        "Agachamento com Salto",
         "Agachamento Isométrico",
         "Agachamento Livre",
         "Agachamento Livre Barra",
@@ -104,6 +181,7 @@ object CatalogoExerciciosStorage {
         "Agachamento Sumô Smith",
         "Agachamento Taça Halter",
         "Agachamento TRX",
+        "Agachamento Unilateral com Apoio",
         "Air Dyne",
         "Alongamento Adutor Banco",
         "Alongamento Anterior Máquina",
@@ -177,6 +255,8 @@ object CatalogoExerciciosStorage {
         "Bike Cycling",
         "Bike Horizontal",
         "Burpee",
+        "Burpee com Agachamento",
+        "Burpee Over",
         "Cadeira Abdutora",
         "Cadeira Abdutora Inclinada Atrás",
         "Cadeira Abdutora Inclinada Frente",
@@ -189,11 +269,14 @@ object CatalogoExerciciosStorage {
         "Cadeira Extensora Unilateral",
         "Cadeira Flexora",
         "Cadeira Flexora Unilateral",
+        "Corrida com Joelho Alto",
+        "Corrida no Lugar com Joelho Baixo",
         "Crossover Curvado Máquina Forward",
         "Crossover Polia Alta",
         "Crossover Polia Baixa",
         "Crossover Polia Média",
         "Crucifixo Banco Inclinado Cross",
+        "Crucifixo Curvado",
         "Crucifixo Declinado Máquina Forward",
         "Crucifixo Inclinado Articulado Realleader",
         "Crucifixo Inclinado Halter",
@@ -205,6 +288,7 @@ object CatalogoExerciciosStorage {
         "Crucifixo Máquina",
         "Crucifixo Reto Cross",
         "Crucifixo Reto Halter",
+        "Deadlift Unilateral Alternado",
         "Depressão Escapular no Pulley",
         "Desenvolvimento Arnold Completo",
         "Desenvolvimento Arnold Parcial",
@@ -224,6 +308,8 @@ object CatalogoExerciciosStorage {
         "Desenvolvimento Pronado Máquina Forward",
         "Dorsiflexão com Elástico",
         "Educativo Stiff com Bastão",
+        "Elevação de Quadril",
+        "Elevação de Quadril Unilateral",
         "Elevação Frontal Alternada",
         "Elevação Frontal Anilha",
         "Elevação Frontal Barra Pronada",
@@ -288,6 +374,7 @@ object CatalogoExerciciosStorage {
         "Hack Hammer",
         "Hack Linear Shua",
         "Isometria Core Pulley",
+        "Isometria em L",
         "Jump Box",
         "Leg Press 45°",
         "Leg Press 45° Unilateral",
@@ -349,6 +436,7 @@ object CatalogoExerciciosStorage {
         "Mobilidade Tornozelo Ajoelhado com Kettlebell",
         "Mobilidade Tornozelo em Pé",
         "Mobilidade Varredura Bola Feijão",
+        "Mountain Climbers",
         "Nórdico Reverso",
         "Panturrilha em Pé Máquina",
         "Panturrilha em Pé Máquina Unilateral",
@@ -357,6 +445,7 @@ object CatalogoExerciciosStorage {
         "Panturrilha Máquina Cybex",
         "Panturrilha Máquina Matrix",
         "Panturrilha Sentado",
+        "Panturrilha Unilateral",
         "Paralela Máquina Matrix",
         "Paralela no Graviton",
         "Passada Lateral com Mini Band",
@@ -369,19 +458,28 @@ object CatalogoExerciciosStorage {
         "Perdigueiro Invertido com Bola",
         "Perdigueiro Unilateral",
         "Polichinelo",
+        "Polichinelo Adaptado",
+        "Polichinelo com Prancha",
         "Ponte Bosu",
         "Ponte Bosu Unilateral",
         "Ponte Solo",
         "Ponte Solo com Mini Band",
         "Ponte Solo Unilateral",
+        "Prancha com Base no Cotovelo",
+        "Prancha com Elevação de Perna",
+        "Prancha com Mão no Ombro",
+        "Prancha com Rotação de Quadril",
         "Prancha Frontal Ajoelhado",
         "Prancha Isométrica Alta",
         "Prancha Isométrica Banco",
         "Prancha Isométrica Bosu Invertido",
         "Prancha Isométrica Frontal",
         "Prancha Isométrica Lateral",
+        "Prancha Lateral",
+        "Prancha Mão no Pé",
         "Prancha Sobe Desce",
         "Pular Corda",
+        "Pulo Lateral",
         "Pull Down Barra Pulley",
         "Pull Down Corda Pulley",
         "Pullover Barra",
@@ -454,6 +552,7 @@ object CatalogoExerciciosStorage {
         "Rosca Alternada com Isometria",
         "Rosca Articulada Máquina",
         "Rosca Articulada Máquina Alternada",
+        "Rosca Barra W",
         "Rosca Concentrada",
         "Rosca Direta Barra Reta",
         "Rosca Direta Barra W",
@@ -559,9 +658,11 @@ object CatalogoExerciciosStorage {
         "Tríceps Testa Pulley Barra",
         "Tríceps Testa Pulley Corda",
         "Tríceps Testa Unilateral",
+        "V-up + Remador",
         "Varredura Solo",
         "Wall Ball"
     )
+
     fun listarTodosItens(context: Context): List<ItemCatalogoExercicio> {
         val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
         val json = prefs.getString("personalizados", "[]") ?: "[]"
@@ -578,7 +679,7 @@ object CatalogoExerciciosStorage {
             ItemCatalogoExercicio(
                 nome = nome,
                 grupo = detectarGrupoMuscular(nome),
-                videoUrl = gerarLinkVideoDemonstrativo(nome)
+                videoUrl = gerarLinkVideoDemonstrativo(context, nome)
             )
         }
     }
@@ -602,7 +703,6 @@ object CatalogoExerciciosStorage {
         prefs.edit().putString("personalizados", novoArr.toString()).apply()
     }
 }
-
 @Composable
 fun DialogoCatalogoExercicios(
     context: Context,
@@ -613,7 +713,6 @@ fun DialogoCatalogoExercicios(
     var grupoFiltro by remember { mutableStateOf("Todos") }
     var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
     var novoPersonalizado by remember { mutableStateOf("") }
-
     val filtrados = remember(busca, grupoFiltro, listaCatalogo) {
         val termo = busca.trim()
         listaCatalogo.filter { item ->
@@ -624,7 +723,6 @@ fun DialogoCatalogoExercicios(
             okGrupo && okTexto
         }
     }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Catálogo de Exercícios (${filtrados.size})") },
@@ -642,7 +740,6 @@ fun DialogoCatalogoExercicios(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-
                 Column(
                     modifier = Modifier
                         .weight(1f, fill = false)
@@ -669,17 +766,25 @@ fun DialogoCatalogoExercicios(
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    val temVideo = item.videoUrl.isNotBlank()
                                     Text(
-                                        text = "${item.grupo} • ▶ Vídeo demonstrativo incluído",
+                                        text = if (temVideo) {
+                                            "${item.grupo} • ▶ Vídeo demonstrativo incluído"
+                                        } else {
+                                            "${item.grupo} • Esse exercício ainda não tem vídeo demonstrativo"
+                                        },
                                         fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = if (temVideo) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        }
                                     )
                                 }
                             }
                         }
                     }
                 }
-
                 HorizontalDivider()
                 Text("Não encontrou? Cadastre e salve no catálogo:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
@@ -715,4 +820,325 @@ fun DialogoCatalogoExercicios(
             }
         }
     )
+}
+
+@Composable
+fun TelaGerenciarExercicios(
+    onVoltar: () -> Unit,
+    onInicio: () -> Unit,
+    onAlunos: () -> Unit,
+    onTreinos: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var busca by remember { mutableStateOf("") }
+    var filtroVideo by remember { mutableStateOf("Todos") }
+    var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
+    var exercicioEditando by remember { mutableStateOf<ItemCatalogoExercicio?>(null) }
+    var urlVideoInput by remember { mutableStateOf("") }
+    var erroUrl by remember { mutableStateOf("") }
+    var novoNomeExercicio by remember { mutableStateOf("") }
+    var mostrarDialogoNovoExercicio by remember { mutableStateOf(false) }
+    var videoEmReproducao by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    val seletorVideoCatalogo = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val pastaVideos = java.io.File(context.filesDir, "videos_catalogo")
+                if (!pastaVideos.exists()) pastaVideos.mkdirs()
+                val destino = java.io.File(pastaVideos, "${System.currentTimeMillis()}_video.mp4")
+                context.contentResolver.openInputStream(uri)?.use { entrada ->
+                    destino.outputStream().use { saida -> entrada.copyTo(saida) }
+                }
+                urlVideoInput = destino.absolutePath
+                erroUrl = ""
+            } catch (e: Exception) {
+                erroUrl = "Não foi possível importar o vídeo: ${e.message ?: "erro"}"
+            }
+        }
+    }
+
+    val filtrados = remember(busca, filtroVideo, listaCatalogo) {
+        val termo = busca.trim()
+        listaCatalogo.filter { item ->
+            val okFiltro = when (filtroVideo) {
+                "Com vídeo" -> item.videoUrl.isNotBlank()
+                "Sem vídeo" -> item.videoUrl.isBlank()
+                else -> true
+            }
+            val okTexto = termo.isBlank() ||
+                    item.nome.contains(termo, ignoreCase = true) ||
+                    item.grupo.contains(termo, ignoreCase = true)
+            okFiltro && okTexto
+        }
+    }
+
+    val totalComVideo = remember(listaCatalogo) { listaCatalogo.count { it.videoUrl.isNotBlank() } }
+    val totalSemVideo = remember(listaCatalogo) { listaCatalogo.count { it.videoUrl.isBlank() } }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(0xFF0F1722) else androidx.compose.ui.graphics.Color(0xFFF5F9FC))
+            .statusBarsPadding()
+    ) {
+        CabecalhoPadrao(
+            titulo = "Gerenciar exercícios",
+            onVoltar = onVoltar
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "Todos (${listaCatalogo.size})" to "Todos",
+                    "Com vídeo ($totalComVideo)" to "Com vídeo",
+                    "Sem vídeo ($totalSemVideo)" to "Sem vídeo"
+                ).forEach { (rotulo, chave) ->
+                    FilterChip(
+                        selected = filtroVideo == chave,
+                        onClick = { filtroVideo = chave },
+                        label = { Text(rotulo, fontSize = 11.sp) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = busca,
+                    onValueChange = { busca = it },
+                    label = { Text("Buscar exercício ou grupo...") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = {
+                        novoNomeExercicio = ""
+                        mostrarDialogoNovoExercicio = true
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+                ) {
+                    Text("+ Novo", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filtrados.size) { index ->
+                    val item = filtrados[index]
+                    val temVideo = item.videoUrl.isNotBlank()
+                    val tipoVid = if (item.videoUrl.startsWith("/")) "LOCAL" else "LINK"
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(0xFF172331) else androidx.compose.ui.graphics.Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.nome,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = item.grupo,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (temVideo) {
+                                        if (tipoVid == "LOCAL") "▶ Vídeo importado do celular" else "▶ Vídeo demonstrativo cadastrado"
+                                    } else {
+                                        "⚠ Esse exercício ainda não tem vídeo demonstrativo"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (temVideo) {
+                                        androidx.compose.ui.graphics.Color(0xFF2E7D32)
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        exercicioEditando = item
+                                        urlVideoInput = item.videoUrl
+                                        erroUrl = ""
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text("Editar vídeo", fontSize = 12.sp)
+                                }
+                            }
+                            if (temVideo) {
+                                CardPreviewVideoExercicio(
+                                    tituloExercicio = item.nome,
+                                    videoUrl = item.videoUrl,
+                                    videoTipo = tipoVid,
+                                    modifier = Modifier
+                                        .width(88.dp)
+                                        .height(115.dp),
+                                    onAbrirPlayer = {
+                                        videoEmReproducao = item.nome to item.videoUrl
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        DashboardBottomBar(
+            telaAtual = AppScreen.GerenciarExercicios,
+            onInicio = onInicio,
+            onAlunos = onAlunos,
+            onTreinos = onTreinos,
+            onExercicios = {}
+        )
+    }
+
+    videoEmReproducao?.let { (titulo, url) ->
+        DialogoPlayerVideoExercicio(
+            tituloExercicio = titulo,
+            videoUrl = url,
+            videoTipo = if (url.startsWith("/")) "LOCAL" else "LINK",
+            onFechar = { videoEmReproducao = null }
+        )
+    }
+
+    exercicioEditando?.let { exAlvo ->
+        AlertDialog(
+            onDismissRequest = { exercicioEditando = null },
+            title = { Text("Vídeo demonstrativo", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = exAlvo.nome,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Cole um link do YouTube ou importe um vídeo direto da galeria do celular:",
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = if (urlVideoInput.startsWith("/")) "Vídeo importado do celular" else urlVideoInput,
+                        onValueChange = {
+                            urlVideoInput = it
+                            erroUrl = ""
+                        },
+                        readOnly = urlVideoInput.startsWith("/"),
+                        label = { Text("Link do vídeo (YouTube)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedButton(
+                        onClick = { seletorVideoCatalogo.launch(arrayOf("video/*")) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Importar vídeo do celular")
+                    }
+                    if (urlVideoInput.isNotBlank()) {
+                        TextButton(
+                            onClick = { urlVideoInput = "" },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Remover vídeo atual", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    }
+                    if (erroUrl.isNotBlank()) {
+                        Text(
+                            text = erroUrl,
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val limpa = urlVideoInput.trim()
+                        if (limpa.isNotBlank() && !limpa.startsWith("/") && !limpa.startsWith("http://", true) && !limpa.startsWith("https://", true)) {
+                            erroUrl = "Informe um link válido iniciado com http:// ou https://"
+                            return@TextButton
+                        }
+                        CatalogoExerciciosStorage.salvarVideoExercicio(context, exAlvo.nome, limpa)
+                        listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
+                        exercicioEditando = null
+                    }
+                ) {
+                    Text("Salvar vídeo", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exercicioEditando = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+    if (mostrarDialogoNovoExercicio) {
+        AlertDialog(
+            onDismissRequest = { mostrarDialogoNovoExercicio = false },
+            title = { Text("Novo exercício no catálogo") },
+            text = {
+                OutlinedTextField(
+                    value = novoNomeExercicio,
+                    onValueChange = { novoNomeExercicio = it },
+                    label = { Text("Nome do exercício") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (novoNomeExercicio.isNotBlank()) {
+                            CatalogoExerciciosStorage.adicionarPersonalizado(context, novoNomeExercicio)
+                            listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
+                            mostrarDialogoNovoExercicio = false
+                        }
+                    }
+                ) {
+                    Text("Cadastrar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mostrarDialogoNovoExercicio = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 }
