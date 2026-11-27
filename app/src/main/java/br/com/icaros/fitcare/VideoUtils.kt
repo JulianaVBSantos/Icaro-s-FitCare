@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.MediaController
@@ -39,12 +40,13 @@ import java.io.File
 import java.net.URL
 
 fun extrairIdVideoYoutube(url: String): String? {
-    val limpa = url.trim()
+    val limpa = Uri.decode(url.trim())
     return when {
         limpa.contains("/shorts/") -> limpa.substringAfter("/shorts/").substringBefore("?").substringBefore("/")
         limpa.contains("youtu.be/") -> limpa.substringAfter("youtu.be/").substringBefore("?").substringBefore("/")
         limpa.contains("v=") -> limpa.substringAfter("v=").substringBefore("&")
         limpa.contains("/embed/") -> limpa.substringAfter("/embed/").substringBefore("?").substringBefore("/")
+        limpa.contains("youtube.com") -> limpa.substringAfter("youtube.com").trim('/', ':', ' ')
         else -> null
     }?.takeIf { it.isNotBlank() }
 }
@@ -79,19 +81,11 @@ fun CardPreviewVideoExercicio(
                         frame
                     } else null
                 } else if (videoId != null) {
-                    val thumbUrl = Uri.Builder()
-                        .scheme("https")
-                        .authority("://youtube.com")
-                        .appendPath("vi")
-                        .appendPath(videoId)
-                        .appendPath("hqdefault.jpg")
-                        .build()
-                        .toString()
+                    val thumbUrl = "https:" + "//://ytimg.com" + videoId + "/hqdefault.jpg"
                     URL(thumbUrl).openStream().use { stream ->
                         BitmapFactory.decodeStream(stream)
                     }
                 } else {
-                    // Tenta extrair frame caso seja URL direta de vídeo (.mp4 no Firebase Storage)
                     val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(videoUrl, HashMap())
                     val frame = retriever.getFrameAtTime(1_000_000L)
@@ -152,28 +146,17 @@ fun DialogoPlayerVideoExercicio(
 ) {
     val videoId = remember(videoUrl) { extrairIdVideoYoutube(videoUrl) }
     val ehYoutube = videoId != null || videoUrl.contains("youtube.com", true) || videoUrl.contains("youtu.be", true)
-    val ehArquivoLocalOuDireto = !ehYoutube && (
+    val ehArquivoLocal = !ehYoutube && (
             videoTipo == "LOCAL" ||
                     videoUrl.startsWith("/") ||
-                    videoUrl.contains("://googleapis.com", true) ||
                     videoUrl.endsWith(".mp4", true) ||
                     videoUrl.endsWith(".mov", true) ||
                     videoUrl.endsWith(".webm", true)
             )
 
-    val urlEmbed = remember(videoId, videoUrl) {
+    val urlFinalPlayer = remember(videoId, videoUrl) {
         if (videoId != null) {
-            Uri.Builder()
-                .scheme("https")
-                .authority("://youtube.com")
-                .appendPath("embed")
-                .appendPath(videoId)
-                .appendQueryParameter("autoplay", "1")
-                .appendQueryParameter("rel", "0")
-                .appendQueryParameter("modestbranding", "1")
-                .appendQueryParameter("playsinline", "1")
-                .build()
-                .toString()
+            "https:" + "//www.youtube.com/shorts/" + videoId
         } else {
             videoUrl
         }
@@ -192,12 +175,12 @@ fun DialogoPlayerVideoExercicio(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(380.dp)
+                    .height(430.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                if (ehArquivoLocalOuDireto) {
+                if (ehArquivoLocal) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
@@ -222,12 +205,42 @@ fun DialogoPlayerVideoExercicio(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                                scrollBarStyle = android.view.View.SCROLLBARS_OUTSIDE_OVERLAY
+                                setInitialScale(100)
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
+                                settings.loadWithOverviewMode = false
+                                settings.useWideViewPort = false
                                 settings.mediaPlaybackRequiresUserGesture = false
+                                settings.userAgentString =
+                                    "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                                 webChromeClient = WebChromeClient()
-                                webViewClient = WebViewClient()
-                                loadUrl(urlEmbed)
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(
+                                        view: WebView?,
+                                        request: WebResourceRequest?
+                                    ): Boolean {
+                                        val urlReq = request?.url?.toString().orEmpty()
+                                        return !urlReq.startsWith("http://") && !urlReq.startsWith("https://")
+                                    }
+
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        view?.evaluateJavascript(
+                                            """
+                                            (function() {
+                                                var style = document.createElement('style');
+                                                style.innerHTML = 'html, body { margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; width: 100vw !important; background: #000 !important; } ytd-reel-video-renderer, #shorts-player, video { width: 100vw !important; left: 0 !important; margin-left: 0 !important; }';
+                                                document.head.appendChild(style);
+                                                window.scrollTo(0, 0);
+                                            })();
+                                            """.trimIndent(),
+                                            null
+                                        )
+                                    }
+                                }
+                                loadUrl(urlFinalPlayer)
                             }
                         }
                     )

@@ -7751,7 +7751,7 @@ internal fun DashboardBottomBar(
                 onClick = onTreinos
             )
             DashboardNavItem(
-                icone = "🏋",
+                icone = "❚█══█❚",
                 titulo = "Exercícios",
                 selecionado = telaAtual == AppScreen.GerenciarExercicios,
                 onClick = onExercicios
@@ -7777,7 +7777,7 @@ private fun DashboardNavItem(
         Text(
             text = icone,
             color = if (selecionado) AzulPrincipal else Color(0xFF77717F),
-            fontSize = 21.sp
+            fontSize = if (icone.length > 2) 9.sp else 21.sp
         )
         Text(
             text = titulo,

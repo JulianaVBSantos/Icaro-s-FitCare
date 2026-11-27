@@ -67,30 +67,12 @@ object CatalogoExerciciosStorage {
         val chave = nomeExercicio.trim().lowercase()
         val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
         val linkSalvoProfessor = prefsVideos.getString(chave, null)
-        if (linkSalvoProfessor != null) {
-            if (linkSalvoProfessor.contains("://youtube.com") && !linkSalvoProfessor.contains("/shorts/") && !linkSalvoProfessor.contains("/embed/") && !linkSalvoProfessor.contains("v=")) {
-                val idRecuperado = linkSalvoProfessor.substringAfter("youtube.com").trim()
-                if (idRecuperado.isNotBlank()) {
-                    return Uri.Builder()
-                        .scheme("https")
-                        .authority("://youtube.com")
-                        .appendPath("shorts")
-                        .appendPath(idRecuperado)
-                        .build()
-                        .toString()
-                }
-            }
+        if (linkSalvoProfessor != null && !linkSalvoProfessor.contains("%3A") && linkSalvoProfessor.length > 22) {
             return linkSalvoProfessor
         }
         val idShort = SHORTS_IDS_MAP[chave]
         if (!idShort.isNullOrBlank()) {
-            return Uri.Builder()
-                .scheme("https")
-                .authority("://youtube.com")
-                .appendPath("shorts")
-                .appendPath(idShort)
-                .build()
-                .toString()
+            return "https:" + "//www.youtube.com/shorts/" + idShort
         }
         return ""
     }
