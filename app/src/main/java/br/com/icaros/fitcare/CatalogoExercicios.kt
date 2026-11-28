@@ -66,7 +66,8 @@ object CatalogoExerciciosStorage {
 
     private fun gerarLinkVideoDemonstrativo(context: Context, nomeExercicio: String): String {
         val chave = nomeExercicio.trim().lowercase()
-        val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
+        val prefsVideos =
+            context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
         val linkSalvoProfessor = prefsVideos.getString(chave, null)
         if (linkSalvoProfessor != null && !linkSalvoProfessor.contains("%3A") && linkSalvoProfessor.length > 22) {
             return linkSalvoProfessor
@@ -81,7 +82,8 @@ object CatalogoExerciciosStorage {
     fun salvarVideoExercicio(context: Context, nomeExercicio: String, videoUrl: String) {
         val chave = nomeExercicio.trim().lowercase()
         if (chave.isBlank()) return
-        val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
+        val prefsVideos =
+            context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
         prefsVideos.edit().putString(chave, videoUrl.trim()).apply()
     }
 
@@ -109,11 +111,13 @@ object CatalogoExerciciosStorage {
         val novoLimpo = novoNome.trim()
         if (novoLimpo.isBlank()) return
 
-        val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
+        val prefs =
+            context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
         val jsonPers = prefs.getString("personalizados", "[]") ?: "[]"
         val personalizados = try {
             val arr = JSONArray(jsonPers)
-            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableSet()
+            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+                .toMutableSet()
         } catch (_: Exception) {
             mutableSetOf()
         }
@@ -121,7 +125,8 @@ object CatalogoExerciciosStorage {
         val jsonOcultos = prefs.getString("ocultos", "[]") ?: "[]"
         val ocultos = try {
             val arr = JSONArray(jsonOcultos)
-            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableSet()
+            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+                .toMutableSet()
         } catch (_: Exception) {
             mutableSetOf()
         }
@@ -139,7 +144,8 @@ object CatalogoExerciciosStorage {
             .putString("ocultos", JSONArray(ocultos.toList()).toString())
             .apply()
 
-        val prefsCat = context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
+        val prefsCat =
+            context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
         if (novaCategoria.isNotBlank()) {
             prefsCat.edit().putString(novoLimpo.lowercase(), novaCategoria.trim()).apply()
         }
@@ -151,15 +157,42 @@ object CatalogoExerciciosStorage {
     private fun detectarGrupoMuscular(nome: String): String {
         val n = nome.lowercase()
         return when {
-            n.contains("supino") || n.contains("crucifixo") || n.contains("crossover") || n.contains("peitoral") || n.contains("apoio solo") -> "Peito"
-            n.contains("puxada") || n.contains("remada") || n.contains("barra fixa") || n.contains("pull") || n.contains("dorsal") -> "Costas"
-            n.contains("agachamento") || n.contains("leg press") || n.contains("extensora") || n.contains("flexora") || n.contains("avanço") || n.contains("afundo") || n.contains("passada") || n.contains("hack") || n.contains("squat") || n.contains("stiff") || n.contains("terra") || n.contains("deadlift") || n.contains("panturrilha") || n.contains("tibial") -> "Pernas"
-            n.contains("glúteo") || n.contains("glute") || n.contains("elevação pélvica") || n.contains("elevação de quadril") || n.contains("abdução") || n.contains("abdutora") || n.contains("adutora") || n.contains("extensão quadril") || n.contains("extensão de quadril") || n.contains("3 apoios") || n.contains("ponte") -> "Glúteos e Quadril"
-            n.contains("desenvolvimento") || n.contains("elevação lateral") || n.contains("elevação frontal") || n.contains("ombro") || n.contains("encolhimento") -> "Ombros"
+            n.contains("supino") || n.contains("crucifixo") || n.contains("crossover") || n.contains(
+                "peitoral"
+            ) || n.contains("apoio solo") -> "Peito"
+
+            n.contains("puxada") || n.contains("remada") || n.contains("barra fixa") || n.contains("pull") || n.contains(
+                "dorsal"
+            ) -> "Costas"
+
+            n.contains("agachamento") || n.contains("leg press") || n.contains("extensora") || n.contains(
+                "flexora"
+            ) || n.contains("avanço") || n.contains("afundo") || n.contains("passada") || n.contains(
+                "hack"
+            ) || n.contains("squat") || n.contains("stiff") || n.contains("terra") || n.contains("deadlift") || n.contains(
+                "panturrilha"
+            ) || n.contains("tibial") -> "Pernas"
+
+            n.contains("glúteo") || n.contains("glute") || n.contains("elevação pélvica") || n.contains(
+                "elevação de quadril"
+            ) || n.contains("abdução") || n.contains("abdutora") || n.contains("adutora") || n.contains(
+                "extensão quadril"
+            ) || n.contains("extensão de quadril") || n.contains("3 apoios") || n.contains("ponte") -> "Glúteos e Quadril"
+
+            n.contains("desenvolvimento") || n.contains("elevação lateral") || n.contains("elevação frontal") || n.contains(
+                "ombro"
+            ) || n.contains("encolhimento") -> "Ombros"
+
             n.contains("rosca") -> "Bíceps"
             n.contains("tríceps") || n.contains("triceps") || n.contains("paralela") -> "Tríceps"
-            n.contains("abdominal") || n.contains("abd ") || n.contains("abdm") || n.contains("prancha") || n.contains("isometria em l") || n.contains("v-up") || n.contains("core") || n.contains("lombar") || n.contains("perdigueiro") -> "Abdômen e Core"
-            n.contains("alongamento") || n.contains("mobilidade") || n.contains("mob ") || n.contains("mob.") || n.contains("liberação") -> "Mobilidade e Alongamento"
+            n.contains("abdominal") || n.contains("abd ") || n.contains("abdm") || n.contains("prancha") || n.contains(
+                "isometria em l"
+            ) || n.contains("v-up") || n.contains("core") || n.contains("lombar") || n.contains("perdigueiro") -> "Abdômen e Core"
+
+            n.contains("alongamento") || n.contains("mobilidade") || n.contains("mob ") || n.contains(
+                "mob."
+            ) || n.contains("liberação") -> "Mobilidade e Alongamento"
+
             else -> "Cardio e Funcional"
         }
     }
@@ -710,8 +743,10 @@ object CatalogoExerciciosStorage {
     )
 
     fun listarTodosItens(context: Context): List<ItemCatalogoExercicio> {
-        val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
-        val prefsCat = context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
+        val prefs =
+            context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
+        val prefsCat =
+            context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
         val json = prefs.getString("personalizados", "[]") ?: "[]"
         val personalizados = try {
             val arr = JSONArray(json)
@@ -747,7 +782,8 @@ object CatalogoExerciciosStorage {
     fun adicionarPersonalizado(context: Context, nomeExercicio: String) {
         val limpo = nomeExercicio.trim()
         if (limpo.isBlank()) return
-        val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
+        val prefs =
+            context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
         val json = prefs.getString("personalizados", "[]") ?: "[]"
         val atuais = try {
             val arr = JSONArray(json)
@@ -763,6 +799,7 @@ object CatalogoExerciciosStorage {
         prefs.edit().putString("personalizados", novoArr.toString()).apply()
     }
 }
+
 @Composable
 fun DialogoCatalogoExercicios(
     context: Context,
@@ -771,7 +808,13 @@ fun DialogoCatalogoExercicios(
 ) {
     var busca by remember { mutableStateOf("") }
     var grupoFiltro by remember { mutableStateOf("Todos") }
-    var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
+    var listaCatalogo by remember {
+        mutableStateOf(
+            CatalogoExerciciosStorage.listarTodosItens(
+                context
+            )
+        )
+    }
     var novoPersonalizado by remember { mutableStateOf("") }
 
     val grupos = remember { listOf("Todos") + CatalogoExerciciosStorage.GRUPOS_MUSCULARES }
@@ -887,10 +930,17 @@ fun DialogoCatalogoExercicios(
                                     }
                                     Button(
                                         onClick = { onSelecionarItem(item) },
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        contentPadding = PaddingValues(
+                                            horizontal = 10.dp,
+                                            vertical = 4.dp
+                                        ),
                                         modifier = Modifier.height(32.dp)
                                     ) {
-                                        Text("+ Adicionar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "+ Adicionar",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
@@ -914,7 +964,10 @@ fun DialogoCatalogoExercicios(
                     Button(
                         onClick = {
                             if (novoPersonalizado.isNotBlank()) {
-                                CatalogoExerciciosStorage.adicionarPersonalizado(context, novoPersonalizado)
+                                CatalogoExerciciosStorage.adicionarPersonalizado(
+                                    context,
+                                    novoPersonalizado
+                                )
                                 listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
                                 val criado = listaCatalogo.firstOrNull {
                                     it.nome.equals(novoPersonalizado.trim(), ignoreCase = true)
@@ -947,7 +1000,13 @@ fun TelaGerenciarExercicios(
     val context = androidx.compose.ui.platform.LocalContext.current
     var busca by remember { mutableStateOf("") }
     var filtroVideo by remember { mutableStateOf("Todos") }
-    var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
+    var listaCatalogo by remember {
+        mutableStateOf(
+            CatalogoExerciciosStorage.listarTodosItens(
+                context
+            )
+        )
+    }
     var exercicioEditando by remember { mutableStateOf<ItemCatalogoExercicio?>(null) }
     var urlVideoInput by remember { mutableStateOf("") }
     var categoriaEditandoInput by remember { mutableStateOf("") }
@@ -976,6 +1035,8 @@ fun TelaGerenciarExercicios(
         }
     }
 
+    var mostrarAvisoVideoLocal by remember { mutableStateOf(false) }
+
     val filtrados = remember(busca, filtroVideo, listaCatalogo) {
         val termo = busca.trim()
         listaCatalogo.filter { item ->
@@ -997,7 +1058,11 @@ fun TelaGerenciarExercicios(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(0xFF0F1722) else androidx.compose.ui.graphics.Color(0xFFF5F9FC))
+            .background(
+                if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(0xFF0F1722) else androidx.compose.ui.graphics.Color(
+                    0xFFF5F9FC
+                )
+            )
             .statusBarsPadding()
     ) {
         CabecalhoPadrao(
@@ -1066,7 +1131,9 @@ fun TelaGerenciarExercicios(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(0xFF172331) else androidx.compose.ui.graphics.Color.White
+                            containerColor = if (temaEscuroAtivoState) androidx.compose.ui.graphics.Color(
+                                0xFF172331
+                            ) else androidx.compose.ui.graphics.Color.White
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -1107,10 +1174,15 @@ fun TelaGerenciarExercicios(
                                 OutlinedButton(
                                     onClick = {
                                         exercicioEditando = item
+                                        nomeEditandoInput = item.nome
+                                        categoriaEditandoInput = item.grupo
                                         urlVideoInput = item.videoUrl
                                         erroUrl = ""
                                     },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                                    contentPadding = PaddingValues(
+                                        horizontal = 14.dp,
+                                        vertical = 4.dp
+                                    ),
                                     modifier = Modifier.height(34.dp)
                                 ) {
                                     Text("Editar exercício", fontSize = 12.sp)
@@ -1205,17 +1277,26 @@ fun TelaGerenciarExercicios(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedButton(
-                        onClick = { seletorVideoCatalogo.launch(arrayOf("video/*")) },
+                        onClick = { mostrarAvisoVideoLocal = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Importar vídeo")
+                        Text("Importar vídeo do próprio telefone")
                     }
+                    Text(
+                        text = "Obs.: Vídeos importados do celular ficam salvos apenas neste aparelho. Para sincronizar com o aluno, utilize um link do YouTube (pode ser vídeo Não Listado).",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
                     if (urlVideoInput.isNotBlank()) {
                         TextButton(
                             onClick = { urlVideoInput = "" },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Remover vídeo atual", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            Text(
+                                "Remover vídeo atual",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                     if (erroUrl.isNotBlank()) {
@@ -1235,7 +1316,11 @@ fun TelaGerenciarExercicios(
                             return@TextButton
                         }
                         val limpa = urlVideoInput.trim()
-                        if (limpa.isNotBlank() && !limpa.startsWith("/") && !limpa.startsWith("http://", true) && !limpa.startsWith("https://", true)) {
+                        if (limpa.isNotBlank() && !limpa.startsWith("/") && !limpa.startsWith(
+                                "http://",
+                                true
+                            ) && !limpa.startsWith("https://", true)
+                        ) {
                             erroUrl = "Informe um link válido iniciado com http:// ou https://"
                             return@TextButton
                         }
@@ -1261,6 +1346,40 @@ fun TelaGerenciarExercicios(
         )
     }
 
+    if (mostrarAvisoVideoLocal) {
+        AlertDialog(
+            onDismissRequest = { mostrarAvisoVideoLocal = false },
+            title = {
+                Text(
+                    text = "Aviso sobre vídeo local",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "No momento, vídeos importados diretamente da galeria ficam salvos apenas neste aparelho (para demonstração presencial) e não são enviados para o celular do aluno.\n\nPara que o vídeo apareça sincronizado no aplicativo do aluno, utilize a opção de link do YouTube.",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarAvisoVideoLocal = false
+                        seletorVideoCatalogo.launch(arrayOf("video/*"))
+                    }
+                ) {
+                    Text("Entendi, importar mesmo assim", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mostrarAvisoVideoLocal = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
     if (mostrarDialogoNovoExercicio) {
         AlertDialog(
             onDismissRequest = { mostrarDialogoNovoExercicio = false },
@@ -1278,7 +1397,10 @@ fun TelaGerenciarExercicios(
                 TextButton(
                     onClick = {
                         if (novoNomeExercicio.isNotBlank()) {
-                            CatalogoExerciciosStorage.adicionarPersonalizado(context, novoNomeExercicio)
+                            CatalogoExerciciosStorage.adicionarPersonalizado(
+                                context,
+                                novoNomeExercicio
+                            )
                             listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
                             mostrarDialogoNovoExercicio = false
                         }

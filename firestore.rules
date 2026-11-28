@@ -1,0 +1,345 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // FUNÇÕES DE AUTENTICAÇÃO E VÍNCULO
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function ehAdmin() {
+      return autenticado()
+        && request.auth.uid == 'Bcqsue17eVVdJ4Ajc9EhoTQfJ8b2';
+    }
+
+    // Professor com cadastro em usuarios/{uid}, perfil PROFESSOR e não bloqueado.
+    // Bloquear o professor no painel do admin (ativo = false) passa a valer
+    // também no servidor, e não só dentro do app.
+    // Documento antigo sem o campo "ativo" é tratado como ativo.
+    function professorAtivo() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+             .data.get('perfil', '') == 'PROFESSOR'
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+             .data.get('ativo', true) == true;
+    }
+
+    function dadosDoAluno(alunoId) {
+      return get(/databases/$(database)/documents/alunos/$(alunoId)).data;
+    }
+
+    // Cadastro do aluno ainda sem conta Firebase vinculada (campo ausente, null ou vazio)
+    function semVinculo(aluno) {
+      return aluno.get('alunoAuthUid', null) == null
+        || aluno.get('alunoAuthUid', null) == '';
+    }
+
+    function professorDonoDoAluno(alunoId) {
+      return professorAtivo()
+        && exists(/databases/$(database)/documents/alunos/$(alunoId))
+        && dadosDoAluno(alunoId).professorUid == request.auth.uid;
+    }
+
+    // Depois de vinculado, só a conta vinculada (uid) acessa. O caminho por
+    // e-mail só vale enquanto o cadastro ainda não tem alunoAuthUid.
+    function alunoVinculado(alunoId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/alunos/$(alunoId))
+        && (
+          dadosDoAluno(alunoId).get('alunoAuthUid', null) == request.auth.uid
+          || (
+            semVinculo(dadosDoAluno(alunoId))
+            && dadosDoAluno(alunoId).get('email', null) is string
+            && request.auth.token.email is string
+            && dadosDoAluno(alunoId).email.lower() == request.auth.token.email.lower()
+          )
+        );
+    }
+
+    // O admin NÃO lê dados clínicos (anamneses, treinos, eventos).
+    function professorOuAlunoVinculado(alunoId) {
+      return professorDonoDoAluno(alunoId)
+        || alunoVinculado(alunoId);
+    }
+
+    // CONFIGURAÇÃO ADMINISTRATIVA
+    match /configuracao/{docId} {
+      allow read: if autenticado();
+      allow write: if ehAdmin();
+    }
+
+    // USUÁRIOS, MODELOS DE ANAMNESE E DISPOSITIVOS
+    match /usuarios/{usuarioId} {
+
+      // O próprio usuário só atualiza o token de notificação.
+      // Não pode mudar perfil nem ativo.
+      allow update: if autenticado()
+        && request.auth.uid == usuarioId
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['fcmToken', 'fcmUpdatedAt']);
+
+      // A leitura do próprio documento NÃO exige professorAtivo(), para o app
+      // conseguir detectar que a conta foi bloqueada.
+      allow read: if (autenticado() && request.auth.uid == usuarioId)
+        || ehAdmin();
+
+      allow create, update, delete: if ehAdmin();
+
+      match /modelos_anamnese/{modeloId} {
+
+        allow read: if (autenticado() && request.auth.uid == usuarioId)
+          || ehAdmin();
+
+        allow create: if professorAtivo()
+          && request.auth.uid == usuarioId
+          && request.resource.data.ownerUid == request.auth.uid;
+
+        allow update: if professorAtivo()
+          && request.auth.uid == usuarioId
+          && request.resource.data.ownerUid == request.auth.uid;
+
+        allow delete: if (professorAtivo() && request.auth.uid == usuarioId)
+          || ehAdmin();
+      }
+
+      match /dispositivos/{dispositivoId} {
+        allow read: if (autenticado() && request.auth.uid == usuarioId)
+          || ehAdmin();
+        // Limite de campos para evitar documentos gigantes
+        allow create, update: if autenticado()
+          && request.auth.uid == usuarioId
+          && request.resource.data.size() <= 30;
+        allow delete: if ehAdmin();
+      }
+    }
+
+    // ALUNOS
+    match /alunos/{alunoId} {
+
+      // Aluno vinculado atualiza só o token de notificação
+      allow update: if alunoVinculado(alunoId)
+        && request.resource.data.professorUid == resource.data.professorUid
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['fcmToken', 'fcmUpdatedAt']);
+
+      // Avaliação direta sobre resource.data para suportar queries e listeners.
+      // O admin lê o cadastro (contas e contagens), mas não as subcoleções.
+      allow read: if ehAdmin()
+        || (
+          professorAtivo()
+          && resource.data.professorUid == request.auth.uid
+        )
+        || (
+          autenticado()
+          && resource.data.alunoAuthUid == request.auth.uid
+        )
+        || (
+          autenticado()
+          && resource.data.email is string
+          && request.auth.token.email is string
+          && resource.data.email.lower() == request.auth.token.email.lower()
+        );
+
+      // Criação somente por professor ativo
+      allow create: if professorAtivo()
+        && request.resource.data.professorUid == request.auth.uid;
+
+      // Atualização do cadastro pelo professor dono.
+      // Depois de vinculado, o alunoAuthUid não muda, a não ser para ser
+      // limpo (reset do vínculo, caso o aluno recrie a conta).
+      allow update: if professorDonoDoAluno(alunoId)
+        && request.resource.data.professorUid == resource.data.professorUid
+        && (
+          semVinculo(resource.data)
+          || request.resource.data.get('alunoAuthUid', null)
+            == resource.data.get('alunoAuthUid', null)
+          || request.resource.data.get('alunoAuthUid', null) == null
+        );
+
+      // Vinculação da conta Firebase do aluno (primeiro acesso)
+      allow update: if autenticado()
+        && resource.data.email is string
+        && request.auth.token.email is string
+        && resource.data.email.lower() == request.auth.token.email.lower()
+        && (
+          semVinculo(resource.data)
+          || resource.data.alunoAuthUid == request.auth.uid
+        )
+        && request.resource.data.alunoAuthUid == request.auth.uid
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['alunoAuthUid']);
+
+      // Aluno atualiza só o que ele mesmo informa na anamnese.
+      // 'status' e 'observacoesProfissionais' são do professor e foram removidos.
+      // Se o app do aluno ainda enviar 'status', a gravação é negada. Corrija o
+      // app (veja as notas) ou, como paliativo, acrescente 'status' à lista.
+      allow update: if alunoVinculado(alunoId)
+        && request.resource.data.professorUid == resource.data.professorUid
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'objetivo',
+            'condicoes',
+            'restricoes'
+          ]);
+
+      // Exclusão pelo professor responsável ou admin
+      allow delete: if professorDonoDoAluno(alunoId) || ehAdmin();
+
+      // ANAMNESES ATRIBUÍDAS
+      match /anamneses_atribuidas/{anamneseId} {
+
+        allow read: if professorOuAlunoVinculado(alunoId);
+
+        allow create: if (
+            professorDonoDoAluno(alunoId)
+            && request.resource.data.professorUid == request.auth.uid
+            && request.resource.data.alunoFirebaseId == alunoId
+          ) || (
+            alunoVinculado(alunoId)
+            && request.resource.data.professorUid == dadosDoAluno(alunoId).professorUid
+            && request.resource.data.alunoFirebaseId == alunoId
+            && request.resource.data.identificadorExterno == 'PADRAO_OBRIGATORIA'
+          );
+
+        // Professor: campos de controle da atribuição
+        allow update: if professorDonoDoAluno(alunoId)
+          && resource.data.professorUid == request.auth.uid
+          && request.resource.data.professorUid == resource.data.professorUid
+          && request.resource.data.alunoFirebaseId == resource.data.alunoFirebaseId
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'firestoreId',
+              'professorUid',
+              'alunoFirebaseId',
+              'dataCriacao',
+              'nomeModelo',
+              'profissionalResponsavel',
+              'identificadorExterno',
+              'status',
+              'dataEnvio',
+              'dataInicioResposta',
+              'dataResposta',
+              'updatedAtMillis',
+              'excluida',
+              'alunoAuthUid'
+            ]);
+
+        // Aluno: só avança o andamento da própria anamnese. Não edita nome,
+        // modelo, exclusão etc. e não volta uma anamnese RESPONDIDA para pendente.
+        allow update: if alunoVinculado(alunoId)
+          && request.resource.data.professorUid == resource.data.professorUid
+          && request.resource.data.alunoFirebaseId == resource.data.alunoFirebaseId
+          && request.resource.data.status in ['PENDENTE', 'EM_ANDAMENTO', 'RESPONDIDA']
+          && (
+            resource.data.status != 'RESPONDIDA'
+            || request.resource.data.status == 'RESPONDIDA'
+          )
+          && request.resource.data.get('alunoAuthUid', request.auth.uid)
+            == request.auth.uid
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'alunoAuthUid',
+              'status',
+              'dataInicioResposta',
+              'dataResposta',
+              'updatedAtMillis'
+            ]);
+
+        // A anamnese padrão obrigatória não pode ser excluída
+        allow delete: if (professorDonoDoAluno(alunoId) || ehAdmin())
+          && resource.data.get('identificadorExterno', '') != 'PADRAO_OBRIGATORIA';
+
+        match /perguntas/{perguntaId} {
+          allow read: if professorOuAlunoVinculado(alunoId);
+
+          // O aluno só cria perguntas na anamnese padrão obrigatória.
+          // getAfter() enxerga a anamnese mesmo quando ela é criada no mesmo
+          // lote de gravação.
+          allow create: if professorDonoDoAluno(alunoId)
+            || (
+              alunoVinculado(alunoId)
+              && getAfter(
+                   /databases/$(database)/documents/alunos/$(alunoId)/anamneses_atribuidas/$(anamneseId)
+                 ).data.get('identificadorExterno', '') == 'PADRAO_OBRIGATORIA'
+            );
+
+          allow update, delete: if professorDonoDoAluno(alunoId);
+        }
+
+        match /respostas/{respostaId} {
+          allow read: if professorDonoDoAluno(alunoId)
+            || (
+              alunoVinculado(alunoId)
+              && resource.data.alunoAuthUid == request.auth.uid
+            );
+
+          allow create: if alunoVinculado(alunoId)
+            && request.resource.data.alunoAuthUid == request.auth.uid
+            && request.resource.data.resposta is string
+            && request.resource.data.resposta.size() <= 20000;
+
+          allow update: if alunoVinculado(alunoId)
+            && resource.data.alunoAuthUid == request.auth.uid
+            && request.resource.data.alunoAuthUid == request.auth.uid
+            && request.resource.data.resposta is string
+            && request.resource.data.resposta.size() <= 20000
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'perguntaFirestoreId',
+                'alunoAuthUid',
+                'resposta',
+                'dataAtualizacao'
+              ]);
+
+          allow delete: if professorDonoDoAluno(alunoId);
+        }
+      }
+
+      // EVENTOS DA LINHA DO TEMPO (treinos concluídos, dor/desconforto)
+      // PENDENTE (exige mudança no app): hoje aluno e professor escrevem aqui
+      // sem campo de autoria. Com um campo 'autor' dá para impedir o aluno de
+      // alterar eventos do professor.
+      match /eventos_aluno/{eventoId} {
+        allow read: if professorOuAlunoVinculado(alunoId);
+        allow create, update: if professorOuAlunoVinculado(alunoId);
+        allow delete: if professorDonoDoAluno(alunoId);
+      }
+
+      // PERIODIZAÇÃO (macro/mesociclos/microciclos) - doc "atual"
+      // O professor grava; professor e aluno vinculado leem.
+      match /periodizacao/{docId} {
+        allow read: if professorOuAlunoVinculado(alunoId);
+        allow create, update, delete: if professorDonoDoAluno(alunoId);
+      }
+
+      // TREINOS E EXERCÍCIOS DO ALUNO
+      match /treinos/{treinoId} {
+        allow read: if professorOuAlunoVinculado(alunoId);
+        allow create, delete: if professorDonoDoAluno(alunoId);
+        allow update: if professorDonoDoAluno(alunoId)
+          || (
+            alunoVinculado(alunoId)
+            && request.resource.data.professorUid == resource.data.professorUid
+            && request.resource.data.alunoFirebaseId == resource.data.alunoFirebaseId
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['exercicios', 'alunoUpdatedAtMillis'])
+          );
+      }
+    }
+
+    // BLOQUEIO PADRÃO
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

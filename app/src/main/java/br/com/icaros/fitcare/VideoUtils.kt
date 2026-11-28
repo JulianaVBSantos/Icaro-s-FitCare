@@ -1,5 +1,8 @@
 package br.com.icaros.fitcare
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import android.webkit.WebResourceError
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
@@ -170,6 +173,39 @@ fun CardPreviewVideoExercicio(
     }
 }
 
+@Composable
+private fun AbrirNoNavegador(
+    mensagem: String,
+    videoUrl: String,
+    onFechar: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(16.dp)
+    ) {
+        Text(
+            text = mensagem,
+            color = Color.White,
+            fontSize = 13.sp
+        )
+        TextButton(
+            onClick = {
+                runCatching {
+                    val uri = Uri.parse(videoUrl.trim())
+                    if (uri.scheme == "http" || uri.scheme == "https") {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    }
+                }
+                onFechar()
+            }
+        ) {
+            Text("Abrir no navegador externo", color = Color(0xFF7AB8F5))
+        }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun DialogoPlayerVideoExercicio(
@@ -178,7 +214,6 @@ fun DialogoPlayerVideoExercicio(
     videoTipo: String = "LINK",
     onFechar: () -> Unit
 ) {
-    val context = LocalContext.current
     val videoId = remember(videoUrl) { extrairIdVideoYoutube(videoUrl) }
     val ehArquivoLocal = videoId == null && (
             videoTipo == "LOCAL" ||
@@ -195,7 +230,7 @@ fun DialogoPlayerVideoExercicio(
             if (ehShort) {
                 Uri.Builder()
                     .scheme("https")
-                    .authority("://youtube.com")
+                    .authority("www.youtube.com")
                     .appendPath("shorts")
                     .appendPath(videoId)
                     .build()
@@ -203,7 +238,7 @@ fun DialogoPlayerVideoExercicio(
             } else {
                 Uri.Builder()
                     .scheme("https")
-                    .authority("://youtube.com")
+                    .authority("www.youtube.com")
                     .appendPath("watch")
                     .appendQueryParameter("v", videoId)
                     .build()
@@ -213,6 +248,9 @@ fun DialogoPlayerVideoExercicio(
             ""
         }
     }
+
+    // Vira true quando a página do player não carrega
+    var falhou by remember(urlFinalPlayer) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onFechar,
@@ -254,78 +292,65 @@ fun DialogoPlayerVideoExercicio(
                             }
                         )
                     }
+
                     urlFinalPlayer.isNotBlank() -> {
-                        AndroidView(
-                            modifier = Modifier.fillMaxSize(),
-                            factory = { ctx ->
-                                WebView(ctx).apply {
-                                    setBackgroundColor(android.graphics.Color.BLACK)
-                                    scrollBarStyle = android.view.View.SCROLLBARS_OUTSIDE_OVERLAY
-                                    setInitialScale(100)
-                                    settings.javaScriptEnabled = true
-                                    settings.domStorageEnabled = true
-                                    settings.loadWithOverviewMode = false
-                                    settings.useWideViewPort = false
-                                    settings.mediaPlaybackRequiresUserGesture = false
-                                    settings.userAgentString =
-                                        "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                                    webChromeClient = WebChromeClient()
-                                    webViewClient = object : WebViewClient() {
-                                        override fun shouldOverrideUrlLoading(
-                                            view: WebView?,
-                                            request: WebResourceRequest?
-                                        ): Boolean {
-                                            val hostReq = request?.url?.host?.lowercase().orEmpty()
-                                            val permitido = hostReq == "youtube.com" ||
-                                                    hostReq.endsWith(".youtube.com") ||
-                                                    hostReq == "youtu.be"
-                                            return !permitido
-                                        }
-                                        override fun onPageFinished(view: WebView?, url: String?) {
-                                            super.onPageFinished(view, url)
-                                            view?.evaluateJavascript(
-                                                """
-(function() {
-var style = document.createElement('style');
-style.innerHTML = 'html, body { margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; width: 100vw !important; background: #000 !important; } ytd-reel-video-renderer, #shorts-player, video { width: 100vw !important; left: 0 !important; margin-left: 0 !important; }';
-document.head.appendChild(style);
-window.scrollTo(0, 0);
-})();
-""".trimIndent(),
-                                                null
-                                            )
-                                        }
-                                    }
-                                    loadUrl(urlFinalPlayer)
-                                }
-                            }
-                        )
-                    }
-                    else -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Text(
-                                text = "Link externo fora do YouTube.",
-                                color = Color.White,
-                                fontSize = 13.sp
+                        if (falhou) {
+                            AbrirNoNavegador(
+                                mensagem = "Não foi possível carregar o vídeo aqui.",
+                                videoUrl = videoUrl,
+                                onFechar = onFechar
                             )
-                            TextButton(
-                                onClick = {
-                                    runCatching {
-                                        val uri = Uri.parse(videoUrl.trim())
-                                        if (uri.scheme == "http" || uri.scheme == "https") {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        } else {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    WebView(ctx).apply {
+                                        setBackgroundColor(android.graphics.Color.BLACK)
+                                        scrollBarStyle = android.view.View.SCROLLBARS_OUTSIDE_OVERLAY
+                                        setInitialScale(100)
+                                        settings.javaScriptEnabled = true
+                                        settings.domStorageEnabled = true
+                                        settings.loadWithOverviewMode = false
+                                        settings.useWideViewPort = false
+                                        settings.mediaPlaybackRequiresUserGesture = false
+                                        settings.userAgentString =
+                                            "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                                        webChromeClient = WebChromeClient()
+                                        webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(
+                                                view: WebView?,
+                                                request: WebResourceRequest?
+                                            ): Boolean {
+                                                val hostReq = request?.url?.host?.lowercase().orEmpty()
+                                                val permitido = hostReq == "youtube.com" ||
+                                                        hostReq.endsWith(".youtube.com") ||
+                                                        hostReq == "youtu.be"
+                                                return !permitido
+                                            }
+
+                                            override fun onReceivedError(
+                                                view: WebView?,
+                                                request: WebResourceRequest?,
+                                                error: WebResourceError?
+                                            ) {
+                                                if (request?.isForMainFrame == true) {
+                                                    falhou = true
+                                                }
+                                            }
                                         }
+                                        loadUrl(urlFinalPlayer)
                                     }
-                                    onFechar()
                                 }
-                            ) {
-                                Text("Abrir no navegador externo", color = Color(0xFF7AB8F5))
-                            }
+                            )
                         }
+                    }
+
+                    else -> {
+                        AbrirNoNavegador(
+                            mensagem = "Link externo fora do YouTube.",
+                            videoUrl = videoUrl,
+                            onFechar = onFechar
+                        )
                     }
                 }
             }

@@ -134,9 +134,11 @@ class FirestoreSyncService(
                             }
                             documento.set(dadosRemotos, SetOptions.merge()).await()
                         }
+
                         DELETE -> {
                             documento.delete().await()
                         }
+
                         else -> {
                             syncDao.remover(operacao.id)
                             continue
@@ -162,6 +164,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarLeituraAlunos(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -292,6 +295,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarAnamnesesAtribuidas(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -342,9 +346,10 @@ class FirestoreSyncService(
                         }
                     }
                     // Atualiza Objetivo, Condições e Restrições do aluno a partir da última anamnese respondida
-                    val todasAtribAluno = anamneseDao.listarTodasParaSincronizacaoDoProfessor(usuario.id)
-                        .filter { it.alunoId == alunoLocal.id && !it.excluida && it.status == "RESPONDIDA" }
-                        .sortedByDescending { it.updatedAtMillis }
+                    val todasAtribAluno =
+                        anamneseDao.listarTodasParaSincronizacaoDoProfessor(usuario.id)
+                            .filter { it.alunoId == alunoLocal.id && !it.excluida && it.status == "RESPONDIDA" }
+                            .sortedByDescending { it.updatedAtMillis }
 
                     val maisRecente = todasAtribAluno.firstOrNull()
                     if (maisRecente != null) {
@@ -368,12 +373,21 @@ class FirestoreSyncService(
                                 objAtualizado = resp.removePrefix("Outro:").trim()
                             } else if (txt.startsWith("condições de saúde") || txt.startsWith("condicoes de saude")) {
                                 leuCond = true
-                                if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
+                                if (!resp.equals(
+                                        "Não",
+                                        ignoreCase = true
+                                    ) && resp != "SIM_ABERTO"
+                                ) {
                                     val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
                                     if (arr != null) {
                                         for (i in 0 until arr.length()) {
-                                            val item = arr.optString(i).removePrefix("Outro:").removePrefix("Detalhes:").trim()
-                                            if (item.isNotBlank() && !item.equals("Outro", ignoreCase = true)) condsNovas.add(item)
+                                            val item = arr.optString(i).removePrefix("Outro:")
+                                                .removePrefix("Detalhes:").trim()
+                                            if (item.isNotBlank() && !item.equals(
+                                                    "Outro",
+                                                    ignoreCase = true
+                                                )
+                                            ) condsNovas.add(item)
                                         }
                                     } else {
                                         condsNovas.add(resp)
@@ -381,12 +395,21 @@ class FirestoreSyncService(
                                 }
                             } else if (txt.startsWith("restrições físicas") || txt.startsWith("restricoes fisicas")) {
                                 leuRest = true
-                                if (!resp.equals("Não", ignoreCase = true) && resp != "SIM_ABERTO") {
+                                if (!resp.equals(
+                                        "Não",
+                                        ignoreCase = true
+                                    ) && resp != "SIM_ABERTO"
+                                ) {
                                     val arr = runCatching { org.json.JSONArray(resp) }.getOrNull()
                                     if (arr != null) {
                                         for (i in 0 until arr.length()) {
-                                            val item = arr.optString(i).removePrefix("Outro:").removePrefix("Detalhes:").trim()
-                                            if (item.isNotBlank() && !item.equals("Outro", ignoreCase = true)) restsNovas.add(item)
+                                            val item = arr.optString(i).removePrefix("Outro:")
+                                                .removePrefix("Detalhes:").trim()
+                                            if (item.isNotBlank() && !item.equals(
+                                                    "Outro",
+                                                    ignoreCase = true
+                                                )
+                                            ) restsNovas.add(item)
                                         }
                                     } else {
                                         restsNovas.add(resp)
@@ -395,8 +418,10 @@ class FirestoreSyncService(
                             }
                         }
 
-                        val condFinal = if (leuCond) condsNovas.joinToString(", ") else alunoLocal.condicoes
-                        val restFinal = if (leuRest) restsNovas.joinToString(", ") else alunoLocal.restricoes
+                        val condFinal =
+                            if (leuCond) condsNovas.joinToString(", ") else alunoLocal.condicoes
+                        val restFinal =
+                            if (leuRest) restsNovas.joinToString(", ") else alunoLocal.restricoes
 
                         val alunoAtualizado = alunoLocal.copy(
                             objetivo = objAtualizado.ifBlank { alunoLocal.objetivo },
@@ -563,6 +588,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarModelosAnamnese(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -661,6 +687,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarAnamnesesAtribuidasDoAluno(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -793,6 +820,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarTreinos(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -968,6 +996,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarEventosAlunosProfessor(context: android.content.Context): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -1019,6 +1048,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun sincronizarTreinosDoAluno(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -1069,7 +1099,8 @@ class FirestoreSyncService(
                                     val local = exLocaisAtuais[idx]
                                     (mapa["nome"] as? String ?: "") != local.nome ||
                                             (mapa["series"] as? String ?: "") != local.series ||
-                                            (mapa["repeticoes"] as? String ?: "") != local.repeticoes ||
+                                            (mapa["repeticoes"] as? String
+                                                ?: "") != local.repeticoes ||
                                             (mapa["videoUrl"] as? String ?: "") != local.videoUrl
                                 }
                         )
@@ -1102,6 +1133,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     suspend fun atualizarExercicioDoAlunoNoFirestore(
         alunoId: Long,
         treino: TreinoEntity,
@@ -1144,6 +1176,7 @@ class FirestoreSyncService(
             false
         }
     }
+
     private suspend fun garantirAnamnesePadraoPrimeiroAcesso(
         alunoFirebaseId: String,
         professorUid: String,
@@ -1153,12 +1186,20 @@ class FirestoreSyncService(
             .collection(COLECAO_ALUNOS)
             .document(alunoFirebaseId)
             .collection("anamneses_atribuidas")
-        val existentes = colecaoAnamneses.get().await()
-        if (!existentes.isEmpty) return
         val anamneseFbId = "padrao_inicial_$alunoFirebaseId"
+        val docAnamnese = colecaoAnamneses.document(anamneseFbId)
+        val snapPadrao = docAnamnese.get().await()
+        val existentes = colecaoAnamneses.get().await()
+
+        // Se já existe outra anamnese ou a padrão já foi respondida, não sobrescreve
+        if (!existentes.isEmpty && (!snapPadrao.exists() || snapPadrao.getString("status") == "RESPONDIDA")) {
+            return
+        }
+
         val hojeStr = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale("pt", "BR"))
             .format(java.util.Date())
         val agoraMs = System.currentTimeMillis()
+
         val opcoesCondicoesJson = org.json.JSONArray().apply {
             listOf(
                 "Hipertensão",
@@ -1180,7 +1221,6 @@ class FirestoreSyncService(
                 "Outro"
             ).forEach { put(it) }
         }.toString()
-        val docAnamnese = colecaoAnamneses.document(anamneseFbId)
         val dadosAnamnese = hashMapOf<String, Any>(
             "firestoreId" to anamneseFbId,
             "professorUid" to professorUid,
@@ -1198,18 +1238,55 @@ class FirestoreSyncService(
             "updatedAtMillis" to agoraMs
         )
         docAnamnese.set(dadosAnamnese, SetOptions.merge()).await()
+        val opcoesFrequenciaJson = org.json.JSONArray().apply {
+            listOf(
+                "Não pratico atualmente",
+                "1 a 2 vezes por semana",
+                "3 a 4 vezes por semana",
+                "5 ou mais vezes por semana"
+            ).forEach { put(it) }
+        }.toString()
+
+        val opcoesDiasSemanaJson = org.json.JSONArray().apply {
+            listOf(
+                "Segunda-feira",
+                "Terça-feira",
+                "Quarta-feira",
+                "Quinta-feira",
+                "Sexta-feira",
+                "Sábado",
+                "Domingo"
+            ).forEach { put(it) }
+        }.toString()
+
         val perguntasPadrao = listOf(
             Triple("Qual é o seu principal objetivo com o treinamento?", "TEXTO", ""),
-            Triple("Condições de saúde ou dores articulares", "SIM_NAO_CHECKBOX", opcoesCondicoesJson),
-            Triple("Restrições físicas ou limitações de exercício", "SIM_NAO_CHECKBOX", opcoesRestricoesJson),
+            Triple(
+                "Condições de saúde ou dores articulares",
+                "SIM_NAO_CHECKBOX",
+                opcoesCondicoesJson
+            ),
+            Triple(
+                "Restrições físicas ou limitações de exercício",
+                "SIM_NAO_CHECKBOX",
+                opcoesRestricoesJson
+            ),
             Triple("Você pratica atividade física atualmente?", "SIM_NAO", ""),
-            Triple("Com que frequência pratica atividade física?", "TEXTO", ""),
+            Triple(
+                "Com que frequência pratica atividade física?",
+                "MULTIPLA_ESCOLHA",
+                opcoesFrequenciaJson
+            ),
             Triple("Possui alguma lesão ou limitação física?", "SIM_NAO_TEXTO", ""),
             Triple("Utiliza algum medicamento?", "SIM_NAO_TEXTO", ""),
-            Triple("Qual é a sua disponibilidade semanal para treinar?", "TEXTO", ""),
+            Triple(
+                "Qual é a sua disponibilidade semanal para treinar?",
+                "CHECKBOX",
+                opcoesDiasSemanaJson
+            ),
             Triple("Existe alguma informação adicional que gostaria de compartilhar?", "TEXTO", "")
         )
-        val obrigatoriasIdx = setOf(0, 1, 2, 3, 5, 7)
+        val obrigatoriasIdx = setOf(0, 1, 2, 3, 4, 5, 7)
         perguntasPadrao.forEachIndexed { idx, (texto, tipo, opcoes) ->
             val pergId = "perg_padrao_${alunoFirebaseId}_$idx"
             docAnamnese.collection("perguntas").document(pergId).set(
@@ -1225,6 +1302,7 @@ class FirestoreSyncService(
             ).await()
         }
     }
+
     private suspend fun importarAnamneseRemota(
         documento: DocumentSnapshot,
         alunoId: Long,
@@ -1419,7 +1497,8 @@ class FirestoreSyncService(
             .collection("anamneses_atribuidas")
             .document(anamneseFirestoreId)
         if (!documento.exists()) {
-            val docAluno = firestore.collection(COLECAO_ALUNOS).document(alunoFirebaseId).get().await()
+            val docAluno =
+                firestore.collection(COLECAO_ALUNOS).document(alunoFirebaseId).get().await()
             val profUid = docAluno.getString("professorUid") ?: return
             documentoAnamnese.set(
                 hashMapOf<String, Any>(
@@ -1436,7 +1515,10 @@ class FirestoreSyncService(
                     "dataEnvio" to anamneseLocal.dataEnvio,
                     "dataInicioResposta" to anamneseLocal.dataInicioResposta,
                     "dataResposta" to anamneseLocal.dataResposta,
-                    "updatedAtMillis" to maxOf(anamneseLocal.updatedAtMillis, System.currentTimeMillis())
+                    "updatedAtMillis" to maxOf(
+                        anamneseLocal.updatedAtMillis,
+                        System.currentTimeMillis()
+                    )
                 ),
                 SetOptions.merge()
             ).await()
@@ -1499,11 +1581,16 @@ class FirestoreSyncService(
                     anamneseLocal.dataResposta,
                     documento.getString("dataResposta") ?: ""
                 ),
-                "updatedAtMillis" to maxOf(anamneseLocal.updatedAtMillis, remotoMillis, System.currentTimeMillis())
+                "updatedAtMillis" to maxOf(
+                    anamneseLocal.updatedAtMillis,
+                    remotoMillis,
+                    System.currentTimeMillis()
+                )
             )
             documentoAnamnese.set(atualizacaoStatus, SetOptions.merge()).await()
         }
     }
+
     private fun combinarStatus(
         statusLocal: String?,
         statusRemoto: String
@@ -1520,6 +1607,7 @@ class FirestoreSyncService(
         }
         return if (prioridade(statusLocal) > prioridade(statusRemoto)) statusLocal else statusRemoto
     }
+
     private fun escolherDataMaisCompleta(
         local: String,
         remota: String
@@ -1530,6 +1618,7 @@ class FirestoreSyncService(
             else -> local
         }
     }
+
     private suspend fun importarModeloRemoto(
         documento: DocumentSnapshot,
         usuarioLocalId: Long,
@@ -1551,7 +1640,8 @@ class FirestoreSyncService(
         val excluido = documento.getBoolean("deleted") ?: false
         val deletedAtMillis = documento.getLong("deletedAtMillis")
         val perguntasBruto = documento.get("perguntas")
-        val perguntasRemotas = if (perguntasBruto is List<Any?>) perguntasBruto else emptyList<Any?>()
+        val perguntasRemotas =
+            if (perguntasBruto is List<Any?>) perguntasBruto else emptyList<Any?>()
         val perguntasConvertidas = perguntasRemotas.mapNotNull { item ->
             val mapa = item as? Map<String, Any?> ?: return@mapNotNull null
             PerguntaModeloAnamneseEntity(
@@ -1607,6 +1697,7 @@ class FirestoreSyncService(
             }
         }
     }
+
     private suspend fun vincularContaAlunoNoFirestore(
         alunoFirebaseId: String,
         uid: String,

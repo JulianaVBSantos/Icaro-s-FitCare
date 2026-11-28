@@ -337,7 +337,8 @@ enum class AppScreen {
     AdminDashboard,
     CadastroAdminInicial,
     Periodizacao,
-    GerenciarExercicios
+    GerenciarExercicios,
+    ProgressaoCarga
 }
 
 // Fluxo do aplicativo
@@ -413,7 +414,14 @@ fun FitCareApp(
         )
     }
 
+    var sessaoInicialVerificada by rememberSaveable {
+        mutableStateOf(false)
+    }
+
     LaunchedEffect(Unit) {
+        if (sessaoInicialVerificada) return@LaunchedEffect
+        sessaoInicialVerificada = true
+
         temaEscuroAtivoState = preferenciasSessao.getBoolean(
             "tema_escuro_ativo",
             false
@@ -569,6 +577,16 @@ fun FitCareApp(
                     .background(FundoApp)
             ) {
                 when (tela) {
+                    AppScreen.ProgressaoCarga -> {
+                        alunoSelecionadoId?.let { id ->
+                            TelaProgressaoCargaAluno(
+                                alunoId = id,
+                                repository = repository,
+                                onVoltar = { tela = AppScreen.PerfilAluno }
+                            )
+                        }
+                    }
+
                     AppScreen.GerenciarExercicios -> {
                         TelaGerenciarExercicios(
                             onVoltar = { tela = AppScreen.Dashboard },
@@ -968,7 +986,8 @@ fun FitCareApp(
                                     treinoSelecionadoId = treinoId
                                     tela = AppScreen.DetalhesTreino
                                 },
-                                onPeriodizacao = { tela = AppScreen.Periodizacao }
+                                onPeriodizacao = { tela = AppScreen.Periodizacao },
+                                onProgressaoCarga = { tela = AppScreen.ProgressaoCarga }
                             )
                         }
                     }
@@ -3704,7 +3723,8 @@ fun TelaPerfilAluno(
     onVisualizarAnamnese: (Long) -> Unit = {},
     onVisualizarTreino: (Long) -> Unit = {},
     onPeriodizacao: () -> Unit = {},
-    onExercicios: () -> Unit = {}
+    onExercicios: () -> Unit = {},
+    onProgressaoCarga: () -> Unit = {}
 ) {
     var alunoAtual by remember {
         mutableStateOf<br.com.icaros.fitcare.data.AlunoEntity?>(null)
@@ -4287,8 +4307,17 @@ fun TelaPerfilAluno(
                     ) {
                         Text("Periodização (Macro / Meso / Micro)")
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onProgressaoCarga,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Progressão de carga")
+                    }
                 }
-// ANAMNESE E DOCUMENTOS (BOTÕES SEPARADOS: ATRIBUIR E VISUALIZAR)
+
+                // ANAMNESE E DOCUMENTOS (BOTÕES SEPARADOS: ATRIBUIR E VISUALIZAR)
                 Cartao(
                     modifier = Modifier.padding(bottom = 14.dp)
                 ) {
@@ -8260,7 +8289,7 @@ fun TelaTreinos(
     }
 }
 
-// TELA FORMULÁRIO DE TREINO (LAYOUT COMPACTO ESTILO PACTO + CATÁLOGO COM VÍDEOS + PRÉVIA + REORDENAÇÃO)
+// TELA FORMULÁRIO DE TREINO (LAYOUT COMPACTO ESTILO + CATÁLOGO COM VÍDEOS + PRÉVIA + REORDENAÇÃO)
 @Composable
 fun TelaFormularioTreino(
     alunoId: Long,
@@ -8269,6 +8298,7 @@ fun TelaFormularioTreino(
     onVoltar: () -> Unit,
     onSalvo: () -> Unit
 ) {
+
     var videoPreviewFicha by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var nome by remember { mutableStateOf("") }
     var descricao by remember { mutableStateOf("") }
@@ -8279,6 +8309,7 @@ fun TelaFormularioTreino(
     var salvando by remember { mutableStateOf(false) }
     var mostrarDialogoExcluir by remember { mutableStateOf(false) }
     var indiceExercicioImportandoVideo by remember { mutableIntStateOf(-1) }
+    var indiceAvisoVideoLocalForm by remember { mutableIntStateOf(-1) }
     var indiceExercicioCatalogo by remember { mutableIntStateOf(-1) }
     var assinaturaInicial by remember { mutableStateOf("") }
 
@@ -8295,6 +8326,82 @@ fun TelaFormularioTreino(
     val contextoEventos = LocalContext.current
     val eventoStorage = remember(contextoEventos) {
         EventoAlunoStorage(contextoEventos)
+    }
+
+    var diasDisponiveisAnamnese by remember(alunoId) { mutableIntStateOf(4) }
+
+    LaunchedEffect(alunoId) {
+        withContext(Dispatchers.IO) {
+            try {
+                val db = FitCareDatabase.getDatabase(contextoEventos)
+                val anamneses = db.anamneseAtribuidaDao().listarPorAluno(alunoId).first()
+                var diasEncontrados: Int? = null
+
+                for (anam in anamneses.sortedByDescending { it.updatedAtMillis }) {
+                    val perguntas = db.perguntaAnamneseAtribuidaDao().listarParaSincronizacao(anam.id)
+                    val respostas = db.respostaAnamneseDao().buscarTodasPorAnamneseDoAluno(anam.id, alunoId)
+                        .associateBy { it.perguntaAtribuidaId }
+                    for (perg in perguntas) {
+                        val tituloLower = perg.texto.lowercase(Locale.ROOT)
+                        if (tituloLower.contains("disponibilidade") ||
+                            (tituloLower.contains("dias") && tituloLower.contains("treinar"))
+                        ) {
+                            val respBruta = respostas[perg.id]?.resposta.orEmpty().trim()
+                            if (respBruta.isNotBlank()) {
+                                val diasSemanaValidos = setOf(
+                                    "segunda-feira", "terça-feira", "quarta-feira",
+                                    "quinta-feira", "sexta-feira", "sábado", "domingo"
+                                )
+                                val qtd = if (respBruta.startsWith("[")) {
+                                    runCatching {
+                                        val arr = JSONArray(respBruta)
+                                        val marcados = (0 until arr.length()).map { idx ->
+                                            arr.optString(idx).trim().lowercase(Locale.ROOT)
+                                        }.filter { it.isNotBlank() }
+                                        val qtdDias = marcados.count { it in diasSemanaValidos }
+                                        if (qtdDias > 0) qtdDias else marcados.size
+                                    }.getOrNull()
+                                } else {
+                                    val partes = respBruta.split(",").map { it.trim().lowercase(Locale.ROOT) }
+                                    val qtdDias = partes.count { it in diasSemanaValidos }
+                                    if (qtdDias > 0) qtdDias else Regex("[1-7]").find(respBruta)?.value?.toIntOrNull()
+                                }
+                                if (qtd != null && qtd in 1..7) {
+                                    diasEncontrados = qtd
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if (diasEncontrados != null) break
+                }
+
+                if (diasEncontrados != null) {
+                    diasDisponiveisAnamnese = diasEncontrados
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    val recomendacaoFrequencia = remember(alunoId, treinoId, dataInicio, dataFim, diasDisponiveisAnamnese) {
+        val fmt = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply { isLenient = false }
+        val inicioMs = runCatching { fmt.parse(dataInicio.trim())?.time }.getOrNull()
+        if (inicioMs != null) {
+            val hojeMs = System.currentTimeMillis()
+            val fimMs = runCatching { fmt.parse(dataFim.trim())?.time }.getOrNull() ?: hojeMs
+            val limiteMs = minOf(hojeMs, fimMs)
+            val diasDecorridos = (((limiteMs - inicioMs) / (24L * 60L * 60L * 1000L)).toInt() + 1).coerceAtLeast(1)
+            val semanas = (diasDecorridos / 7.0).coerceAtLeast(1.0)
+            val metaSemanal = diasDisponiveisAnamnese.coerceIn(1, 7)
+            val treinosEsperados = kotlin.math.ceil(semanas * metaSemanal.toDouble()).toInt().coerceAtLeast(metaSemanal)
+            val treinosRealizados = eventoStorage.listarPorAluno(alunoId).count { ev ->
+                val d = runCatching { fmt.parse(ev.data)?.time }.getOrNull() ?: 0L
+                ev.tipo.equals("Treino", ignoreCase = true) && d in inicioMs..(limiteMs + 86_400_000L)
+            }
+            val percentual = ((treinosRealizados * 100.0) / treinosEsperados).toInt().coerceIn(0, 100)
+            Triple(percentual, treinosRealizados, treinosEsperados)
+        } else null
     }
 
     val seletorVideo = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -8563,6 +8670,30 @@ fun TelaFormularioTreino(
                 fontSize = 14.sp,
                 color = TextoSecundario
             )
+            if (recomendacaoFrequencia != null && recomendacaoFrequencia.first < 80) {
+                val (pct, realizados, esperados) = recomendacaoFrequencia
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Recomendação técnica • Frequência em $pct%",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF8D5A00)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "O aluno realizou $realizados de $esperados treinos esperados no ciclo (mínimo recomendado conforme anamnese: ${diasDisponiveisAnamnese}x/semana e 80% de adesão). Recomenda-se manter a ficha base antes de alterar o treino completo, mas você pode prosseguir se necessário.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF5D4037)
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = nome,
                 onValueChange = {
@@ -8926,14 +9057,12 @@ fun TelaFormularioTreino(
                                     Text("Link (YouTube)", fontSize = 11.sp)
                                 }
                                 OutlinedButton(
-                                    onClick = {
-                                        indiceExercicioImportandoVideo = index
-                                        seletorVideo.launch(arrayOf("video/"))
-                                    },
+                                    onClick = { indiceAvisoVideoLocalForm = index },
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("Importar vídeo", fontSize = 11.sp)
                                 }
+
                             }
                             if (exercicio.videoTipo == "LINK") {
                                 OutlinedTextField(
@@ -9141,6 +9270,27 @@ fun TelaFormularioTreino(
                                     )
                                 )
                             }
+                            val hojeCargaStr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+                            val alunoFbIdCarga = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    FitCareDatabase.getDatabase(contextoEventos)
+                                        .alunoDao()
+                                        .buscarPorIdDireto(alunoId)
+                                        ?.firebaseId
+                                }.getOrNull()
+                            }
+                            exercicios.forEach { exItem ->
+                                if (exItem.carga.isNotBlank()) {
+                                    HistoricoCargasAlunoStorage.registrarCarga(
+                                        context = contextoEventos,
+                                        alunoId = alunoId,
+                                        nomeExercicio = exItem.nome,
+                                        carga = exItem.carga,
+                                        data = hojeCargaStr,
+                                        alunoFirebaseId = alunoFbIdCarga
+                                    )
+                                }
+                            }
                             if (treinoId == null) {
                                 eventoStorage.inserir(
                                     EventoAluno(
@@ -9204,8 +9354,12 @@ fun TelaFormularioTreino(
                         temVideo -> "LINK"
                         else -> ""
                     }
+                    val cargaAnterior = HistoricoCargasAlunoStorage
+                        .obterUltimaCargaSalva(contextoEventos, alunoId, itemEscolhido.nome)
+                        .orEmpty()
                     exercicios[idx] = exercicios[idx].copy(
                         nome = itemEscolhido.nome,
+                        carga = exercicios[idx].carga.ifBlank { cargaAnterior },
                         videoTipo = tipoSelecionado,
                         videoUrl = itemEscolhido.videoUrl,
                         videoNome = if (temVideo) "Vídeo demonstrativo" else ""
@@ -9228,6 +9382,41 @@ fun TelaFormularioTreino(
             videoUrl = url,
             videoTipo = tipo,
             onFechar = { videoPreviewFicha = null }
+        )
+    }
+    if (indiceAvisoVideoLocalForm in exercicios.indices) {
+        AlertDialog(
+            onDismissRequest = { indiceAvisoVideoLocalForm = -1 },
+            title = {
+                Text(
+                    text = "Aviso sobre vídeo local",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "No momento, vídeos importados diretamente da galeria ficam salvos apenas neste aparelho (para consulta presencial) e não são enviados para o celular do aluno.\n\nPara que o aluno veja o vídeo na ficha dele, utilize a opção \"Link (YouTube)\".",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val idx = indiceAvisoVideoLocalForm
+                        indiceAvisoVideoLocalForm = -1
+                        indiceExercicioImportandoVideo = idx
+                        seletorVideo.launch(arrayOf("video/*"))
+                    }
+                ) {
+                    Text("Entendi, importar mesmo assim", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { indiceAvisoVideoLocalForm = -1 }) {
+                    Text("Cancelar")
+                }
+            }
         )
     }
 }

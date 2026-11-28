@@ -58,7 +58,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
+import androidx.compose.runtime.saveable.rememberSaveable
 private fun ehOpcaoOutro(opcao: String): Boolean {
     val norm = opcao.trim().lowercase(Locale.ROOT)
     return norm == "outro" || norm == "outros" || norm == "outra" || norm == "outras"
@@ -313,8 +313,9 @@ fun TelaAreaAluno(
 
     var abaAtualAluno by remember(idAluno) { mutableStateOf("DASHBOARD") }
     var anamneseSelecionadaId by remember(idAluno) { mutableStateOf<Long?>(null) }
-    var treinoSelecionadoAluno by remember(idAluno) { mutableStateOf<TreinoEntity?>(null) }
-    var treinoEmExecucao by remember(idAluno) { mutableStateOf(false) }
+    var treinoSelecionadoAlunoId by rememberSaveable(idAluno) { mutableStateOf<Long?>(null) }
+    val treinoSelecionadoAluno = treinosAluno.firstOrNull { it.id == treinoSelecionadoAlunoId }
+    var treinoEmExecucao by rememberSaveable(idAluno) { mutableStateOf(false) }
     val exerciciosConcluidosSessao = remember { mutableStateMapOf<Long, Boolean>() }
     var exercicioEditandoCarga by remember(idAluno) { mutableStateOf<ExercicioEntity?>(null) }
     var perguntas by remember { mutableStateOf<List<PerguntaAnamneseAtribuidaEntity>>(emptyList()) }
@@ -877,7 +878,7 @@ fun TelaAreaAluno(
                                 corTextoPrincipal = corTextoPrincipal,
                                 corTextoSecundario = corTextoSecundario,
                                 onClick = {
-                                    treinoSelecionadoAluno = null
+                                    treinoSelecionadoAlunoId = null
                                     treinoEmExecucao = false
                                     abaAtualAluno = "TREINOS"
                                 }
@@ -946,7 +947,7 @@ fun TelaAreaAluno(
                             BotaoVoltarPadrao(
                                 onVoltar = {
                                     if (treinoSelecionadoAluno != null) {
-                                        treinoSelecionadoAluno = null
+                                        treinoSelecionadoAlunoId = null
                                         treinoEmExecucao = false
                                     } else {
                                         abaAtualAluno = "DASHBOARD"
@@ -1325,6 +1326,16 @@ fun TelaAreaAluno(
                                                     entradas.add(novaEntrada)
                                                 }
                                                 prefsHist.edit().putString(chaveEx, entradas.joinToString("|")).apply()
+                                                val alunoAtualHist = db.alunoDao().buscarPorIdDireto(idAluno)
+                                                val hojeHistStr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+                                                HistoricoCargasAlunoStorage.registrarCarga(
+                                                    context = context,
+                                                    alunoId = idAluno,
+                                                    nomeExercicio = atualizado.nome,
+                                                    carga = atualizado.carga,
+                                                    data = hojeHistStr,
+                                                    alunoFirebaseId = alunoAtualHist?.firebaseId
+                                                )
 
                                                 withContext(Dispatchers.Main) {
                                                     exercicioEditandoCarga = null
@@ -1362,7 +1373,7 @@ fun TelaAreaAluno(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = 10.dp)
-                                        .clickable { treinoSelecionadoAluno = treino },
+                                        .clickable { treinoSelecionadoAlunoId = treino.id },
                                     shape = RoundedCornerShape(14.dp),
                                     colors = CardDefaults.cardColors(containerColor = corCartao)
                                 ) {
@@ -1815,7 +1826,7 @@ fun TelaAreaAluno(
                                                     .toLongOrNull()
                                             val trAlvo = treinosAluno.firstOrNull { it.id == idTr }
                                             if (trAlvo != null) {
-                                                treinoSelecionadoAluno = trAlvo
+                                                treinoSelecionadoAlunoId = trAlvo.id
                                                 abaAtualAluno = "TREINOS"
                                             }
                                         }
