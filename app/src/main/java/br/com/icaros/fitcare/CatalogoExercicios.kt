@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 data class ItemCatalogoExercicio(
     val nome: String,
@@ -83,6 +84,69 @@ object CatalogoExerciciosStorage {
         val prefsVideos = context.getSharedPreferences("fitcare_catalogo_videos_prof", Context.MODE_PRIVATE)
         prefsVideos.edit().putString(chave, videoUrl.trim()).apply()
     }
+
+    val GRUPOS_MUSCULARES = listOf(
+        "Peito",
+        "Costas",
+        "Pernas",
+        "Glúteos e Quadril",
+        "Ombros",
+        "Bíceps",
+        "Tríceps",
+        "Abdômen e Core",
+        "Mobilidade e Alongamento",
+        "Cardio e Funcional"
+    )
+
+    fun editarExercicioCompleto(
+        context: Context,
+        nomeOriginal: String,
+        novoNome: String,
+        novaCategoria: String,
+        novoVideoUrl: String
+    ) {
+        val origLimpo = nomeOriginal.trim()
+        val novoLimpo = novoNome.trim()
+        if (novoLimpo.isBlank()) return
+
+        val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
+        val jsonPers = prefs.getString("personalizados", "[]") ?: "[]"
+        val personalizados = try {
+            val arr = JSONArray(jsonPers)
+            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableSet()
+        } catch (_: Exception) {
+            mutableSetOf()
+        }
+
+        val jsonOcultos = prefs.getString("ocultos", "[]") ?: "[]"
+        val ocultos = try {
+            val arr = JSONArray(jsonOcultos)
+            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableSet()
+        } catch (_: Exception) {
+            mutableSetOf()
+        }
+
+        if (!origLimpo.equals(novoLimpo, ignoreCase = true)) {
+            personalizados.removeAll { it.equals(origLimpo, ignoreCase = true) }
+            ocultos.add(origLimpo.lowercase())
+            personalizados.add(novoLimpo)
+        } else if (NOMES_EXERCICIOS_SISTEMA.none { it.equals(novoLimpo, ignoreCase = true) }) {
+            personalizados.add(novoLimpo)
+        }
+
+        prefs.edit()
+            .putString("personalizados", JSONArray(personalizados.toList()).toString())
+            .putString("ocultos", JSONArray(ocultos.toList()).toString())
+            .apply()
+
+        val prefsCat = context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
+        if (novaCategoria.isNotBlank()) {
+            prefsCat.edit().putString(novoLimpo.lowercase(), novaCategoria.trim()).apply()
+        }
+
+        salvarVideoExercicio(context, novoLimpo, novoVideoUrl)
+    }
+
 
     private fun detectarGrupoMuscular(nome: String): String {
         val n = nome.lowercase()
@@ -647,6 +711,7 @@ object CatalogoExerciciosStorage {
 
     fun listarTodosItens(context: Context): List<ItemCatalogoExercicio> {
         val prefs = context.getSharedPreferences("fitcare_catalogo_exercicios", Context.MODE_PRIVATE)
+        val prefsCat = context.getSharedPreferences("fitcare_catalogo_categorias_prof", Context.MODE_PRIVATE)
         val json = prefs.getString("personalizados", "[]") ?: "[]"
         val personalizados = try {
             val arr = JSONArray(json)
@@ -656,11 +721,24 @@ object CatalogoExerciciosStorage {
         } catch (e: Exception) {
             emptyList<String>()
         }
-        val todosNomes = (personalizados + NOMES_EXERCICIOS_SISTEMA).distinct().sorted()
+        val jsonOcultos = prefs.getString("ocultos", "[]") ?: "[]"
+        val ocultos = try {
+            val arr = JSONArray(jsonOcultos)
+            (0 until arr.length()).mapNotNull { idx ->
+                arr.optString(idx).takeIf { s -> s.isNotBlank() }?.lowercase()
+            }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+        val todosNomes = (personalizados + NOMES_EXERCICIOS_SISTEMA)
+            .distinctBy { it.trim().lowercase() }
+            .filter { it.trim().lowercase() !in ocultos }
+            .sorted()
         return todosNomes.map { nome ->
+            val catSalva = prefsCat.getString(nome.trim().lowercase(), null)
             ItemCatalogoExercicio(
                 nome = nome,
-                grupo = detectarGrupoMuscular(nome),
+                grupo = catSalva?.takeIf { it.isNotBlank() } ?: detectarGrupoMuscular(nome),
                 videoUrl = gerarLinkVideoDemonstrativo(context, nome)
             )
         }
@@ -695,6 +773,9 @@ fun DialogoCatalogoExercicios(
     var grupoFiltro by remember { mutableStateOf("Todos") }
     var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
     var novoPersonalizado by remember { mutableStateOf("") }
+
+    val grupos = remember { listOf("Todos") + CatalogoExerciciosStorage.GRUPOS_MUSCULARES }
+
     val filtrados = remember(busca, grupoFiltro, listaCatalogo) {
         val termo = busca.trim()
         listaCatalogo.filter { item ->
@@ -705,94 +786,146 @@ fun DialogoCatalogoExercicios(
             okGrupo && okTexto
         }
     }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Catálogo de Exercícios (${filtrados.size})") },
+        title = {
+            Text(
+                text = "Atividades cadastradas no sistema (${filtrados.size})",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 460.dp),
+                    .heightIn(max = 500.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = busca,
                     onValueChange = { busca = it },
-                    label = { Text("Pesquisar exercício ou grupo...") },
+                    placeholder = { Text("Buscar atividade por nome") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
+
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(grupos.size) { idx ->
+                        val grp = grupos[idx]
+                        FilterChip(
+                            selected = grupoFiltro == grp,
+                            onClick = { grupoFiltro = grp },
+                            label = { Text(grp, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     if (filtrados.isEmpty()) {
-                        Text(
-                            text = "Nenhum exercício encontrado para $busca. Cadastre abaixo:",
-                            fontSize = 12.sp
-                        )
+                        item {
+                            Text(
+                                text = "Nenhum exercício encontrado para \"$busca\". Cadastre abaixo:",
+                                fontSize = 12.sp
+                            )
+                        }
                     } else {
-                        filtrados.forEach { item ->
+                        items(filtrados.size) { index ->
+                            val item = filtrados[index]
+                            val temVideo = item.videoUrl.isNotBlank()
                             Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelecionarItem(item) },
-                                shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(
-                                        text = item.nome,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val temVideo = item.videoUrl.isNotBlank()
-                                    Text(
-                                        text = if (temVideo) {
-                                            "${item.grupo} • ▶ Vídeo demonstrativo incluído"
-                                        } else {
-                                            "${item.grupo} • Esse exercício ainda não tem vídeo demonstrativo"
-                                        },
-                                        fontSize = 11.sp,
-                                        color = if (temVideo) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.error
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (temVideo) {
+                                        CardPreviewVideoExercicio(
+                                            tituloExercicio = item.nome,
+                                            videoUrl = item.videoUrl,
+                                            videoTipo = if (item.videoUrl.startsWith("/")) "LOCAL" else "LINK",
+                                            modifier = Modifier.size(46.dp),
+                                            onAbrirPlayer = { onSelecionarItem(item) }
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface,
+                                                    RoundedCornerShape(8.dp)
+                                                ),
+                                            contentAlignment = androidx.compose.ui.Alignment.Center
+                                        ) {
+                                            Text("❚█═█❚", fontSize = 9.sp)
                                         }
-                                    )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.nome,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 2
+                                        )
+                                        Text(
+                                            text = if (temVideo) item.grupo else "${item.grupo} • Sem vídeo",
+                                            fontSize = 10.sp,
+                                            color = if (temVideo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { onSelecionarItem(item) },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Text("+ Adicionar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
                 HorizontalDivider()
-                Text("Não encontrou? Cadastre e salve no catálogo:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                OutlinedTextField(
-                    value = novoPersonalizado,
-                    onValueChange = { novoPersonalizado = it },
-                    label = { Text("Nome do novo exercício") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Button(
-                    onClick = {
-                        if (novoPersonalizado.isNotBlank()) {
-                            CatalogoExerciciosStorage.adicionarPersonalizado(context, novoPersonalizado)
-                            listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
-                            val criado = listaCatalogo.firstOrNull { itemCat ->
-                                itemCat.nome.equals(novoPersonalizado.trim(), ignoreCase = true)
-                            }
-                            if (criado != null) {
-                                onSelecionarItem(criado)
-                            }
-                        }
-                    },
-                    enabled = novoPersonalizado.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
-                    Text("Salvar no catálogo e selecionar")
+                    OutlinedTextField(
+                        value = novoPersonalizado,
+                        onValueChange = { novoPersonalizado = it },
+                        label = { Text("Novo exercício") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            if (novoPersonalizado.isNotBlank()) {
+                                CatalogoExerciciosStorage.adicionarPersonalizado(context, novoPersonalizado)
+                                listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
+                                val criado = listaCatalogo.firstOrNull {
+                                    it.nome.equals(novoPersonalizado.trim(), ignoreCase = true)
+                                }
+                                if (criado != null) onSelecionarItem(criado)
+                            }
+                        },
+                        enabled = novoPersonalizado.isNotBlank()
+                    ) {
+                        Text("Salvar")
+                    }
                 }
             }
         },
@@ -817,6 +950,8 @@ fun TelaGerenciarExercicios(
     var listaCatalogo by remember { mutableStateOf(CatalogoExerciciosStorage.listarTodosItens(context)) }
     var exercicioEditando by remember { mutableStateOf<ItemCatalogoExercicio?>(null) }
     var urlVideoInput by remember { mutableStateOf("") }
+    var categoriaEditandoInput by remember { mutableStateOf("") }
+    var nomeEditandoInput by remember { mutableStateOf("") }
     var erroUrl by remember { mutableStateOf("") }
     var novoNomeExercicio by remember { mutableStateOf("") }
     var mostrarDialogoNovoExercicio by remember { mutableStateOf(false) }
@@ -978,7 +1113,7 @@ fun TelaGerenciarExercicios(
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                                     modifier = Modifier.height(34.dp)
                                 ) {
-                                    Text("Editar vídeo", fontSize = 12.sp)
+                                    Text("Editar exercício", fontSize = 12.sp)
                                 }
                             }
                             if (temVideo) {
@@ -1017,21 +1152,46 @@ fun TelaGerenciarExercicios(
             onFechar = { videoEmReproducao = null }
         )
     }
-
     exercicioEditando?.let { exAlvo ->
         AlertDialog(
             onDismissRequest = { exercicioEditando = null },
-            title = { Text("Vídeo demonstrativo", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("Editar exercício", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = exAlvo.nome,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = nomeEditandoInput,
+                        onValueChange = {
+                            nomeEditandoInput = it
+                            erroUrl = ""
+                        },
+                        label = { Text("Nome do exercício") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "Cole um link do YouTube ou importe um vídeo direto da galeria do celular:",
-                        fontSize = 12.sp
+                        text = "Parte do corpo / Categoria:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(CatalogoExerciciosStorage.GRUPOS_MUSCULARES.size) { gIdx ->
+                            val grp = CatalogoExerciciosStorage.GRUPOS_MUSCULARES[gIdx]
+                            FilterChip(
+                                selected = categoriaEditandoInput == grp,
+                                onClick = { categoriaEditandoInput = grp },
+                                label = { Text(grp, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Vídeo demonstrativo (Link YouTube ou celular):",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                     OutlinedTextField(
                         value = if (urlVideoInput.startsWith("/")) "Vídeo importado do celular" else urlVideoInput,
@@ -1048,7 +1208,7 @@ fun TelaGerenciarExercicios(
                         onClick = { seletorVideoCatalogo.launch(arrayOf("video/*")) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Importar vídeo do celular")
+                        Text("Importar vídeo")
                     }
                     if (urlVideoInput.isNotBlank()) {
                         TextButton(
@@ -1070,17 +1230,27 @@ fun TelaGerenciarExercicios(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        if (nomeEditandoInput.isBlank()) {
+                            erroUrl = "Informe o nome do exercício."
+                            return@TextButton
+                        }
                         val limpa = urlVideoInput.trim()
                         if (limpa.isNotBlank() && !limpa.startsWith("/") && !limpa.startsWith("http://", true) && !limpa.startsWith("https://", true)) {
                             erroUrl = "Informe um link válido iniciado com http:// ou https://"
                             return@TextButton
                         }
-                        CatalogoExerciciosStorage.salvarVideoExercicio(context, exAlvo.nome, limpa)
+                        CatalogoExerciciosStorage.editarExercicioCompleto(
+                            context = context,
+                            nomeOriginal = exAlvo.nome,
+                            novoNome = nomeEditandoInput,
+                            novaCategoria = categoriaEditandoInput,
+                            novoVideoUrl = limpa
+                        )
                         listaCatalogo = CatalogoExerciciosStorage.listarTodosItens(context)
                         exercicioEditando = null
                     }
                 ) {
-                    Text("Salvar vídeo", fontWeight = FontWeight.Bold)
+                    Text("Salvar alterações", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -1090,6 +1260,7 @@ fun TelaGerenciarExercicios(
             }
         )
     }
+
     if (mostrarDialogoNovoExercicio) {
         AlertDialog(
             onDismissRequest = { mostrarDialogoNovoExercicio = false },

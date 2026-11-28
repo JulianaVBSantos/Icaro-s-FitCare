@@ -2253,7 +2253,8 @@ fun TelaDashboard(
     }
 
     fun verificarStatusNuvem() {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        val cm =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
         val redeAtiva = cm?.activeNetwork != null
         if (!redeAtiva) {
             nuvemSincronizada = false
@@ -2306,7 +2307,8 @@ fun TelaDashboard(
         todosTreinos.mapNotNull { treino ->
             val dataFimStr = treino.dataFim.trim()
             if (dataFimStr.isBlank()) return@mapNotNull null
-            val dataFim = runCatching { formatoData.parse(dataFimStr) }.getOrNull() ?: return@mapNotNull null
+            val dataFim =
+                runCatching { formatoData.parse(dataFimStr) }.getOrNull() ?: return@mapNotNull null
             val aluno = alunos.firstOrNull { it.id == treino.alunoId } ?: return@mapNotNull null
 
             when {
@@ -2561,6 +2563,7 @@ fun TelaDashboard(
                             "icaroalves",
                             ignoreCase = true
                         )) -> "Ícaro"
+
                 else -> nomeRealProfessor.substringBefore(" ").trim()
             }
             Column(
@@ -2590,7 +2593,11 @@ fun TelaDashboard(
                     fontWeight = FontWeight.Bold,
                     color = TextoPrincipal
                 )
-                if (!nuvemSincronizada && statusSincronizacao.contains("Offline", ignoreCase = true)) {
+                if (!nuvemSincronizada && statusSincronizacao.contains(
+                        "Offline",
+                        ignoreCase = true
+                    )
+                ) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically
@@ -2709,7 +2716,8 @@ fun TelaDashboard(
                             .filter { it.alunoId == aluno.id }
                             .mapNotNull { runCatching { fmt.parse(it.dataInicio)?.time }.getOrNull() }
                             .maxOrNull()
-                        val ultimaAtividadeMs = listOfNotNull(ultimoEventoTreinoMs, ultimoInicioFichaMs).maxOrNull()
+                        val ultimaAtividadeMs =
+                            listOfNotNull(ultimoEventoTreinoMs, ultimoInicioFichaMs).maxOrNull()
                         ultimaAtividadeMs == null || ultimaAtividadeMs < seteDiasAtrasMs
                     }
                     Triple(frequenciaSemanalGeral, mediaSemanal, semTreinarMais7Dias)
@@ -2923,7 +2931,9 @@ fun TelaDashboard(
                                         },
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (ehVencido) Color(0xFFB42332) else Color(0xFF9A7000)
+                                        color = if (ehVencido) Color(0xFFB42332) else Color(
+                                            0xFF9A7000
+                                        )
                                     )
                                     Text(
                                         text = "Ficha: ${treino.nome} (Vencimento: ${treino.dataFim})",
@@ -2942,7 +2952,8 @@ fun TelaDashboard(
 // Notificações de anamneses respondidas
                         notificacoesRespondidas.forEach { (aluno, anamnese) ->
                             val chave = "anamnese_${anamnese.id}"
-                            val jaLida = chave in idsNotificacoesLidas || anamnese.id.toString() in idsNotificacoesLidas
+                            val jaLida =
+                                chave in idsNotificacoesLidas || anamnese.id.toString() in idsNotificacoesLidas
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -4460,7 +4471,10 @@ fun TelaPerfilAluno(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     val ehPadraoObrigatoria =
                                         avaliacao.identificadorExterno == "PADRAO_OBRIGATORIA" ||
-                                                avaliacao.nomeModelo.equals("Anamnese Padrão Inicial", ignoreCase = true)
+                                                avaliacao.nomeModelo.equals(
+                                                    "Anamnese Padrão Inicial",
+                                                    ignoreCase = true
+                                                )
 
                                     Spacer(modifier = Modifier.height(6.dp))
 
@@ -4469,28 +4483,39 @@ fun TelaPerfilAluno(
                                             onClick = {
                                                 scope.launch {
                                                     try {
-                                                        val db = FitCareDatabase.getDatabase(contextoEventosPerfil)
-                                                        val hojeStr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date())
+                                                        val db = FitCareDatabase.getDatabase(
+                                                            contextoEventosPerfil
+                                                        )
+                                                        val hojeStr = SimpleDateFormat(
+                                                            "dd/MM/yyyy",
+                                                            Locale("pt", "BR")
+                                                        ).format(Date())
                                                         val agoraMs = System.currentTimeMillis()
                                                         // 1. Limpa respostas locais e redefine status para PENDENTE
-                                                        db.respostaAnamneseDao().excluirPorAnamnese(avaliacao.id)
-                                                        db.anamneseAtribuidaDao().atualizarStatusEDataEnvio(
-                                                            id = avaliacao.id,
-                                                            status = "PENDENTE",
-                                                            dataEnvio = hojeStr,
-                                                            updatedAtMillis = agoraMs
-                                                        )
+                                                        db.respostaAnamneseDao()
+                                                            .excluirPorAnamnese(avaliacao.id)
+                                                        db.anamneseAtribuidaDao()
+                                                            .atualizarStatusEDataEnvio(
+                                                                id = avaliacao.id,
+                                                                status = "PENDENTE",
+                                                                dataEnvio = hojeStr,
+                                                                updatedAtMillis = agoraMs
+                                                            )
                                                         // 2. Limpa respostas remotas e marca como PENDENTE no Firestore
                                                         val alunoFbId = alunoAtual?.firebaseId
-                                                        val anamFbId = avaliacao.firestoreId ?: "padrao_inicial_$alunoFbId"
+                                                        val anamFbId = avaliacao.firestoreId
+                                                            ?: "padrao_inicial_$alunoFbId"
                                                         if (!alunoFbId.isNullOrBlank()) {
                                                             withContext(Dispatchers.IO) {
-                                                                val docAnamRef = FirebaseFirestore.getInstance()
-                                                                    .collection("alunos")
-                                                                    .document(alunoFbId)
-                                                                    .collection("anamneses_atribuidas")
-                                                                    .document(anamFbId)
-                                                                val respsSnap = docAnamRef.collection("respostas").get().await()
+                                                                val docAnamRef =
+                                                                    FirebaseFirestore.getInstance()
+                                                                        .collection("alunos")
+                                                                        .document(alunoFbId)
+                                                                        .collection("anamneses_atribuidas")
+                                                                        .document(anamFbId)
+                                                                val respsSnap =
+                                                                    docAnamRef.collection("respostas")
+                                                                        .get().await()
                                                                 for (rDoc in respsSnap.documents) {
                                                                     rDoc.reference.delete().await()
                                                                 }
@@ -4513,7 +4538,8 @@ fun TelaPerfilAluno(
                                                     } catch (e: Exception) {
                                                         Toast.makeText(
                                                             contextoEventosPerfil,
-                                                            e.message ?: "Não foi possível reenviar a anamnese.",
+                                                            e.message
+                                                                ?: "Não foi possível reenviar a anamnese.",
                                                             Toast.LENGTH_LONG
                                                         ).show()
                                                     }
@@ -7801,6 +7827,7 @@ private data class ExercicioFormulario(
     val series: String = "3",
     val repeticoes: String = "12",
     val carga: String = "",
+    val descanso: String = "",
     val observacoes: String = "",
     val videoTipo: String = "",
     val videoUrl: String = "",
@@ -8250,7 +8277,7 @@ fun TelaTreinos(
     }
 }
 
-// TELA FORMULÁRIO DE TREINO (LAYOUT COMPACTO ESTILO PACTO + CATÁLOGO COM VÍDEOS + SINCRONIZAÇÃO SOB DEMANDA)
+// TELA FORMULÁRIO DE TREINO (LAYOUT COMPACTO ESTILO PACTO + CATÁLOGO COM VÍDEOS + PRÉVIA + REORDENAÇÃO)
 @Composable
 fun TelaFormularioTreino(
     alunoId: Long,
@@ -8259,6 +8286,7 @@ fun TelaFormularioTreino(
     onVoltar: () -> Unit,
     onSalvo: () -> Unit
 ) {
+    var videoPreviewFicha by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var nome by remember { mutableStateOf("") }
     var descricao by remember { mutableStateOf("") }
     var dataInicio by remember { mutableStateOf("") }
@@ -8392,8 +8420,9 @@ fun TelaFormularioTreino(
                     exercicios.add(ExercicioFormulario())
                     exerciciosExpandidos.put(0, true)
                 }
-                assinaturaInicial = "${treino.nome}|${treino.descricao}|${treino.dataInicio}|${treino.dataFim}|${treino.observacoes}|" +
-                        exercicios.joinToString(";") { "${it.nome}|${it.series}|${it.repeticoes}|${it.carga}|${it.observacoes}|${it.videoTipo}|${it.videoUrl}|${it.videoNome}" }
+                assinaturaInicial =
+                    "${treino.nome}|${treino.descricao}|${treino.dataInicio}|${treino.dataFim}|${treino.observacoes}|" +
+                            exercicios.joinToString(";") { "${it.nome}|${it.series}|${it.repeticoes}|${it.carga}|${it.observacoes}|${it.videoTipo}|${it.videoUrl}|${it.videoNome}" }
             }
         } else {
             exerciciosExpandidos.put(0, true)
@@ -8655,83 +8684,184 @@ fun TelaFormularioTreino(
             }
             exercicios.forEachIndexed { index, exercicio ->
                 val expandido = exerciciosExpandidos[index] ?: (exercicio.nome.isBlank())
+                val tipoPreview = exercicio.videoTipo.ifBlank {
+                    if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK"
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Branco
-                    ),
-                    elevation = CardDefaults.cardElevation(
-                        defaultElevation = 2.dp
-                    )
+                    colors = CardDefaults.cardColors(containerColor = Branco),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // Linha superior: Reordenação (≡) + Miniatura quadrada + Nome + Botão Detalhes + Lixeira
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(AzulMuitoClaro, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (index > 0) {
+                                    Text(
+                                        text = "▲",
+                                        fontSize = 10.sp,
+                                        color = AzulPrincipal,
+                                        modifier = Modifier
+                                            .clickable {
+                                                val item = exercicios.removeAt(index)
+                                                exercicios.add(index - 1, item)
+                                            }
+                                            .padding(2.dp)
+                                    )
+                                }
                                 Text(
-                                    text = "${index + 1}",
+                                    "≡",
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = AzulPrincipal
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = exercicio.nome.ifBlank { "Novo exercício ${index + 1}" },
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = TextoPrincipal
-                                )
-                                Text(
-                                    text = buildString {
-                                        append("${exercicio.series.ifBlank { "3" }} séries × ${exercicio.repeticoes.ifBlank { "12" }}")
-                                        if (exercicio.carga.isNotBlank()) append(" • ${exercicio.carga}")
-                                        if (exercicio.videoUrl.isNotBlank()) append(" • ▶ Vídeo")
-                                    },
-                                    fontSize = 11.sp,
                                     color = TextoSecundario
                                 )
-                            }
-                            TextButton(
-                                onClick = {
-                                    exerciciosExpandidos[index] = !expandido
+                                if (index < exercicios.lastIndex) {
+                                    Text(
+                                        text = "▼",
+                                        fontSize = 10.sp,
+                                        color = AzulPrincipal,
+                                        modifier = Modifier
+                                            .clickable {
+                                                val item = exercicios.removeAt(index)
+                                                exercicios.add(index + 1, item)
+                                            }
+                                            .padding(2.dp)
+                                    )
                                 }
+                            }
+
+                            if (exercicio.videoUrl.isNotBlank()) {
+                                CardPreviewVideoExercicio(
+                                    tituloExercicio = exercicio.nome.ifBlank { "Vídeo do exercício" },
+                                    videoUrl = exercicio.videoUrl,
+                                    videoTipo = tipoPreview,
+                                    modifier = Modifier.size(56.dp),
+                                    onAbrirPlayer = {
+                                        videoPreviewFicha = Triple(
+                                            exercicio.nome.ifBlank { "Vídeo demonstrativo" },
+                                            exercicio.videoUrl,
+                                            tipoPreview
+                                        )
+                                    }
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(AzulMuitoClaro)
+                                        .clickable { indiceExercicioCatalogo = index },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${index + 1}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = AzulPrincipal
+                                    )
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { indiceExercicioCatalogo = index }
                             ) {
                                 Text(
-                                    text = if (expandido) "Recolher" else "Detalhar",
-                                    color = AzulPrincipal,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = exercicio.nome.ifBlank { "Toque para escolher exercício ✎" },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = TextoPrincipal,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    text = if (exercicio.videoUrl.isNotBlank()) "▶ Vídeo vinculado" else "Toque para buscar no catálogo",
+                                    fontSize = 11.sp,
+                                    color = if (exercicio.videoUrl.isNotBlank()) Color(0xFF2E7D32) else TextoSecundario
                                 )
                             }
+
+                            Button(
+                                onClick = { exerciciosExpandidos[index] = !expandido },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (expandido) AzulMuitoClaro else AzulPrincipal,
+                                    contentColor = if (expandido) AzulPrincipal else Color.White
+                                ),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text(
+                                    text = if (expandido) "× Recolher" else "↓ Detalhes",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
                             if (exercicios.size > 1) {
                                 IconButton(
-                                    onClick = {
-                                        exercicios.removeAt(index)
-                                    },
-                                    modifier = Modifier.size(32.dp)
+                                    onClick = { exercicios.removeAt(index) },
+                                    modifier = Modifier.size(28.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = "Remover exercício",
-                                        tint = MaterialTheme.colorScheme.error,
+                                        contentDescription = "Remover",
+                                        tint = Vermelho,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                         }
+
+                        // Grade rápida horizontal (Séries | Repetições | Carga | Descanso) sempre visível
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = exercicio.series,
+                                onValueChange = { exercicios[index] = exercicio.copy(series = it) },
+                                label = { Text("Séries", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(0.85f)
+                            )
+                            OutlinedTextField(
+                                value = exercicio.repeticoes,
+                                onValueChange = {
+                                    exercicios[index] = exercicio.copy(repeticoes = it)
+                                },
+                                label = { Text("Reps", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = exercicio.carga,
+                                onValueChange = { exercicios[index] = exercicio.copy(carga = it) },
+                                label = { Text("Carga", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = exercicio.descanso,
+                                onValueChange = {
+                                    exercicios[index] = exercicio.copy(descanso = it)
+                                },
+                                label = { Text("Descanso", fontSize = 10.sp) },
+                                placeholder = { Text("01:00", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1.15f)
+                            )
+                        }
+
+                        // Painel expandido (Catálogo, Nome, Observações/Complemento e Vídeo)
                         if (expandido) {
                             HorizontalDivider(color = AzulMuitoClaro)
                             OutlinedButton(
@@ -8742,83 +8872,20 @@ fun TelaFormularioTreino(
                             }
                             OutlinedTextField(
                                 value = exercicio.nome,
-                                onValueChange = {
-                                    exercicios[index] =
-                                        exercicios[index].copy(nome = it)
-                                },
-                                label = {
-                                    Text("Nome do exercício *")
-                                },
-                                placeholder = {
-                                    Text("Ex.: Agachamento")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = exercicio.series,
-                                    onValueChange = {
-                                        exercicios[index] =
-                                            exercicios[index].copy(series = it)
-                                    },
-                                    label = {
-                                        Text("Séries *")
-                                    },
-                                    placeholder = {
-                                        Text("Ex.: 3 ou 3-4")
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                                OutlinedTextField(
-                                    value = exercicio.repeticoes,
-                                    onValueChange = {
-                                        exercicios[index] =
-                                            exercicios[index].copy(repeticoes = it)
-                                    },
-                                    label = {
-                                        Text("Repetições *")
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                            }
-                            OutlinedTextField(
-                                value = exercicio.carga,
-                                onValueChange = {
-                                    exercicios[index] =
-                                        exercicios[index].copy(carga = it)
-                                },
-                                label = {
-                                    Text("Carga")
-                                },
-                                placeholder = {
-                                    Text("Ex.: 20 kg")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
+                                onValueChange = { exercicios[index] = exercicio.copy(nome = it) },
+                                label = { Text("Nome do exercício ") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = exercicio.observacoes,
                                 onValueChange = {
-                                    exercicios[index] =
-                                        exercicios[index].copy(observacoes = it)
+                                    exercicios[index] = exercicio.copy(observacoes = it)
                                 },
-                                label = {
-                                    Text("Observações / descanso")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                minLines = 2
-                            )
-                            Text(
-                                text = "Vídeo demonstrativo (opcional)",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextoPrincipal
+                                label = { Text("Complemento / observações da atividade") },
+                                placeholder = { Text("Ex.: Cadência controlada, descanso ativo...") },
+                                minLines = 2,
+                                modifier = Modifier.fillMaxWidth()
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -8826,7 +8893,7 @@ fun TelaFormularioTreino(
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        exercicios[index] = exercicios[index].copy(
+                                        exercicios[index] = exercicio.copy(
                                             videoTipo = "LINK",
                                             videoUrl = if (exercicio.videoTipo == "LINK") exercicio.videoUrl else "",
                                             videoNome = "Link externo"
@@ -8839,7 +8906,7 @@ fun TelaFormularioTreino(
                                 OutlinedButton(
                                     onClick = {
                                         indiceExercicioImportandoVideo = index
-                                        seletorVideo.launch(arrayOf("video/*"))
+                                        seletorVideo.launch(arrayOf("video/"))
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
@@ -8850,16 +8917,15 @@ fun TelaFormularioTreino(
                                 OutlinedTextField(
                                     value = exercicio.videoUrl,
                                     onValueChange = {
-                                        exercicios[index] = exercicios[index].copy(
+                                        exercicios[index] = exercicio.copy(
                                             videoTipo = "LINK",
                                             videoUrl = it,
                                             videoNome = "Link externo"
                                         )
                                     },
-                                    label = { Text("URL do vídeo (YouTube / Vimeo / HTTP)") },
-                                    placeholder = { Text("youtube.com...") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
+                                    label = { Text("URL do vídeo (YouTube)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             } else if (exercicio.videoTipo == "LOCAL" && exercicio.videoUrl.isNotBlank()) {
                                 Row(
@@ -8877,7 +8943,7 @@ fun TelaFormularioTreino(
                                     )
                                     TextButton(
                                         onClick = {
-                                            exercicios[index] = exercicios[index].copy(
+                                            exercicios[index] = exercicio.copy(
                                                 videoTipo = "",
                                                 videoUrl = "",
                                                 videoNome = ""
@@ -8886,36 +8952,6 @@ fun TelaFormularioTreino(
                                     ) {
                                         Text("Remover", color = Vermelho, fontSize = 11.sp)
                                     }
-                                }
-                            }
-                            if (exercicio.videoUrl.isNotBlank()) {
-                                var abrirPreviewForm by remember { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    CardPreviewVideoExercicio(
-                                        tituloExercicio = exercicio.nome.ifBlank { "Preview do exercício" },
-                                        videoUrl = exercicio.videoUrl,
-                                        videoTipo = exercicio.videoTipo.ifBlank { if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK" },
-                                        modifier = Modifier.width(84.dp).height(110.dp),
-                                        onAbrirPlayer = { abrirPreviewForm = true }
-                                    )
-                                    Text(
-                                        text = "Toque na miniatura para testar o vídeo no player do app.",
-                                        fontSize = 11.sp,
-                                        color = TextoSecundario,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                if (abrirPreviewForm) {
-                                    DialogoPlayerVideoExercicio(
-                                        tituloExercicio = exercicio.nome.ifBlank { "Vídeo demonstrativo" },
-                                        videoUrl = exercicio.videoUrl,
-                                        videoTipo = exercicio.videoTipo.ifBlank { if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK" },
-                                        onFechar = { abrirPreviewForm = false }
-                                    )
                                 }
                             }
                         }
@@ -9023,8 +9059,9 @@ fun TelaFormularioTreino(
                             "O link do vídeo deve iniciar com http:// ou https://."
                         return@Button
                     }
-                    val assinaturaAtual = "${nome.trim()}|${descricao.trim()}|${dataInicio.trim()}|${dataFim.trim()}|${observacoes.trim()}|" +
-                            exercicios.joinToString(";") { "${it.nome.trim()}|${it.series.trim()}|${it.repeticoes.trim()}|${it.carga.trim()}|${it.observacoes.trim()}|${it.videoTipo.trim()}|${it.videoUrl.trim()}|${it.videoNome.trim()}" }
+                    val assinaturaAtual =
+                        "${nome.trim()}|${descricao.trim()}|${dataInicio.trim()}|${dataFim.trim()}|${observacoes.trim()}|" +
+                                exercicios.joinToString(";") { "${it.nome.trim()}|${it.series.trim()}|${it.repeticoes.trim()}|${it.carga.trim()}|${it.observacoes.trim()}|${it.videoTipo.trim()}|${it.videoUrl.trim()}|${it.videoNome.trim()}" }
                     if (treinoId != null && assinaturaAtual == assinaturaInicial) {
                         onSalvo()
                         return@Button
@@ -9140,9 +9177,14 @@ fun TelaFormularioTreino(
                 val idx = indiceExercicioCatalogo
                 if (idx in exercicios.indices) {
                     val temVideo = itemEscolhido.videoUrl.isNotBlank()
+                    val tipoSelecionado = when {
+                        itemEscolhido.videoUrl.startsWith("/") -> "LOCAL"
+                        temVideo -> "LINK"
+                        else -> ""
+                    }
                     exercicios[idx] = exercicios[idx].copy(
                         nome = itemEscolhido.nome,
-                        videoTipo = if (temVideo) "LINK" else "",
+                        videoTipo = tipoSelecionado,
                         videoUrl = itemEscolhido.videoUrl,
                         videoNome = if (temVideo) "Vídeo demonstrativo" else ""
                     )
@@ -9156,6 +9198,14 @@ fun TelaFormularioTreino(
                 }
                 indiceExercicioCatalogo = -1
             }
+        )
+    }
+    videoPreviewFicha?.let { (titulo, url, tipo) ->
+        DialogoPlayerVideoExercicio(
+            tituloExercicio = titulo,
+            videoUrl = url,
+            videoTipo = tipo,
+            onFechar = { videoPreviewFicha = null }
         )
     }
 }
@@ -9414,7 +9464,8 @@ fun TelaDetalhesTreino(
                                     Button(
                                         onClick = {
                                             if (exercicio.videoTipo == "LINK") {
-                                                videoEmReproducao = exercicio.nome to exercicio.videoUrl
+                                                videoEmReproducao =
+                                                    exercicio.nome to exercicio.videoUrl
                                             } else {
                                                 try {
                                                     val arquivo = java.io.File(exercicio.videoUrl)
@@ -9442,7 +9493,8 @@ fun TelaDetalhesTreino(
                                                 } catch (e: Exception) {
                                                     Toast.makeText(
                                                         context,
-                                                        e.message ?: "Não foi possível abrir o vídeo.",
+                                                        e.message
+                                                            ?: "Não foi possível abrir o vídeo.",
                                                         Toast.LENGTH_LONG
                                                     ).show()
                                                 }

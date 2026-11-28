@@ -206,4 +206,7 @@ interface TreinoDao {
         alunoId: Long,
         professorId: Long
     ): Boolean
+
+    @Query("DELETE FROM exercicios WHERE treinoId = :treinoId")
+    suspend fun excluirExerciciosDoTreino(treinoId: Long)
 }

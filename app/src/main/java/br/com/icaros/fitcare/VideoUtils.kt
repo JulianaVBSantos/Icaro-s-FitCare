@@ -57,8 +57,8 @@ fun CardPreviewVideoExercicio(
     videoUrl: String,
     videoTipo: String = "LINK",
     modifier: Modifier = Modifier
-        .width(108.dp)
-        .height(145.dp),
+        .width(96.dp)
+        .height(128.dp),
     onAbrirPlayer: () -> Unit
 ) {
     val videoId = remember(videoUrl) { extrairIdVideoYoutube(videoUrl) }
@@ -81,10 +81,32 @@ fun CardPreviewVideoExercicio(
                         frame
                     } else null
                 } else if (videoId != null) {
-                    val thumbUrl = "https:" + "//://ytimg.com" + videoId + "/hqdefault.jpg"
-                    URL(thumbUrl).openStream().use { stream ->
-                        BitmapFactory.decodeStream(stream)
+                    val hostImg = "https:" + "//i" + "://" + videoId
+                    val candidatos = listOf("$hostImg/0.jpg", "$hostImg/hqdefault.jpg", "$hostImg/mqdefault.jpg")
+                    var bmpEncontrado: Bitmap? = null
+                    for (urlCand in candidatos) {
+                        try {
+                            val conn = (URL(urlCand).openConnection() as java.net.HttpURLConnection).apply {
+                                connectTimeout = 5000
+                                readTimeout = 5000
+                                setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
+                                doInput = true
+                                connect()
+                            }
+                            if (conn.responseCode == 200) {
+                                conn.inputStream.use { stream ->
+                                    val decoded = BitmapFactory.decodeStream(stream)
+                                    if (decoded != null && decoded.width > 120) {
+                                        bmpEncontrado = decoded
+                                    }
+                                }
+                            }
+                            conn.disconnect()
+                            if (bmpEncontrado != null) break
+                        } catch (_: Exception) {
+                        }
                     }
+                    bmpEncontrado
                 } else {
                     val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(videoUrl, HashMap())
@@ -116,19 +138,19 @@ fun CardPreviewVideoExercicio(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.25f)),
+                .background(Color.Black.copy(alpha = 0.22f)),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .background(Color.White.copy(alpha = 0.88f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "▶",
                     color = Color(0xFF002B5C),
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
             }

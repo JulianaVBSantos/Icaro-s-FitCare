@@ -55,127 +55,6 @@ class FirestoreSyncService(
 
     fun obterFirestoreAutenticado(): FirebaseFirestore = firestore
 
-    fun iniciarMonitoramentoTempoRealProfessor(
-        scope: CoroutineScope,
-        onContaBloqueada: () -> Unit
-    ): List<ListenerRegistration> {
-        val firebaseUser = firebaseAuth.currentUser ?: return emptyList()
-        val uid = firebaseUser.uid
-        val registros = mutableListOf<ListenerRegistration>()
-        val listenersPorAluno = mutableMapOf<String, ListenerRegistration>()
-        val listenersTreinosPorAluno = mutableMapOf<String, ListenerRegistration>()
-
-        val regUsuario = firestore.collection("usuarios")
-            .document(uid)
-            .addSnapshotListener { snapshot, _ ->
-                if (snapshot != null && snapshot.exists()) {
-                    val ativo = snapshot.getBoolean("ativo") ?: false
-                    val perfil = snapshot.getString("perfil")
-                    if (!ativo || perfil != PERFIL_PROFESSOR) {
-                        scope.launch {
-                            val local = usuarioDao.buscarPorFirebaseUid(uid)
-                            if (local != null) {
-                                usuarioDao.atualizarStatus(local.id, false)
-                            }
-                            firebaseAuth.signOut()
-                            SessaoUsuario.encerrar()
-                            onContaBloqueada()
-                        }
-                    }
-                }
-            }
-        registros.add(regUsuario)
-
-        val regAlunos = firestore.collection(COLECAO_ALUNOS)
-            .whereEqualTo("professorUid", uid)
-            .addSnapshotListener { snapshots, _ ->
-                if (snapshots != null) {
-                    val idsAtuais = snapshots.documents.map { it.id }.toSet()
-
-                    val removidos = listenersPorAluno.keys.filter { it !in idsAtuais }
-                    removidos.forEach { idRemovido ->
-                        listenersPorAluno.remove(idRemovido)?.remove()
-                        listenersTreinosPorAluno.remove(idRemovido)?.remove()
-                    }
-
-                    for (docAluno in snapshots.documents) {
-                        val alunoDocId = docAluno.id
-                        if (!listenersPorAluno.containsKey(alunoDocId)) {
-                            val regSub = firestore.collection(COLECAO_ALUNOS)
-                                .document(alunoDocId)
-                                .collection("anamneses_atribuidas")
-                                .addSnapshotListener { subSnap, _ ->
-                                    if (subSnap != null) {
-                                        scope.launch(Dispatchers.IO) {
-                                            sincronizarAnamnesesAtribuidas()
-                                        }
-                                    }
-                                }
-                            listenersPorAluno[alunoDocId] = regSub
-                        }
-
-                        if (!listenersTreinosPorAluno.containsKey(alunoDocId)) {
-                            val regTreino = firestore.collection(COLECAO_ALUNOS)
-                                .document(alunoDocId)
-                                .collection("treinos")
-                                .addSnapshotListener { treinoSnap, _ ->
-                                    if (treinoSnap != null) {
-                                        scope.launch(Dispatchers.IO) {
-                                            sincronizarTreinos()
-                                        }
-                                    }
-                                }
-                            listenersTreinosPorAluno[alunoDocId] = regTreino
-                        }
-                    }
-
-                    scope.launch(Dispatchers.IO) {
-                        sincronizarLeituraAlunos()
-                    }
-                }
-            }
-        registros.add(regAlunos)
-
-        val regModelos = firestore.collection("usuarios")
-            .document(uid)
-            .collection("modelos_anamnese")
-            .addSnapshotListener { snapshots, _ ->
-                if (snapshots != null) {
-                    scope.launch(Dispatchers.IO) {
-                        sincronizarModelosAnamnese()
-                    }
-                }
-            }
-        registros.add(regModelos)
-
-        val cleanupWrapper = ListenerRegistration {
-            listenersPorAluno.values.forEach { it.remove() }
-            listenersPorAluno.clear()
-            listenersTreinosPorAluno.values.forEach { it.remove() }
-            listenersTreinosPorAluno.clear()
-        }
-        registros.add(cleanupWrapper)
-
-        return registros
-    }
-
-    fun iniciarMonitoramentoTempoRealAluno(
-        scope: CoroutineScope,
-        alunoFirebaseId: String
-    ): ListenerRegistration? {
-        if (alunoFirebaseId.isBlank()) return null
-        return firestore.collection(COLECAO_ALUNOS)
-            .document(alunoFirebaseId)
-            .collection("anamneses_atribuidas")
-            .addSnapshotListener { snapshots, _ ->
-                if (snapshots != null) {
-                    scope.launch(Dispatchers.IO) {
-                        sincronizarAnamnesesAtribuidasDoAluno()
-                    }
-                }
-            }
-    }
-
     suspend fun sincronizarAlunos(): Boolean {
         val firebaseUser = firebaseAuth.currentUser ?: return false
         val uid = firebaseUser.uid
@@ -971,13 +850,26 @@ class FirestoreSyncService(
                     docRef.update("alunoUpdatedAtMillis", 0L).await()
                     continue
                 }
+                val mudouExercicios = exRemotosLista == null ||
+                        exRemotosLista.size != exercicios.size ||
+                        exercicios.indices.any { i ->
+                            val m = exRemotosLista[i] as? Map<*, *> ?: return@any true
+                            val ex = exercicios[i]
+                            (m["nome"] as? String) != ex.nome ||
+                                    (m["series"] as? String) != ex.series ||
+                                    (m["repeticoes"] as? String) != ex.repeticoes ||
+                                    (m["carga"] as? String) != ex.carga ||
+                                    (m["observacoes"] as? String) != ex.observacoes ||
+                                    (m["videoUrl"] as? String) != (if (ex.videoTipo == "LINK") ex.videoUrl else "")
+                        }
+
                 if (!remoto.exists() ||
                     nomeRemoto != treino.nome ||
                     inicioRemoto != treino.dataInicio ||
                     fimRemoto != treino.dataFim ||
                     descRemota != treino.descricao ||
                     obsRemota != treino.observacoes ||
-                    (exRemotosLista?.size ?: -1) != exercicios.size
+                    mudouExercicios
                 ) {
                     val dadosTreino = hashMapOf<String, Any>(
                         "professorUid" to uid,
@@ -1170,7 +1062,19 @@ class FirestoreSyncService(
                 }
                 val exLocaisAtuais =
                     treinoDao.listarExerciciosDoAluno(treinoLocalId, alunoId).first()
-                if (exLocaisAtuais.isEmpty() && exList.isNotEmpty()) {
+                val precisaAtualizarExercicios = exList.isNotEmpty() && (
+                        exLocaisAtuais.size != exList.size ||
+                                exList.indices.any { idx ->
+                                    val mapa = exList[idx] as? Map<*, *> ?: return@any true
+                                    val local = exLocaisAtuais[idx]
+                                    (mapa["nome"] as? String ?: "") != local.nome ||
+                                            (mapa["series"] as? String ?: "") != local.series ||
+                                            (mapa["repeticoes"] as? String ?: "") != local.repeticoes ||
+                                            (mapa["videoUrl"] as? String ?: "") != local.videoUrl
+                                }
+                        )
+                if (precisaAtualizarExercicios) {
+                    treinoDao.excluirExerciciosDoTreino(treinoLocalId)
                     exList.forEachIndexed { idx, item ->
                         val mapa = item as? Map<String, Any?> ?: return@forEachIndexed
                         treinoDao.inserirExercicio(
@@ -1733,5 +1637,36 @@ class FirestoreSyncService(
             snapshot.getString("professorUid")
                 ?: throw IllegalStateException("Cadastro remoto sem professorUid.")
         }.await()
+    }
+
+    fun iniciarMonitoramentoTempoRealAluno(
+        scope: CoroutineScope,
+        alunoFirebaseId: String
+    ): ListenerRegistration? {
+        if (alunoFirebaseId.isBlank()) return null
+        val regAnamneses = firestore.collection(COLECAO_ALUNOS)
+            .document(alunoFirebaseId)
+            .collection("anamneses_atribuidas")
+            .addSnapshotListener { snapshots, _ ->
+                if (snapshots != null) {
+                    scope.launch(Dispatchers.IO) {
+                        sincronizarAnamnesesAtribuidasDoAluno()
+                    }
+                }
+            }
+        val regTreinos = firestore.collection(COLECAO_ALUNOS)
+            .document(alunoFirebaseId)
+            .collection("treinos")
+            .addSnapshotListener { snapshots, _ ->
+                if (snapshots != null) {
+                    scope.launch(Dispatchers.IO) {
+                        sincronizarTreinosDoAluno()
+                    }
+                }
+            }
+        return ListenerRegistration {
+            regAnamneses.remove()
+            regTreinos.remove()
+        }
     }
 }
