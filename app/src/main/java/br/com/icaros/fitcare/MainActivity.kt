@@ -1,6 +1,9 @@
 package br.com.icaros.fitcare
 
-
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
@@ -423,7 +426,8 @@ fun FitCareApp(
             CHAVE_USUARIO_ID,
             -1L
         )
-        if (manterConectado && usuarioIdSalvo > 0L) {
+        val firebaseUserAtual = FirebaseAuth.getInstance().currentUser
+        if (manterConectado && usuarioIdSalvo > 0L && firebaseUserAtual != null) {
             val usuario = usuarioRepository.buscarUsuarioAtivoPorId(
                 usuarioIdSalvo
             )
@@ -437,14 +441,7 @@ fun FitCareApp(
                 }
 
                 if (usuario.perfil == "PROFESSOR") {
-                    val uid = FirebaseAuth.getInstance().currentUser?.uid
-                    if (!uid.isNullOrBlank()) {
-                        DispositivoRepository(context).registrarAtividade(uid)
-                    }
-                }
-                if (usuario.perfil == "PROFESSOR" || usuario.perfil == "ALUNO") {
-                    AlunoSyncWorker.agendar(context)
-                    AlunoSyncWorker.agendarPeriodica(context)
+                    DispositivoRepository(context).registrarAtividade(firebaseUserAtual.uid)
                 }
                 when (usuario.perfil) {
                     "PROFESSOR" -> {
@@ -479,6 +476,12 @@ fun FitCareApp(
                     .remove(CHAVE_PERFIL)
                     .apply()
             }
+        } else if (usuarioIdSalvo > 0L && firebaseUserAtual == null) {
+            SessaoUsuario.encerrar()
+            preferenciasSessao.edit()
+                .remove(CHAVE_USUARIO_ID)
+                .remove(CHAVE_PERFIL)
+                .apply()
         }
     }
 
@@ -615,22 +618,27 @@ fun FitCareApp(
                             onSair = {
                                 val usuarioSaindo = SessaoUsuario.usuarioAtual
                                 val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
-                                FcmTokenManager.removerTokenAoSair(
-                                    context,
-                                    usuarioSaindo,
-                                    uidSaindo
-                                )
-                                AlunoSyncWorker.cancelarPeriodica(context)
-                                preferenciasSessao.edit()
-                                    .remove(CHAVE_USUARIO_ID)
-                                    .remove(CHAVE_PERFIL)
-                                    .apply()
-                                SessaoUsuario.encerrar()
-                                FirebaseAuth.getInstance().signOut()
-                                sessaoVersao++
-                                alunoAutenticado = false
-                                perfilSelecionado = "PROFESSOR"
-                                tela = AppScreen.Login
+                                scopeGlobal.launch {
+                                    try {
+                                        FcmTokenManager.removerTokenAoSair(
+                                            context,
+                                            usuarioSaindo,
+                                            uidSaindo
+                                        )
+                                    } catch (_: Exception) {
+                                    }
+                                    AlunoSyncWorker.cancelarPeriodica(context)
+                                    preferenciasSessao.edit()
+                                        .remove(CHAVE_USUARIO_ID)
+                                        .remove(CHAVE_PERFIL)
+                                        .apply()
+                                    SessaoUsuario.encerrar()
+                                    FirebaseAuth.getInstance().signOut()
+                                    sessaoVersao++
+                                    alunoAutenticado = false
+                                    perfilSelecionado = "PROFESSOR"
+                                    tela = AppScreen.Login
+                                }
                             }
                         )
                     }
@@ -677,16 +685,29 @@ fun FitCareApp(
                         TelaAdminDashboard(
                             usuarioRepository = usuarioRepository,
                             onSair = {
-                                preferenciasSessao.edit()
-                                    .remove(CHAVE_USUARIO_ID)
-                                    .remove(CHAVE_PERFIL)
-                                    .apply()
-                                SessaoUsuario.encerrar()
-                                FirebaseAuth.getInstance().signOut()
-                                sessaoVersao++
-                                alunoAutenticado = false
-                                perfilSelecionado = null
-                                tela = AppScreen.Login
+                                val usuarioSaindo = SessaoUsuario.usuarioAtual
+                                val uidSaindo = FirebaseAuth.getInstance().currentUser?.uid
+                                scopeGlobal.launch {
+                                    try {
+                                        FcmTokenManager.removerTokenAoSair(
+                                            context,
+                                            usuarioSaindo,
+                                            uidSaindo
+                                        )
+                                    } catch (_: Exception) {
+                                    }
+                                    AlunoSyncWorker.cancelarPeriodica(context)
+                                    preferenciasSessao.edit()
+                                        .remove(CHAVE_USUARIO_ID)
+                                        .remove(CHAVE_PERFIL)
+                                        .apply()
+                                    SessaoUsuario.encerrar()
+                                    FirebaseAuth.getInstance().signOut()
+                                    sessaoVersao++
+                                    alunoAutenticado = false
+                                    perfilSelecionado = "PROFESSOR"
+                                    tela = AppScreen.Login
+                                }
                             }
                         )
                     }
@@ -2228,7 +2249,6 @@ fun TelaDashboard(
     val context = LocalContext.current
     var pesquisa by remember { mutableStateOf("") }
     var mostrarNotificacoes by remember { mutableStateOf(false) }
-    var mostrarDialogoCentralAtencao by remember { mutableStateOf(false) }
     var statusSincronizacao by remember { mutableStateOf("Sincronizado") }
     var nuvemSincronizada by remember { mutableStateOf(true) }
 
@@ -2833,44 +2853,7 @@ fun TelaDashboard(
             onExercicios = onExercicios
         )
     }
-    if (mostrarDialogoCentralAtencao) {
-        AlertDialog(
-            onDismissRequest = { mostrarDialogoCentralAtencao = false },
-            title = {
-                Text(
-                    text = "Central de Atenção",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AzulPrincipal
-                )
-            },
-            text = {
-                Text(
-                    text = "Esta tela dedicada aos alertas clínicos e prioridades está em desenvolvimento. " +
-                            "Você já pode filtrar os alunos com status 'Atenção' ou 'Prioridade' na tela Consultar Alunos.",
-                    fontSize = 13.sp,
-                    color = TextoSecundario
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        mostrarDialogoCentralAtencao = false
-                        onAlunos()
-                    }
-                ) {
-                    Text("Ver alunos", color = AzulPrincipal, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { mostrarDialogoCentralAtencao = false }
-                ) {
-                    Text("Fechar")
-                }
-            }
-        )
-    }
+
 // Diálogo do sino de notificações (Anamneses respondidas + Treinos a vencer / vencidos)
     if (mostrarNotificacoes) {
         AlertDialog(
@@ -8305,6 +8288,8 @@ fun TelaFormularioTreino(
     val exerciciosExpandidos = remember {
         mutableStateMapOf<Int, Boolean>()
     }
+    var indiceArrastando by remember { mutableIntStateOf(-1) }
+    var deslocamentoArrastoY by remember { mutableFloatStateOf(0f) }
 
     val scope = rememberCoroutineScope()
     val contextoEventos = LocalContext.current
@@ -8687,55 +8672,92 @@ fun TelaFormularioTreino(
                 val tipoPreview = exercicio.videoTipo.ifBlank {
                     if (exercicio.videoUrl.startsWith("/")) "LOCAL" else "LINK"
                 }
+                val estaArrastando = indiceArrastando == index
+
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(if (estaArrastando) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (estaArrastando) deslocamentoArrastoY else 0f
+                            shadowElevation = if (estaArrastando) 12f else 0f
+                        },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Branco),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (estaArrastando) AzulMuitoClaro else Branco
+                    ),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (estaArrastando) 8.dp else 2.dp
+                    )
                 ) {
                     Column(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Linha superior: Reordenação (≡) + Miniatura quadrada + Nome + Botão Detalhes + Lixeira
+                        // Linha superior: Alça de arrasto (≡) + Miniatura quadrada + Nome + Botão Detalhes + Lixeira
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (index > 0) {
-                                    Text(
-                                        text = "▲",
-                                        fontSize = 10.sp,
-                                        color = AzulPrincipal,
-                                        modifier = Modifier
-                                            .clickable {
-                                                val item = exercicios.removeAt(index)
-                                                exercicios.add(index - 1, item)
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 28.dp, height = 44.dp)
+                                    .pointerInput(exercicios.size) {
+                                        val alturaLimiteTroca = 150f
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                indiceArrastando = index
+                                                deslocamentoArrastoY = 0f
+                                            },
+                                            onDragEnd = {
+                                                indiceArrastando = -1
+                                                deslocamentoArrastoY = 0f
+                                            },
+                                            onDragCancel = {
+                                                indiceArrastando = -1
+                                                deslocamentoArrastoY = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                deslocamentoArrastoY += dragAmount.y
+                                                val atual = indiceArrastando
+                                                if (atual in exercicios.indices) {
+                                                    if (deslocamentoArrastoY > alturaLimiteTroca && atual < exercicios.lastIndex) {
+                                                        val item = exercicios.removeAt(atual)
+                                                        exercicios.add(atual + 1, item)
+                                                        val expAtual =
+                                                            exerciciosExpandidos[atual] ?: false
+                                                        val expProx =
+                                                            exerciciosExpandidos[atual + 1] ?: false
+                                                        exerciciosExpandidos[atual + 1] = expAtual
+                                                        exerciciosExpandidos[atual] = expProx
+                                                        indiceArrastando = atual + 1
+                                                        deslocamentoArrastoY -= alturaLimiteTroca
+                                                    } else if (deslocamentoArrastoY < -alturaLimiteTroca && atual > 0) {
+                                                        val item = exercicios.removeAt(atual)
+                                                        exercicios.add(atual - 1, item)
+                                                        val expAtual =
+                                                            exerciciosExpandidos[atual] ?: false
+                                                        val expAnt =
+                                                            exerciciosExpandidos[atual - 1] ?: false
+                                                        exerciciosExpandidos[atual - 1] = expAtual
+                                                        exerciciosExpandidos[atual] = expAnt
+                                                        indiceArrastando = atual - 1
+                                                        deslocamentoArrastoY += alturaLimiteTroca
+                                                    }
+                                                }
                                             }
-                                            .padding(2.dp)
-                                    )
-                                }
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
-                                    "≡",
-                                    fontSize = 16.sp,
+                                    text = "≡",
+                                    fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextoSecundario
+                                    color = if (estaArrastando) AzulPrincipal else TextoSecundario
                                 )
-                                if (index < exercicios.lastIndex) {
-                                    Text(
-                                        text = "▼",
-                                        fontSize = 10.sp,
-                                        color = AzulPrincipal,
-                                        modifier = Modifier
-                                            .clickable {
-                                                val item = exercicios.removeAt(index)
-                                                exercicios.add(index + 1, item)
-                                            }
-                                            .padding(2.dp)
-                                    )
-                                }
                             }
 
                             if (exercicio.videoUrl.isNotBlank()) {

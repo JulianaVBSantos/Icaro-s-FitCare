@@ -1,6 +1,7 @@
 package br.com.icaros.fitcare
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,18 +39,24 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
 import java.net.URL
 
 fun extrairIdVideoYoutube(url: String): String? {
-    val limpa = Uri.decode(url.trim())
-    return when {
-        limpa.contains("/shorts/") -> limpa.substringAfter("/shorts/").substringBefore("?").substringBefore("/")
-        limpa.contains("youtu.be/") -> limpa.substringAfter("youtu.be/").substringBefore("?").substringBefore("/")
-        limpa.contains("v=") -> limpa.substringAfter("v=").substringBefore("&")
-        limpa.contains("/embed/") -> limpa.substringAfter("/embed/").substringBefore("?").substringBefore("/")
-        limpa.contains("youtube.com") -> limpa.substringAfter("youtube.com").trim('/', ':', ' ')
+    val uri = runCatching { Uri.parse(Uri.decode(url.trim())) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase().orEmpty()
+    val ehYoutube = host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com")
+    if (!ehYoutube) return null
+
+    val segmentos = uri.pathSegments
+    val idBruto = when {
+        host == "youtu.be" -> segmentos.firstOrNull()
+        segmentos.size >= 2 && segmentos[0] in listOf("shorts", "embed", "v") -> segmentos[1]
+        uri.path == "/watch" -> uri.getQueryParameter("v")
         else -> null
-    }?.takeIf { it.isNotBlank() }
+    }
+    return idBruto
+        ?.takeIf { it.matches(Regex("^[a-zA-Z0-9_-]{11}$")) }
 }
 
 @Composable
@@ -81,12 +89,20 @@ fun CardPreviewVideoExercicio(
                         frame
                     } else null
                 } else if (videoId != null) {
-                    val hostImg = "https:" + "//i" + "://" + videoId
-                    val candidatos = listOf("$hostImg/0.jpg", "$hostImg/hqdefault.jpg", "$hostImg/mqdefault.jpg")
+                    val candidatos = listOf("0.jpg", "hqdefault.jpg", "mqdefault.jpg").map { arquivoImg ->
+                        Uri.Builder()
+                            .scheme("https")
+                            .authority("i" + ".ytimg.com")
+                            .appendPath("vi")
+                            .appendPath(videoId)
+                            .appendPath(arquivoImg)
+                            .build()
+                            .toString()
+                    }
                     var bmpEncontrado: Bitmap? = null
                     for (urlCand in candidatos) {
                         try {
-                            val conn = (URL(urlCand).openConnection() as java.net.HttpURLConnection).apply {
+                            val conn = (URL(urlCand).openConnection() as HttpURLConnection).apply {
                                 connectTimeout = 5000
                                 readTimeout = 5000
                                 setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
@@ -108,11 +124,7 @@ fun CardPreviewVideoExercicio(
                     }
                     bmpEncontrado
                 } else {
-                    val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(videoUrl, HashMap())
-                    val frame = retriever.getFrameAtTime(1_000_000L)
-                    retriever.release()
-                    frame
+                    null
                 }
             } catch (_: Exception) {
                 null
@@ -166,9 +178,9 @@ fun DialogoPlayerVideoExercicio(
     videoTipo: String = "LINK",
     onFechar: () -> Unit
 ) {
+    val context = LocalContext.current
     val videoId = remember(videoUrl) { extrairIdVideoYoutube(videoUrl) }
-    val ehYoutube = videoId != null || videoUrl.contains("youtube.com", true) || videoUrl.contains("youtu.be", true)
-    val ehArquivoLocal = !ehYoutube && (
+    val ehArquivoLocal = videoId == null && (
             videoTipo == "LOCAL" ||
                     videoUrl.startsWith("/") ||
                     videoUrl.endsWith(".mp4", true) ||
@@ -176,11 +188,29 @@ fun DialogoPlayerVideoExercicio(
                     videoUrl.endsWith(".webm", true)
             )
 
-    val urlFinalPlayer = remember(videoId, videoUrl) {
+    val ehShort = remember(videoUrl) { videoUrl.contains("/shorts/", ignoreCase = true) }
+
+    val urlFinalPlayer = remember(videoId, ehShort) {
         if (videoId != null) {
-            "https:" + "//www.youtube.com/shorts/" + videoId
+            if (ehShort) {
+                Uri.Builder()
+                    .scheme("https")
+                    .authority("://youtube.com")
+                    .appendPath("shorts")
+                    .appendPath(videoId)
+                    .build()
+                    .toString()
+            } else {
+                Uri.Builder()
+                    .scheme("https")
+                    .authority("://youtube.com")
+                    .appendPath("watch")
+                    .appendQueryParameter("v", videoId)
+                    .build()
+                    .toString()
+            }
         } else {
-            videoUrl
+            ""
         }
     }
 
@@ -202,70 +232,101 @@ fun DialogoPlayerVideoExercicio(
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                if (ehArquivoLocal) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { ctx ->
-                            VideoView(ctx).apply {
-                                val controller = MediaController(ctx)
-                                controller.setAnchorView(this)
-                                setMediaController(controller)
-                                if (videoUrl.startsWith("/")) {
-                                    setVideoPath(videoUrl)
-                                } else {
-                                    setVideoURI(Uri.parse(videoUrl))
-                                }
-                                setOnPreparedListener { mp ->
-                                    mp.isLooping = true
-                                    start()
-                                }
-                            }
-                        }
-                    )
-                } else {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                setBackgroundColor(android.graphics.Color.BLACK)
-                                scrollBarStyle = android.view.View.SCROLLBARS_OUTSIDE_OVERLAY
-                                setInitialScale(100)
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.loadWithOverviewMode = false
-                                settings.useWideViewPort = false
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                settings.userAgentString =
-                                    "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                                webChromeClient = WebChromeClient()
-                                webViewClient = object : WebViewClient() {
-                                    override fun shouldOverrideUrlLoading(
-                                        view: WebView?,
-                                        request: WebResourceRequest?
-                                    ): Boolean {
-                                        val urlReq = request?.url?.toString().orEmpty()
-                                        return !urlReq.startsWith("http://") && !urlReq.startsWith("https://")
+                when {
+                    ehArquivoLocal -> {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    val controller = MediaController(ctx)
+                                    controller.setAnchorView(this)
+                                    setMediaController(controller)
+                                    if (videoUrl.startsWith("/")) {
+                                        setVideoPath(videoUrl)
+                                    } else {
+                                        setVideoURI(Uri.parse(videoUrl))
                                     }
-
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        view?.evaluateJavascript(
-                                            """
-                                            (function() {
-                                                var style = document.createElement('style');
-                                                style.innerHTML = 'html, body { margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; width: 100vw !important; background: #000 !important; } ytd-reel-video-renderer, #shorts-player, video { width: 100vw !important; left: 0 !important; margin-left: 0 !important; }';
-                                                document.head.appendChild(style);
-                                                window.scrollTo(0, 0);
-                                            })();
-                                            """.trimIndent(),
-                                            null
-                                        )
+                                    setOnPreparedListener { mp ->
+                                        mp.isLooping = true
+                                        start()
                                     }
                                 }
-                                loadUrl(urlFinalPlayer)
+                            }
+                        )
+                    }
+                    urlFinalPlayer.isNotBlank() -> {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    setBackgroundColor(android.graphics.Color.BLACK)
+                                    scrollBarStyle = android.view.View.SCROLLBARS_OUTSIDE_OVERLAY
+                                    setInitialScale(100)
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.loadWithOverviewMode = false
+                                    settings.useWideViewPort = false
+                                    settings.mediaPlaybackRequiresUserGesture = false
+                                    settings.userAgentString =
+                                        "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                                    webChromeClient = WebChromeClient()
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldOverrideUrlLoading(
+                                            view: WebView?,
+                                            request: WebResourceRequest?
+                                        ): Boolean {
+                                            val hostReq = request?.url?.host?.lowercase().orEmpty()
+                                            val permitido = hostReq == "youtube.com" ||
+                                                    hostReq.endsWith(".youtube.com") ||
+                                                    hostReq == "youtu.be"
+                                            return !permitido
+                                        }
+                                        override fun onPageFinished(view: WebView?, url: String?) {
+                                            super.onPageFinished(view, url)
+                                            view?.evaluateJavascript(
+                                                """
+(function() {
+var style = document.createElement('style');
+style.innerHTML = 'html, body { margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; width: 100vw !important; background: #000 !important; } ytd-reel-video-renderer, #shorts-player, video { width: 100vw !important; left: 0 !important; margin-left: 0 !important; }';
+document.head.appendChild(style);
+window.scrollTo(0, 0);
+})();
+""".trimIndent(),
+                                                null
+                                            )
+                                        }
+                                    }
+                                    loadUrl(urlFinalPlayer)
+                                }
+                            }
+                        )
+                    }
+                    else -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = "Link externo fora do YouTube.",
+                                color = Color.White,
+                                fontSize = 13.sp
+                            )
+                            TextButton(
+                                onClick = {
+                                    runCatching {
+                                        val uri = Uri.parse(videoUrl.trim())
+                                        if (uri.scheme == "http" || uri.scheme == "https") {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                        }
+                                    }
+                                    onFechar()
+                                }
+                            ) {
+                                Text("Abrir no navegador externo", color = Color(0xFF7AB8F5))
                             }
                         }
-                    )
+                    }
                 }
             }
         },
